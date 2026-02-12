@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPT Viewer</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>CPT Viewer</h1>
+        <p class="subtitle">Cone Penetration Test Data Viewer</p>
+    </header>
+
+    <main>
+        <section id="upload-section">
+            <div id="drop-zone">
+                <div class="drop-zone-content">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <p>Sleep een <strong>GEF</strong> of <strong>BRO-XML</strong> bestand hierheen</p>
+                    <p class="hint">of klik om te selecteren</p>
+                </div>
+                <input type="file" id="file-input" accept=".gef,.GEF,.xml,.XML" multiple>
+            </div>
+        </section>
+
+        <section id="cpt-list" class="hidden">
+            <h2>Geladen sonderingen</h2>
+            <div id="cpt-tabs"></div>
+        </section>
+
+        <section id="info-section" class="hidden">
+            <h2>Sonderingsgegevens</h2>
+            <div id="cpt-info" class="info-grid"></div>
+        </section>
+
+        <section id="chart-section" class="hidden">
+            <h2>Grafieken</h2>
+            <div class="chart-container">
+                <div class="chart-wrapper">
+                    <h3>Conusweerstand (q<sub>c</sub>)</h3>
+                    <canvas id="chart-qc"></canvas>
+                </div>
+                <div class="chart-wrapper">
+                    <h3>Plaatselijke wrijving (f<sub>s</sub>)</h3>
+                    <canvas id="chart-fs"></canvas>
+                </div>
+                <div class="chart-wrapper">
+                    <h3>Wrijvingsgetal (R<sub>f</sub>)</h3>
+                    <canvas id="chart-rf"></canvas>
+                </div>
+                <div class="chart-wrapper">
+                    <h3>Waterspanning (u<sub>2</sub>)</h3>
+                    <canvas id="chart-u2"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <section id="table-section" class="hidden">
+            <h2>Meetdata</h2>
+            <div class="table-wrapper">
+                <table id="data-table">
+                    <thead></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>CPT Viewer &mdash; OpenAEC Foundation</p>
+    </footer>
+
+    <script src="js/gef-parser.js"></script>
+    <script src="js/bro-xml-parser.js"></script>
+    <script src="js/cpt-chart.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
