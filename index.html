@@ -5,80 +5,242 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CPT Viewer</title>
     <link rel="stylesheet" href="css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
-    <header>
-        <h1>CPT Viewer</h1>
-        <p class="subtitle">Cone Penetration Test Data Viewer</p>
-    </header>
-
-    <main>
-        <section id="upload-section">
-            <div id="drop-zone">
-                <div class="drop-zone-content">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                        <polyline points="17 8 12 3 7 8"/>
-                        <line x1="12" y1="3" x2="12" y2="15"/>
-                    </svg>
-                    <p>Sleep een <strong>GEF</strong> of <strong>BRO-XML</strong> bestand hierheen</p>
-                    <p class="hint">of klik om te selecteren</p>
-                </div>
-                <input type="file" id="file-input" accept=".gef,.GEF,.xml,.XML" multiple>
+    <div id="app">
+        <!-- Ribbon -->
+        <div class="ribbon">
+            <div class="ribbon-tabs">
+                <button class="ribbon-tab active" data-tab="start">Start</button>
+                <button class="ribbon-tab" data-tab="kaart">Kaart</button>
             </div>
-        </section>
-
-        <section id="cpt-list" class="hidden">
-            <h2>Geladen sonderingen</h2>
-            <div id="cpt-tabs"></div>
-        </section>
-
-        <section id="info-section" class="hidden">
-            <h2>Sonderingsgegevens</h2>
-            <div id="cpt-info" class="info-grid"></div>
-        </section>
-
-        <section id="chart-section" class="hidden">
-            <h2>Grafieken</h2>
-            <div class="chart-container">
-                <div class="chart-wrapper">
-                    <h3>Conusweerstand (q<sub>c</sub>)</h3>
-                    <canvas id="chart-qc"></canvas>
+            <div class="ribbon-content-container">
+                <!-- Start tab -->
+                <div class="ribbon-content active" data-tab="start">
+                    <div class="ribbon-group">
+                        <div class="ribbon-group-content">
+                            <button class="ribbon-btn large" id="btn-upload">
+                                <span class="ribbon-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                        <polyline points="17 8 12 3 7 8"/>
+                                        <line x1="12" y1="3" x2="12" y2="15"/>
+                                    </svg>
+                                </span>
+                                <span>Upload</span>
+                            </button>
+                        </div>
+                        <div class="ribbon-group-title">Bestand</div>
+                    </div>
+                    <div class="ribbon-separator"></div>
+                    <div class="ribbon-group">
+                        <div class="ribbon-group-content">
+                            <div class="ribbon-btn-stack">
+                                <button class="ribbon-btn small" data-sample="sample/cpt_pygef.gef" data-name="cpt_pygef.gef">
+                                    <span class="ribbon-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+                                    <span>CPT Pygef</span>
+                                </button>
+                                <button class="ribbon-btn small" data-sample="sample/cpt_bro.xml" data-name="cpt_bro.xml">
+                                    <span class="ribbon-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+                                    <span>CPT BRO (XML)</span>
+                                </button>
+                                <button class="ribbon-btn small" data-sample="sample/voorbeeld.gef" data-name="voorbeeld.gef">
+                                    <span class="ribbon-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+                                    <span>Voorbeeld GEF</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="ribbon-group-title">Voorbeelden</div>
+                    </div>
+                    <div class="ribbon-separator"></div>
+                    <div class="ribbon-group">
+                        <div class="ribbon-group-content">
+                            <button class="ribbon-btn" id="btn-zoom-in">
+                                <span class="ribbon-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                                        <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
+                                    </svg>
+                                </span>
+                                <span>Zoom +</span>
+                            </button>
+                            <button class="ribbon-btn" id="btn-zoom-out">
+                                <span class="ribbon-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                                        <line x1="8" y1="11" x2="14" y2="11"/>
+                                    </svg>
+                                </span>
+                                <span>Zoom -</span>
+                            </button>
+                            <button class="ribbon-btn" id="btn-zoom-fit">
+                                <span class="ribbon-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/>
+                                    </svg>
+                                </span>
+                                <span>Passend</span>
+                            </button>
+                        </div>
+                        <div class="ribbon-group-title">Zoom</div>
+                    </div>
+                    <div class="ribbon-separator"></div>
+                    <div class="ribbon-group">
+                        <div class="ribbon-group-content">
+                            <button class="ribbon-btn" id="btn-close-all">
+                                <span class="ribbon-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                                    </svg>
+                                </span>
+                                <span>Sluit alle</span>
+                            </button>
+                        </div>
+                        <div class="ribbon-group-title">Sonderingen</div>
+                    </div>
                 </div>
-                <div class="chart-wrapper">
-                    <h3>Plaatselijke wrijving (f<sub>s</sub>)</h3>
-                    <canvas id="chart-fs"></canvas>
-                </div>
-                <div class="chart-wrapper">
-                    <h3>Wrijvingsgetal (R<sub>f</sub>)</h3>
-                    <canvas id="chart-rf"></canvas>
-                </div>
-                <div class="chart-wrapper">
-                    <h3>Waterspanning (u<sub>2</sub>)</h3>
-                    <canvas id="chart-u2"></canvas>
+
+                <!-- Kaart tab -->
+                <div class="ribbon-content" data-tab="kaart">
+                    <div class="ribbon-group">
+                        <div class="ribbon-group-content">
+                            <button class="ribbon-btn large" id="btn-load-area">
+                                <span class="ribbon-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
+                                        <circle cx="12" cy="10" r="3"/>
+                                    </svg>
+                                </span>
+                                <span>Laad gebied</span>
+                            </button>
+                        </div>
+                        <div class="ribbon-group-title">BRO Data</div>
+                    </div>
+                    <div class="ribbon-separator"></div>
+                    <div class="ribbon-group">
+                        <div class="ribbon-group-content">
+                            <button class="ribbon-btn" id="btn-map-clear">
+                                <span class="ribbon-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                                    </svg>
+                                </span>
+                                <span>Wis markers</span>
+                            </button>
+                        </div>
+                        <div class="ribbon-group-title">Kaart</div>
+                    </div>
+                    <div class="ribbon-separator"></div>
+                    <div class="ribbon-group">
+                        <div class="ribbon-group-content" style="align-items: center; gap: 8px;">
+                            <span id="map-status" style="font-size:11px; color: var(--text-secondary); font-family: var(--font-mono);">Zoom in en klik 'Laad gebied'</span>
+                        </div>
+                        <div class="ribbon-group-title">Status</div>
+                    </div>
                 </div>
             </div>
-        </section>
+        </div>
 
-        <section id="table-section" class="hidden">
-            <h2>Meetdata</h2>
-            <div class="table-wrapper">
-                <table id="data-table">
-                    <thead></thead>
-                    <tbody></tbody>
-                </table>
+        <!-- Main content: 3-column -->
+        <div id="main">
+            <!-- Left panel: info + data -->
+            <div id="panel-left" class="panel">
+                <div class="panel-header">Sonderingsgegevens</div>
+                <div id="cpt-info"></div>
+                <div class="panel-header">Meetdata</div>
+                <div id="data-table-wrapper">
+                    <table id="data-table">
+                        <thead></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
             </div>
-        </section>
-    </main>
 
-    <footer>
-        <p>CPT Viewer &mdash; OpenAEC Foundation</p>
-    </footer>
+            <!-- Center: content area (split: charts + map) -->
+            <div id="content-area">
+                <!-- Chart view: multiple charts side by side -->
+                <div id="chart-view">
+                    <div id="charts-container"></div>
+
+                    <!-- Welcome overlay (covers chart area only) -->
+                    <div id="welcome-overlay">
+                        <div class="welcome-content">
+                            <h2>CPT Viewer</h2>
+                            <p>Cone Penetration Test Data Viewer<br>
+                            Laad een GEF of BRO-XML bestand om te beginnen.</p>
+
+                            <div id="drop-zone" class="drop-area">
+                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="17 8 12 3 7 8"/>
+                                    <line x1="12" y1="3" x2="12" y2="15"/>
+                                </svg>
+                                <p>Sleep een GEF of BRO-XML bestand hierheen</p>
+                                <p class="hint">of klik om te selecteren</p>
+                            </div>
+
+                            <div class="welcome-samples">
+                                <span>Of laad een voorbeeld:</span>
+                                <button data-sample="sample/cpt_pygef.gef" data-name="cpt_pygef.gef" class="sample-btn">CPT Pygef</button>
+                                <button data-sample="sample/cpt_bro.xml" data-name="cpt_bro.xml" class="sample-btn">CPT BRO (XML)</button>
+                                <button data-sample="sample/voorbeeld.gef" data-name="voorbeeld.gef" class="sample-btn">Voorbeeld GEF</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Map view (always visible) -->
+                <div id="map-view">
+                    <div id="map"></div>
+                </div>
+            </div>
+
+            <!-- Right panel: Robertson SBT legend -->
+            <div id="panel-right" class="panel">
+                <div class="panel-header">Robertson SBT</div>
+                <div id="sbt-distribution-bar" class="distribution-bar"></div>
+                <div id="sbt-legend"></div>
+            </div>
+        </div>
+
+        <!-- Status bar -->
+        <div id="statusbar">
+            <div class="status-item">
+                <span class="status-label">Diepte:</span>
+                <span id="status-depth" class="status-value">—</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">qc:</span>
+                <span id="status-qc" class="status-value">—</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">fs:</span>
+                <span id="status-fs" class="status-value">—</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Rf:</span>
+                <span id="status-rf" class="status-value">—</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Grondsoort:</span>
+                <span id="status-soil" class="status-value">—</span>
+            </div>
+            <div class="status-spacer"></div>
+            <div class="status-item">
+                <span id="status-info" class="status-value" style="color: var(--text-muted);">Geen data geladen</span>
+            </div>
+        </div>
+    </div>
+
+    <input type="file" id="file-input" accept=".gef,.GEF,.xml,.XML" multiple>
 
     <script src="js/gef-parser.js"></script>
     <script src="js/bro-xml-parser.js"></script>
+    <script src="js/robertson.js"></script>
     <script src="js/cpt-chart.js"></script>
+    <script src="js/bro-map.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
