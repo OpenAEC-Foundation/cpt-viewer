@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree -L 2 /c/Users/rickd/Documents/GitHub/cpt-viewer -I '.git' 2>/dev/null || find /c/Users/rickd/Documents/GitHub/cpt-viewer -not -path '*/\\\\.*' -type f | sed 's|/c/Users/rickd/Documents/GitHub/cpt-viewer/||' | sort)",
+      "WebFetch(domain:gef.bedrock.engineer)",
+      "Bash(start \"\" \"C:\\\\Users\\\\rickd\\\\Documents\\\\GitHub\\\\cpt-viewer\\\\index.html\")",
+      "Bash(cd \"C:\\\\Users\\\\rickd\\\\Documents\\\\GitHub\\\\cpt-viewer\" && start \"\" \"http://localhost:8080\")",
+      "Bash(cd \"C:\\\\Users\\\\rickd\\\\Documents\\\\GitHub\\\\cpt-viewer\" && python -m http.server 8080)",
+      "Bash(start \"\" \"http://localhost:8080\")"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "symitech-erpnext",
+    "freecad-mcp"
+  ]
+}

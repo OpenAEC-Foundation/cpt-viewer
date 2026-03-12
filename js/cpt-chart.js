@@ -2,7 +2,7 @@
  * CPT Chart — Professional Dutch CPT plot renderer
  *
  * Layout (left to right):
- *   [Depth axis] [Soil strip] [qc panel] [fs panel] [Rf panel]
+ *   [Depth axis] [Soil strip] [qc panel] [fs panel] [Rf panel] [u2 panel (optional)]
  *
  * Each parameter gets its own panel with proper scale.
  * Soil strip shows Robertson SBT as solid colored bands.
@@ -19,6 +19,7 @@ class CptChart {
         this.columns = null;
         this.layers = null;
         this.depths = null;
+        this.hasU2 = false;
 
         // Depth viewport
         this.depthMin = 0;
@@ -30,6 +31,7 @@ class CptChart {
         this.qcMax = 30;
         this.fsMax = 0.3;
         this.rfMax = 10;
+        this.u2Max = 1;
 
         // Interaction
         this.hoverY = null;
@@ -54,6 +56,7 @@ class CptChart {
             qc:         '#3b82f6',
             fs:         '#ef4444',
             rf:         '#22c55e',
+            u2:         '#a855f7',
         };
 
         this._bindEvents();
@@ -105,6 +108,14 @@ class CptChart {
         this.fsMax = this._niceMax(Math.max(0.01, ...vals('fs')));
         this.rfMax = this._niceMax(Math.max(1, ...vals('rf')));
 
+        // Check for u2 data
+        const u2vals = data.map(r => r.u2).filter(v => v != null);
+        this.hasU2 = u2vals.length > 10;
+        if (this.hasU2) {
+            const u2positive = u2vals.filter(v => v > 0);
+            this.u2Max = this._niceMax(Math.max(0.01, ...(u2positive.length > 0 ? u2positive : [0.5])));
+        }
+
         this.depthViewMin = this.depthMin;
         this.depthViewMax = this.depthMax;
         this.resize();
@@ -128,30 +139,39 @@ class CptChart {
         const w = this.W, h = this.H;
         const narrow = w < 280;
 
-        const HEADER = 28;            // Scale labels area at top
+        const HEADER = 28;
         const BOTTOM = 4;
-        const DEPTH_W = narrow ? 30 : 42;  // Depth axis column
-        const SOIL_W = narrow ? 14 : 22;    // Soil type strip
+        const DEPTH_W = narrow ? 30 : 42;
+        const SOIL_W = narrow ? 14 : 22;
         const GAP = 1;
 
         const plotT = HEADER;
         const plotB = h - BOTTOM;
         const plotH = plotB - plotT;
 
-        // Remaining width for 3 data panels
-        const avail = w - DEPTH_W - SOIL_W - GAP * 4;
-        // qc gets 45%, fs 25%, Rf 30%
-        const qcW = Math.floor(avail * 0.45);
-        const fsW = Math.floor(avail * 0.25);
-        const rfW = avail - qcW - fsW;
+        const avail = w - DEPTH_W - SOIL_W - GAP * (this.hasU2 ? 5 : 4);
+
+        let qcW, fsW, rfW, u2W;
+        if (this.hasU2) {
+            qcW = Math.floor(avail * 0.35);
+            fsW = Math.floor(avail * 0.20);
+            rfW = Math.floor(avail * 0.22);
+            u2W = avail - qcW - fsW - rfW;
+        } else {
+            qcW = Math.floor(avail * 0.45);
+            fsW = Math.floor(avail * 0.25);
+            rfW = avail - qcW - fsW;
+            u2W = 0;
+        }
 
         let x = DEPTH_W;
         const soilL = x; x += SOIL_W + GAP;
         const qcL   = x; x += qcW + GAP;
         const fsL   = x; x += fsW + GAP;
-        const rfL   = x;
+        const rfL   = x; x += rfW + GAP;
+        const u2L   = x;
 
-        return {
+        const layout = {
             plotT, plotB, plotH, narrow,
             depthW: DEPTH_W, headerH: HEADER,
             soil: { l: soilL, w: SOIL_W },
@@ -159,6 +179,12 @@ class CptChart {
             fs:   { l: fsL,   w: fsW },
             rf:   { l: rfL,   w: rfW },
         };
+
+        if (this.hasU2) {
+            layout.u2 = { l: u2L, w: u2W };
+        }
+
+        return layout;
     }
 
     _d2y(d, L) { return L.plotT + ((d - this.depthViewMin) / (this.depthViewMax - this.depthViewMin)) * L.plotH; }
@@ -186,6 +212,7 @@ class CptChart {
         c.fillRect(L.qc.l,   L.plotT, L.qc.w,   L.plotH);
         c.fillRect(L.fs.l,   L.plotT, L.fs.w,   L.plotH);
         c.fillRect(L.rf.l,   L.plotT, L.rf.w,   L.plotH);
+        if (L.u2) c.fillRect(L.u2.l, L.plotT, L.u2.w, L.plotH);
 
         if (this.data) {
             this._drawSoilStrip(c, L);
@@ -195,16 +222,20 @@ class CptChart {
         this._drawGridV(c, L, L.qc, this.qcMax);
         this._drawGridV(c, L, L.fs, this.fsMax);
         this._drawGridV(c, L, L.rf, this.rfMax);
+        if (L.u2) this._drawGridV(c, L, L.u2, this.u2Max);
+
         this._drawDepthAxis(c, L);
         this._drawPanelHeader(c, L, L.soil, 'SBT', this.COLORS.textBright, null, null);
         this._drawPanelHeader(c, L, L.qc, 'qc (MPa)', this.COLORS.qc, this.qcMax, null);
         this._drawPanelHeader(c, L, L.fs, 'fs (MPa)', this.COLORS.fs, this.fsMax, null);
         this._drawPanelHeader(c, L, L.rf, 'Rf (%)', this.COLORS.rf, this.rfMax, null);
+        if (L.u2) this._drawPanelHeader(c, L, L.u2, 'u2 (MPa)', this.COLORS.u2, this.u2Max, null);
 
         if (this.data) {
             this._drawLine(c, L, L.qc, 'qc', this.qcMax, this.COLORS.qc, 1.8);
             this._drawLine(c, L, L.fs, 'fs', this.fsMax, this.COLORS.fs, 1.4);
             this._drawLine(c, L, L.rf, 'rf', this.rfMax, this.COLORS.rf, 1.4);
+            if (L.u2) this._drawLine(c, L, L.u2, 'u2', this.u2Max, this.COLORS.u2, 1.4);
             this._drawCrosshair(c, L);
         }
 
@@ -213,6 +244,7 @@ class CptChart {
         this._panelBorder(c, L, L.qc);
         this._panelBorder(c, L, L.fs);
         this._panelBorder(c, L, L.rf);
+        if (L.u2) this._panelBorder(c, L, L.u2);
 
         c.restore();
     }
@@ -255,7 +287,8 @@ class CptChart {
         const range = this.depthViewMax - this.depthViewMin;
         const step = this._niceStep(range, 8);
         const totalL = L.soil.l;
-        const totalR = L.rf.l + L.rf.w;
+        const lastPanel = L.u2 || L.rf;
+        const totalR = lastPanel.l + lastPanel.w;
 
         for (let d = Math.ceil(this.depthViewMin / step) * step; d <= this.depthViewMax; d = +(d + step).toFixed(6)) {
             const y = Math.round(this._d2y(d, L)) + 0.5;
@@ -272,7 +305,6 @@ class CptChart {
 
     _drawGridV(c, L, panel, maxVal) {
         const steps = Math.max(2, Math.min(6, Math.floor(panel.w / 35)));
-        const step = maxVal / steps;
 
         for (let i = 1; i < steps; i++) {
             const x = Math.round(panel.l + (i / steps) * panel.w) + 0.5;
@@ -290,14 +322,12 @@ class CptChart {
     _drawPanelHeader(c, L, panel, label, color, maxVal) {
         const cx = panel.l + panel.w / 2;
 
-        // Label
         c.textAlign = 'center';
         c.textBaseline = 'top';
         c.font = `600 ${L.narrow ? 9 : 10}px Inter, system-ui, sans-serif`;
         c.fillStyle = color;
         c.fillText(label, cx, 3);
 
-        // Scale ticks (0 and max)
         if (maxVal !== null && panel.w > 30) {
             c.font = `${L.narrow ? 7 : 9}px JetBrains Mono, monospace`;
             c.fillStyle = this.COLORS.text;
@@ -306,7 +336,6 @@ class CptChart {
             c.textAlign = 'right';
             c.fillText(this._fmtScale(maxVal), panel.l + panel.w - 2, 15);
 
-            // Middle tick
             if (panel.w > 60) {
                 c.textAlign = 'center';
                 c.fillText(this._fmtScale(maxVal / 2), cx, 15);
@@ -331,7 +360,6 @@ class CptChart {
             c.fillText(d.toFixed(1), L.depthW - 4, y);
         }
 
-        // Vertical label
         if (!L.narrow) {
             c.save();
             c.translate(10, L.plotT + L.plotH / 2);
@@ -379,7 +407,8 @@ class CptChart {
         if (y < L.plotT || y > L.plotB) return;
 
         const totalL = L.soil.l;
-        const totalR = L.rf.l + L.rf.w;
+        const lastPanel = L.u2 || L.rf;
+        const totalR = lastPanel.l + lastPanel.w;
 
         // Horizontal dashed line
         c.strokeStyle = this.COLORS.crosshair;
@@ -412,6 +441,7 @@ class CptChart {
         this._marker(c, L.qc, row.qc, this.qcMax, my, this.COLORS.qc);
         this._marker(c, L.fs, row.fs, this.fsMax, my, this.COLORS.fs);
         this._marker(c, L.rf, row.rf, this.rfMax, my, this.COLORS.rf);
+        if (L.u2) this._marker(c, L.u2, row.u2, this.u2Max, my, this.COLORS.u2);
     }
 
     _marker(c, panel, val, maxVal, y, color) {
@@ -465,7 +495,7 @@ class CptChart {
                     const row = this.data[idx];
                     this.onHover({
                         depth: this.depths[idx],
-                        qc: row.qc, fs: row.fs, rf: row.rf,
+                        qc: row.qc, fs: row.fs, rf: row.rf, u2: row.u2,
                         zone: Robertson.classify(row.qc, row.rf),
                     });
                 }

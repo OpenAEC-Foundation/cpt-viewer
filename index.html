@@ -100,6 +100,32 @@
                         </div>
                         <div class="ribbon-group-title">Sonderingen</div>
                     </div>
+                    <div class="ribbon-separator"></div>
+                    <div class="ribbon-group">
+                        <div class="ribbon-group-content">
+                            <button class="ribbon-btn" id="btn-export-csv">
+                                <span class="ribbon-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                        <polyline points="7 10 12 15 17 10"/>
+                                        <line x1="12" y1="15" x2="12" y2="3"/>
+                                    </svg>
+                                </span>
+                                <span>CSV</span>
+                            </button>
+                            <button class="ribbon-btn" id="btn-export-geojson">
+                                <span class="ribbon-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                        <polyline points="7 10 12 15 17 10"/>
+                                        <line x1="12" y1="15" x2="12" y2="3"/>
+                                    </svg>
+                                </span>
+                                <span>GeoJSON</span>
+                            </button>
+                        </div>
+                        <div class="ribbon-group-title">Exporteren</div>
+                    </div>
                 </div>
 
                 <!-- Kaart tab -->
@@ -147,14 +173,60 @@
         <div id="main">
             <!-- Left panel: info + data -->
             <div id="panel-left" class="panel">
-                <div class="panel-header">Sonderingsgegevens</div>
-                <div id="cpt-info"></div>
-                <div class="panel-header">Meetdata</div>
-                <div id="data-table-wrapper">
-                    <table id="data-table">
-                        <thead></thead>
-                        <tbody></tbody>
-                    </table>
+                <div class="panel-section">
+                    <div class="panel-header collapsible" data-section="cpt-list-section">
+                        <span>Sonderingen</span>
+                        <span class="panel-toggle">&#9660;</span>
+                    </div>
+                    <div id="cpt-list-section" class="panel-body">
+                        <div id="cpt-list"></div>
+                    </div>
+                </div>
+                <div class="panel-section">
+                    <div class="panel-header collapsible" data-section="cpt-info-section">
+                        <span>Sonderingsgegevens</span>
+                        <span class="panel-toggle">&#9660;</span>
+                    </div>
+                    <div id="cpt-info-section" class="panel-body">
+                        <div id="cpt-info"></div>
+                    </div>
+                </div>
+                <div class="panel-section">
+                    <div class="panel-header collapsible" data-section="cpt-location-section">
+                        <span>Locatie</span>
+                        <span class="panel-toggle">&#9660;</span>
+                    </div>
+                    <div id="cpt-location-section" class="panel-body">
+                        <div id="mini-map"></div>
+                    </div>
+                </div>
+                <div class="panel-section">
+                    <div class="panel-header collapsible" data-section="cpt-layers-section">
+                        <span>Grondopbouw</span>
+                        <span class="panel-toggle">&#9660;</span>
+                    </div>
+                    <div id="cpt-layers-section" class="panel-body">
+                        <div id="layer-table-wrapper">
+                            <table id="layer-table">
+                                <thead></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel-section">
+                    <div class="panel-header collapsible" data-section="cpt-data-section">
+                        <span>Meetdata</span>
+                        <span class="panel-toggle">&#9660;</span>
+                    </div>
+                    <div id="cpt-data-section" class="panel-body">
+                        <div id="data-table-wrapper">
+                            <table id="data-table">
+                                <thead></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -222,6 +294,10 @@
             <div class="status-item">
                 <span class="status-label">Rf:</span>
                 <span id="status-rf" class="status-value">—</span>
+            </div>
+            <div class="status-item" id="status-u2-item" style="display:none">
+                <span class="status-label">u2:</span>
+                <span id="status-u2" class="status-value">—</span>
             </div>
             <div class="status-item">
                 <span class="status-label">Grondsoort:</span>

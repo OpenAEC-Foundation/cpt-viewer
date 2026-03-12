@@ -6,6 +6,8 @@
  * - Multiple CPT charts side-by-side
  * - BRO PDOK map with CPT locations
  * - Robertson SBT classification + legend
+ * - CPT list, layer table, mini location map
+ * - Export to CSV / GeoJSON
  */
 
 (function () {
@@ -13,10 +15,12 @@
     const broParser = new BroXmlParser();
 
     // State
-    const cptDataSets = [];      // All loaded CPTs
-    const chartInstances = [];   // { ds, chart, panel } per loaded CPT
+    const cptDataSets = [];
+    const chartInstances = [];
     let activeIndex = -1;
     let broMap = null;
+    let miniMap = null;
+    let miniMapMarker = null;
 
     // DOM elements
     const fileInput = document.getElementById('file-input');
@@ -24,6 +28,7 @@
     const welcomeOverlay = document.getElementById('welcome-overlay');
     const chartsContainer = document.getElementById('charts-container');
     const cptInfo = document.getElementById('cpt-info');
+    const cptList = document.getElementById('cpt-list');
     const sbtLegend = document.getElementById('sbt-legend');
     const sbtDistBar = document.getElementById('sbt-distribution-bar');
     const mapStatus = document.getElementById('map-status');
@@ -33,11 +38,31 @@
     const statusQc = document.getElementById('status-qc');
     const statusFs = document.getElementById('status-fs');
     const statusRf = document.getElementById('status-rf');
+    const statusU2 = document.getElementById('status-u2');
+    const statusU2Item = document.getElementById('status-u2-item');
     const statusSoil = document.getElementById('status-soil');
     const statusInfo = document.getElementById('status-info');
 
     // ============================================
-    // RIBBON TAB SWITCHING (ribbon content only, no view switching)
+    // COLLAPSIBLE PANELS
+    // ============================================
+
+    document.querySelectorAll('.panel-header.collapsible').forEach(header => {
+        header.addEventListener('click', () => {
+            const sectionId = header.dataset.section;
+            const body = document.getElementById(sectionId);
+            if (body) {
+                body.classList.toggle('collapsed');
+                const toggle = header.querySelector('.panel-toggle');
+                if (toggle) {
+                    toggle.style.transform = body.classList.contains('collapsed') ? 'rotate(-90deg)' : '';
+                }
+            }
+        });
+    });
+
+    // ============================================
+    // RIBBON TAB SWITCHING
     // ============================================
 
     document.querySelectorAll('.ribbon-tab').forEach(tab => {
@@ -222,6 +247,7 @@
             }
         }
 
+        renderCptList();
         updateStatusInfo();
     }
 
@@ -237,23 +263,31 @@
             }
         });
 
+        renderCptList();
         renderInfo(ds);
         renderTable(ds);
         renderSbtLegend(ds);
+        renderLayerTable(ds);
+        updateMiniMap(ds);
+        updateU2Visibility(ds);
         updateStatusInfo();
     }
 
     function clearInfoPanel() {
         cptInfo.innerHTML = '';
+        cptList.innerHTML = '';
         document.querySelector('#data-table thead').innerHTML = '';
         document.querySelector('#data-table tbody').innerHTML = '';
+        document.querySelector('#layer-table thead').innerHTML = '';
+        document.querySelector('#layer-table tbody').innerHTML = '';
         sbtLegend.innerHTML = '';
         sbtDistBar.innerHTML = '';
+        clearMiniMap();
     }
 
     // Close all
     document.getElementById('btn-close-all').addEventListener('click', () => {
-        chartInstances.forEach((inst, i) => {
+        chartInstances.forEach((inst) => {
             if (inst) inst.panel.remove();
         });
         chartInstances.length = 0;
@@ -263,6 +297,36 @@
         welcomeOverlay.classList.remove('hidden');
         statusInfo.textContent = 'Geen data geladen';
     });
+
+    // ============================================
+    // CPT LIST
+    // ============================================
+
+    function renderCptList() {
+        cptList.innerHTML = '';
+        cptDataSets.forEach((ds, i) => {
+            if (!ds) return;
+            const item = document.createElement('div');
+            item.className = 'cpt-list-item' + (i === activeIndex ? ' active' : '');
+            item.innerHTML = `
+                <span class="cpt-list-dot"></span>
+                <span class="cpt-list-name">${ds.header.name || ds.fileName}</span>
+            `;
+
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'cpt-list-close';
+            closeBtn.innerHTML = '&times;';
+            closeBtn.title = 'Sluit';
+            closeBtn.addEventListener('click', e => {
+                e.stopPropagation();
+                removeCpt(i);
+            });
+            item.appendChild(closeBtn);
+
+            item.addEventListener('click', () => selectCpt(i));
+            cptList.appendChild(item);
+        });
+    }
 
     // ============================================
     // ZOOM (applied to active chart)
@@ -298,6 +362,7 @@
             statusQc.textContent = '—';
             statusFs.textContent = '—';
             statusRf.textContent = '—';
+            statusU2.textContent = '—';
             statusSoil.textContent = '—';
             return;
         }
@@ -305,7 +370,13 @@
         statusQc.textContent = info.qc !== null && info.qc !== undefined ? info.qc.toFixed(3) + ' MPa' : '—';
         statusFs.textContent = info.fs !== null && info.fs !== undefined ? info.fs.toFixed(4) + ' MPa' : '—';
         statusRf.textContent = info.rf !== null && info.rf !== undefined ? info.rf.toFixed(1) + ' %' : '—';
+        statusU2.textContent = info.u2 !== null && info.u2 !== undefined ? info.u2.toFixed(4) + ' MPa' : '—';
         statusSoil.textContent = info.zone ? info.zone.name : '—';
+    }
+
+    function updateU2Visibility(ds) {
+        const hasU2 = ds.data.some(r => r.u2 != null);
+        statusU2Item.style.display = hasU2 ? '' : 'none';
     }
 
     // ============================================
@@ -345,7 +416,7 @@
     function renderTable(ds) {
         const thead = document.querySelector('#data-table thead');
         const tbody = document.querySelector('#data-table tbody');
-        const displayCols = ds.columns.filter(c => ['length', 'depth', 'qc', 'fs', 'rf'].includes(c.key));
+        const displayCols = ds.columns.filter(c => ['length', 'depth', 'qc', 'fs', 'rf', 'u2'].includes(c.key));
 
         thead.innerHTML = '<tr>' + displayCols.map(c =>
             `<th>${c.key}<br><small>${c.unit}</small></th>`
@@ -365,6 +436,146 @@
                 ... ${ds.data.length - maxRows} rijen niet getoond
             </td></tr>`;
         }
+    }
+
+    // ============================================
+    // LAYER TABLE (Grondopbouw)
+    // ============================================
+
+    function renderLayerTable(ds) {
+        const thead = document.querySelector('#layer-table thead');
+        const tbody = document.querySelector('#layer-table tbody');
+
+        if (!ds.layers || ds.layers.length === 0) {
+            thead.innerHTML = '';
+            tbody.innerHTML = '<tr><td style="padding:8px;color:var(--text-muted)">Geen lagen geïnterpreteerd</td></tr>';
+            return;
+        }
+
+        thead.innerHTML = `<tr>
+            <th>Van</th>
+            <th>Tot</th>
+            <th>Dikte</th>
+            <th>Grondsoort</th>
+            <th>qc gem.</th>
+        </tr>`;
+
+        tbody.innerHTML = ds.layers.map(layer => {
+            const thickness = (layer.endDepth - layer.startDepth).toFixed(2);
+            // Compute average qc for layer
+            const pointsInLayer = ds.data.filter(r => {
+                const d = r.depth !== undefined ? Math.abs(r.depth) : r.length;
+                return d >= layer.startDepth && d <= layer.endDepth && r.qc != null;
+            });
+            const avgQc = pointsInLayer.length > 0
+                ? (pointsInLayer.reduce((s, r) => s + r.qc, 0) / pointsInLayer.length).toFixed(2)
+                : '—';
+
+            return `<tr>
+                <td>${layer.startDepth.toFixed(2)}</td>
+                <td>${layer.endDepth.toFixed(2)}</td>
+                <td>${thickness}</td>
+                <td><span class="layer-color-swatch" style="background:${layer.zone.color}"></span>${layer.zone.name}</td>
+                <td>${avgQc}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    // ============================================
+    // MINI LOCATION MAP
+    // ============================================
+
+    function initMiniMap() {
+        if (miniMap) return;
+
+        const darkTiles = L.tileLayer(
+            'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '',
+                subdomains: 'abcd',
+                maxZoom: 18,
+            }
+        );
+
+        miniMap = L.map('mini-map', {
+            center: [52.1, 5.1],
+            zoom: 8,
+            layers: [darkTiles],
+            zoomControl: false,
+            attributionControl: false,
+            dragging: true,
+            scrollWheelZoom: false,
+        });
+    }
+
+    function updateMiniMap(ds) {
+        const meta = ds.header;
+        let lat, lon;
+
+        if (meta.lat && meta.lon) {
+            lat = parseFloat(meta.lat);
+            lon = parseFloat(meta.lon);
+        } else if (meta.x && meta.y) {
+            const rd = rdToWgs84(parseFloat(meta.x), parseFloat(meta.y));
+            lat = rd.lat;
+            lon = rd.lon;
+        }
+
+        if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
+            clearMiniMap();
+            return;
+        }
+
+        initMiniMap();
+
+        // Remove old marker
+        if (miniMapMarker) {
+            miniMap.removeLayer(miniMapMarker);
+        }
+
+        miniMapMarker = L.marker([lat, lon], {
+            icon: L.divIcon({
+                className: '',
+                html: '<div style="width:12px;height:12px;border-radius:50%;background:#3b82f6;border:2px solid #fff;box-shadow:0 0 6px rgba(59,130,246,0.5);"></div>',
+                iconSize: [12, 12],
+                iconAnchor: [6, 6],
+            })
+        }).addTo(miniMap);
+
+        miniMap.setView([lat, lon], 14);
+        setTimeout(() => miniMap.invalidateSize(), 100);
+    }
+
+    function clearMiniMap() {
+        if (miniMap && miniMapMarker) {
+            miniMap.removeLayer(miniMapMarker);
+            miniMapMarker = null;
+        }
+    }
+
+    // RD to WGS84 (same algorithm as BroMap)
+    function rdToWgs84(x, y) {
+        const x0 = 155000, y0 = 463000;
+        const phi0 = 52.15517440, lam0 = 5.38720621;
+        const dx = (x - x0) * 1e-5;
+        const dy = (y - y0) * 1e-5;
+
+        const lat = phi0 + (
+            3235.65389 * dy - 32.58297 * dx * dx - 0.2475 * dy * dy
+            - 0.84978 * dx * dx * dy - 0.0655 * dy * dy * dy
+            - 0.01709 * dx * dx * dy * dy - 0.00738 * dx
+            + 0.0053 * dx * dx * dx * dx - 0.00039 * dx * dx * dy * dy * dy
+            + 0.00033 * dx * dx * dx * dx * dy - 0.00012 * dx * dy
+        ) / 3600;
+
+        const lon = lam0 + (
+            5260.52916 * dx + 105.94684 * dx * dy + 2.45656 * dx * dy * dy
+            - 0.81885 * dx * dx * dx + 0.05594 * dx * dy * dy * dy
+            - 0.05607 * dx * dx * dx * dy + 0.01199 * dy
+            - 0.00256 * dx * dx * dx * dy * dy + 0.00128 * dx * dy * dy * dy * dy
+            + 0.00022 * dy * dy - 0.00022 * dx * dx + 0.00026 * dx * dx * dx * dx * dx
+        ) / 3600;
+
+        return { lat, lon };
     }
 
     // ============================================
@@ -399,6 +610,94 @@
     }
 
     // ============================================
+    // EXPORT (CSV / GeoJSON)
+    // ============================================
+
+    document.getElementById('btn-export-csv').addEventListener('click', () => {
+        const ds = cptDataSets[activeIndex];
+        if (!ds) { statusInfo.textContent = 'Geen data om te exporteren'; return; }
+
+        const exportCols = ds.columns.filter(c =>
+            ['length', 'depth', 'qc', 'fs', 'rf', 'u2', 'u1', 'u3', 'inclination'].includes(c.key)
+        );
+        const header = exportCols.map(c => `${c.key} (${c.unit})`).join(',');
+        const rows = ds.data.map(row =>
+            exportCols.map(c => {
+                const v = row[c.key];
+                return v !== null && v !== undefined ? v : '';
+            }).join(',')
+        );
+
+        const csv = header + '\n' + rows.join('\n');
+        const filename = (ds.header.name || ds.fileName || 'cpt_data').replace(/\.[^.]+$/, '') + '.csv';
+        downloadFile(csv, filename, 'text/csv');
+        statusInfo.textContent = `CSV geëxporteerd: ${filename}`;
+    });
+
+    document.getElementById('btn-export-geojson').addEventListener('click', () => {
+        const ds = cptDataSets[activeIndex];
+        if (!ds) { statusInfo.textContent = 'Geen data om te exporteren'; return; }
+
+        const meta = ds.header;
+        let lat, lon;
+        if (meta.lat && meta.lon) {
+            lat = parseFloat(meta.lat);
+            lon = parseFloat(meta.lon);
+        } else if (meta.x && meta.y) {
+            const rd = rdToWgs84(parseFloat(meta.x), parseFloat(meta.y));
+            lat = rd.lat;
+            lon = rd.lon;
+        }
+
+        const properties = {
+            name: meta.name || ds.fileName,
+            format: ds.format,
+            testId: meta.testId || '',
+            date: meta.date || '',
+            finalDepth: meta.finalDepth || '',
+            surfaceLevel: meta.surfaceLevel || '',
+            dataPoints: ds.data.length,
+        };
+
+        // Add layer summary
+        if (ds.layers && ds.layers.length > 0) {
+            properties.layers = ds.layers.map(l => ({
+                from: l.startDepth,
+                to: l.endDepth,
+                soilType: l.zone.name,
+                zone: l.zone.zone,
+            }));
+        }
+
+        const geojson = {
+            type: 'FeatureCollection',
+            features: [{
+                type: 'Feature',
+                geometry: lat && lon ? {
+                    type: 'Point',
+                    coordinates: [lon, lat]
+                } : null,
+                properties
+            }]
+        };
+
+        const text = JSON.stringify(geojson, null, 2);
+        const filename = (meta.name || ds.fileName || 'cpt_data').replace(/\.[^.]+$/, '') + '.geojson';
+        downloadFile(text, filename, 'application/geo+json');
+        statusInfo.textContent = `GeoJSON geëxporteerd: ${filename}`;
+    });
+
+    function downloadFile(content, filename, mimeType) {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    // ============================================
     // BRO MAP (always visible)
     // ============================================
 
@@ -412,23 +711,17 @@
         };
     }
 
-    // Initialize map immediately
     initMap();
 
-    // Load area button
     document.getElementById('btn-load-area').addEventListener('click', () => {
         broMap.loadArea(msg => { mapStatus.textContent = msg; });
     });
 
-    // Clear markers
     document.getElementById('btn-map-clear').addEventListener('click', () => {
         broMap.clearMarkers();
         mapStatus.textContent = 'Markers gewist';
     });
 
-    /**
-     * Load a CPT from BRO by its broId (e.g. CPT000000123456).
-     */
     async function loadBroCpt(broId) {
         try {
             const url = `https://publiek.broservices.nl/sr/bro-cptv2/api/v2/objects/${broId}?outputFormat=xml`;
@@ -480,6 +773,5 @@
         statusInfo.textContent = `${ds.header.name || ds.fileName} | ${count} sondering${count > 1 ? 'en' : ''} | ${maxDepth.toFixed(1)} m`;
     }
 
-    // Initial status
     statusInfo.textContent = 'Geen data geladen';
 })();
