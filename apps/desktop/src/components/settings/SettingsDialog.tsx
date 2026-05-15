@@ -285,8 +285,8 @@ function ThemeDropdown({
 }
 
 // ─── About Tab ───────────────────────────────────────────────
-// Pas naam, versie en beschrijving aan via i18n keys
-// in locales/{lang}/settings.json, sectie "about"
+// Open GEO Studio — naam, versie en links staan in i18n keys
+// in locales/{lang}/settings.json, sectie "about".
 // ─────────────────────────────────────────────────────────────
 function AboutTabContent() {
   const { t } = useTranslation("settings");
@@ -295,10 +295,34 @@ function AboutTabContent() {
       <h3>{t("about.appName")}</h3>
       <div style={{ fontSize: 11, lineHeight: 1.8 }}>
         <p><strong>{t("about.version")}:</strong> 0.1.0</p>
-        <p><strong>{t("about.framework")}:</strong> Tauri + React + TypeScript</p>
         <p><strong>{t("about.license")}:</strong> MIT</p>
         <p style={{ marginTop: 8, color: "var(--theme-dialog-content-secondary)" }}>
           {t("about.description")}
+        </p>
+        <p style={{ marginTop: 8 }}>
+          <a
+            href="https://github.com/OpenAEC-Foundation"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "var(--theme-accent)", textDecoration: "none" }}
+          >
+            {t("about.openaecLink")}
+          </a>
+          {" — "}
+          <span style={{ color: "var(--theme-dialog-content-secondary)" }}>
+            {t("about.builtOn")}
+          </span>
+        </p>
+        {/* TODO: replace with the real source repo URL once the project is published. */}
+        <p>
+          <a
+            href="https://github.com/OpenAEC-Foundation/open-geo-studio"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "var(--theme-accent)", textDecoration: "none" }}
+          >
+            {t("about.sourceLink")}
+          </a>
         </p>
       </div>
     </div>
