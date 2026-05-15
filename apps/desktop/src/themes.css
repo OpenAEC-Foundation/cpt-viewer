@@ -21,6 +21,26 @@
    ============================================================ */
 
 /* ────────────────────────────────────────────────────────────
+   OpenAEC Base Palette + Domain Tokens
+   These are theme-independent and used by domain-specific UI
+   (chart curves, map markers, etc.). They live on :root so any
+   theme can override individual tokens if needed.
+   ──────────────────────────────────────────────────────────── */
+:root {
+  /* Base palette (OpenAEC design system §2.1) */
+  --amber: #D97706;          /* Construction Amber */
+  --signal-orange: #EA580C;  /* Signal Orange */
+  --warm-gold: #F59E0B;      /* Warm Gold */
+  --info: #2563EB;           /* Info Blue */
+
+  /* CPT domain curve colors — used by Canvas chart via getComputedStyle */
+  --domain-cpt-qc: var(--amber);          /* qc — cone resistance */
+  --domain-cpt-fs: var(--signal-orange);  /* fs — sleeve friction */
+  --domain-cpt-rf: var(--warm-gold);      /* Rf — friction ratio */
+  --domain-cpt-u2: var(--info);           /* u2 — pore pressure */
+}
+
+/* ────────────────────────────────────────────────────────────
    Light Theme (default) — TRUE LIGHT
    White background, dark text, amber accents
    ──────────────────────────────────────────────────────────── */

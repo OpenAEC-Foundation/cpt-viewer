@@ -9,12 +9,14 @@ import enRibbon from "./locales/en/ribbon.json";
 import enBackstage from "./locales/en/backstage.json";
 import enSettings from "./locales/en/settings.json";
 import enFeedback from "./locales/en/feedback.json";
+import enCpt from "./locales/en/cpt.json";
 // Dutch
 import nlCommon from "./locales/nl/common.json";
 import nlRibbon from "./locales/nl/ribbon.json";
 import nlBackstage from "./locales/nl/backstage.json";
 import nlSettings from "./locales/nl/settings.json";
 import nlFeedback from "./locales/nl/feedback.json";
+import nlCpt from "./locales/nl/cpt.json";
 
 export const LANGUAGES = [
   { code: "auto", name: "Auto-detect" },
@@ -22,15 +24,15 @@ export const LANGUAGES = [
   { code: "nl", name: "Nederlands" },
 ];
 
-const ns = ["common", "ribbon", "backstage", "settings", "feedback"];
+const ns = ["common", "ribbon", "backstage", "settings", "feedback", "cpt"];
 
 i18next
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources: {
-      en: { common: enCommon, ribbon: enRibbon, backstage: enBackstage, settings: enSettings, feedback: enFeedback },
-      nl: { common: nlCommon, ribbon: nlRibbon, backstage: nlBackstage, settings: nlSettings, feedback: nlFeedback },
+      en: { common: enCommon, ribbon: enRibbon, backstage: enBackstage, settings: enSettings, feedback: enFeedback, cpt: enCpt },
+      nl: { common: nlCommon, ribbon: nlRibbon, backstage: nlBackstage, settings: nlSettings, feedback: nlFeedback, cpt: nlCpt },
     },
     ns,
     defaultNS: "common",
