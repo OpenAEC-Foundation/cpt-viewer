@@ -3198,6 +3198,7 @@ dependencies = [
 name = "open-geo-studio"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "cpt-core",
  "lopdf 0.34.0",
  "openaec-core",

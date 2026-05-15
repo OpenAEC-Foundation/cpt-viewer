@@ -17,5 +17,12 @@
   "position": "Position (RD)",
   "top": "Top",
   "bottom": "Bot.",
-  "zone": "Zone"
+  "zone": "Zone",
+  "projectInfo": "Project info",
+  "title": "Title",
+  "client": "Client",
+  "location": "Location",
+  "author": "Author",
+  "save": "Save",
+  "cancel": "Cancel"
 }

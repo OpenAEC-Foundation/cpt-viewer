@@ -2,3 +2,4 @@
 
 pub mod bro_api;
 pub mod cpt;
+pub mod report;

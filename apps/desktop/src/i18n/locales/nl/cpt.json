@@ -17,5 +17,12 @@
   "position": "Positie (RD)",
   "top": "Top",
   "bottom": "Bot.",
-  "zone": "Zone"
+  "zone": "Zone",
+  "projectInfo": "Projectinfo",
+  "title": "Titel",
+  "client": "Opdrachtgever",
+  "location": "Locatie",
+  "author": "Auteur",
+  "save": "Opslaan",
+  "cancel": "Annuleer"
 }

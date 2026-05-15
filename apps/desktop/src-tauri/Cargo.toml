@@ -26,6 +26,7 @@ ttf-parser = "0.25"
 lopdf = "0.34"
 serde_yaml = "0.9"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+chrono = "0.4"
 
 # Path dependencies into crates-warehouse/ (sibling of cpt-viewer/).
 # cpt-core: CPT domain library (parsers, Robertson, layers, report).

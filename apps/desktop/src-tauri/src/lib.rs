@@ -161,6 +161,8 @@ pub fn run() {
             commands::cpt::detect_layers,
             commands::bro_api::fetch_bro_area,
             commands::bro_api::fetch_bro_cpt,
+            commands::report::preview_report,
+            commands::report::generate_report,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

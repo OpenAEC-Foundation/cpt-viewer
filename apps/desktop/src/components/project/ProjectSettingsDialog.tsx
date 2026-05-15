@@ -1,219 +1,82 @@
-import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { getSetting, setSetting } from "../../store";
-import "./ProjectSettingsDialog.css";
+import Modal from "../Modal";
+import { useCptStore } from "../../store/useCptStore";
 
 interface ProjectSettingsDialogProps {
   open: boolean;
   onClose: () => void;
 }
 
-export interface ProjectInfo {
-  name: string;
-  projectNumber: string;
-  engineer: string;
-  company: string;
-  date: string;
-  description: string;
-  notes: string;
-  location: string;
-  latitude?: number;
-  longitude?: number;
-}
-
-interface ErpProject {
-  name: string;
-  project_name: string;
-  customer: string;
-  status: string;
-}
-
-const emptyProject: ProjectInfo = {
-  name: "",
-  projectNumber: "",
-  engineer: "",
-  company: "",
-  date: new Date().toISOString().slice(0, 10),
-  description: "",
-  notes: "",
-  location: "",
-};
-
+/**
+ * Dialog for editing the project metadata used on the PDF cover page.
+ *
+ * Fields are bound directly to the `projectMeta` slice of `useCptStore`;
+ * a re-render of the report preview happens automatically because
+ * `ReportPreview` watches the same slice.
+ */
 export default function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogProps) {
-  const { t } = useTranslation("common");
-  const [project, setProject] = useState<ProjectInfo>(emptyProject);
-  const [erpEnabled, setErpEnabled] = useState(false);
-  const [erpUrl, setErpUrl] = useState("");
-  const [erpSearch, setErpSearch] = useState("");
-  const [erpResults, setErpResults] = useState<ErpProject[]>([]);
-  const [erpLoading, setErpLoading] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    getSetting<ProjectInfo>("projectInfo", emptyProject).then(setProject);
-    getSetting("erpNextUrl", "").then(setErpUrl);
-    getSetting("erpNextEnabled", false).then(setErpEnabled);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
-  const updateField = (field: keyof ProjectInfo, value: string) => {
-    setProject((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleSave = async () => {
-    await setSetting("projectInfo", project);
-    await setSetting("erpNextUrl", erpUrl);
-    await setSetting("erpNextEnabled", erpEnabled);
-    onClose();
-  };
-
-  const handleErpSearch = async () => {
-    if (!erpUrl || !erpSearch.trim()) return;
-    setErpLoading(true);
-    try {
-      const res = await fetch(
-        `${erpUrl}/api/resource/Project?filters=[["status","=","Open"],["name","like","%${erpSearch}%"]]&fields=["name","project_name","customer","status"]&limit_page_length=10`,
-        { headers: { "Content-Type": "application/json" } }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setErpResults(data.data || []);
-      }
-    } catch {
-      setErpResults([]);
-    } finally {
-      setErpLoading(false);
-    }
-  };
-
-  const handleErpSelect = (ep: ErpProject) => {
-    setProject((prev) => ({
-      ...prev,
-      name: ep.project_name || ep.name,
-      projectNumber: ep.name,
-      company: ep.customer || prev.company,
-    }));
-    setErpResults([]);
-    setErpSearch("");
-  };
+  const { t } = useTranslation("cpt");
+  const meta = useCptStore((s) => s.projectMeta);
+  const setMeta = useCptStore((s) => s.setProjectMeta);
 
   return (
-    <div className="proj-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="proj-dialog">
-        <div className="proj-header">
-          <h2>{t("projectSettings.title")}</h2>
-          <button className="proj-close" onClick={onClose}>&times;</button>
+    <Modal open={open} onClose={onClose} title={t("projectInfo", "Projectinfo")} width={560}>
+      <form onSubmit={(e) => { e.preventDefault(); onClose(); }}>
+        <Field label={t("title", "Titel")}
+               value={meta.title}
+               onChange={(v) => setMeta({ title: v })} />
+        <Field label={t("client", "Opdrachtgever")}
+               value={meta.client}
+               onChange={(v) => setMeta({ client: v })} />
+        <Field label={t("location", "Locatie")}
+               value={meta.location}
+               onChange={(v) => setMeta({ location: v })} />
+        <Field label={t("projectNumber", "Projectnummer")}
+               value={meta.project_number}
+               onChange={(v) => setMeta({ project_number: v })} />
+        <Field label={t("author", "Auteur")}
+               value={meta.author}
+               onChange={(v) => setMeta({ author: v })} />
+        <Field type="date"
+               label={t("date", "Datum")}
+               value={meta.date}
+               onChange={(v) => setMeta({ date: v })} />
+        <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" onClick={onClose}>{t("cancel", "Annuleer")}</button>
+          <button type="submit" className="btn-primary">{t("save", "Opslaan")}</button>
         </div>
+      </form>
+    </Modal>
+  );
+}
 
-        <div className="proj-body">
-          {/* ERPNext Integration */}
-          <div className="proj-section">
-            <div className="proj-section-title">
-              <label className="proj-toggle">
-                <input type="checkbox" checked={erpEnabled} onChange={(e) => setErpEnabled(e.target.checked)} />
-                {t("projectSettings.erpNext")}
-              </label>
-            </div>
+interface FieldProps {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+}
 
-            {erpEnabled && (
-              <div className="proj-erp-section">
-                <div className="proj-field">
-                  <label>{t("projectSettings.erpUrl")}</label>
-                  <input
-                    type="url"
-                    value={erpUrl}
-                    onChange={(e) => setErpUrl(e.target.value)}
-                    placeholder="https://erp.example.com"
-                  />
-                </div>
-                <div className="proj-field proj-erp-search">
-                  <label>{t("projectSettings.erpSearch")}</label>
-                  <div className="proj-erp-search-row">
-                    <input
-                      type="text"
-                      value={erpSearch}
-                      onChange={(e) => setErpSearch(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleErpSearch()}
-                      placeholder={t("projectSettings.erpSearchPlaceholder")}
-                    />
-                    <button className="proj-erp-search-btn" onClick={handleErpSearch} disabled={erpLoading}>
-                      {erpLoading ? "..." : t("search")}
-                    </button>
-                  </div>
-                  {erpResults.length > 0 && (
-                    <div className="proj-erp-results">
-                      {erpResults.map((ep) => (
-                        <button key={ep.name} className="proj-erp-result" onClick={() => handleErpSelect(ep)}>
-                          <strong>{ep.project_name || ep.name}</strong>
-                          <span>{ep.customer} &middot; {ep.status}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Project Fields */}
-          <div className="proj-section">
-            <div className="proj-section-title">{t("projectSettings.info")}</div>
-            <div className="proj-fields">
-              <div className="proj-field">
-                <label>{t("projectSettings.name")}</label>
-                <input type="text" value={project.name} onChange={(e) => updateField("name", e.target.value)} />
-              </div>
-              <div className="proj-field">
-                <label>{t("projectSettings.number")}</label>
-                <input type="text" value={project.projectNumber} onChange={(e) => updateField("projectNumber", e.target.value)} />
-              </div>
-              <div className="proj-row">
-                <div className="proj-field">
-                  <label>{t("projectSettings.engineer")}</label>
-                  <input type="text" value={project.engineer} onChange={(e) => updateField("engineer", e.target.value)} />
-                </div>
-                <div className="proj-field">
-                  <label>{t("projectSettings.company")}</label>
-                  <input type="text" value={project.company} onChange={(e) => updateField("company", e.target.value)} />
-                </div>
-              </div>
-              <div className="proj-row">
-                <div className="proj-field">
-                  <label>{t("projectSettings.date")}</label>
-                  <input type="date" value={project.date} onChange={(e) => updateField("date", e.target.value)} />
-                </div>
-                <div className="proj-field">
-                  <label>{t("projectSettings.location")}</label>
-                  <input type="text" value={project.location} onChange={(e) => updateField("location", e.target.value)} />
-                </div>
-              </div>
-              <div className="proj-field">
-                <label>{t("projectSettings.description")}</label>
-                <textarea rows={2} value={project.description} onChange={(e) => updateField("description", e.target.value)} />
-              </div>
-              <div className="proj-field">
-                <label>{t("projectSettings.notes")}</label>
-                <textarea rows={2} value={project.notes} onChange={(e) => updateField("notes", e.target.value)} />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="proj-footer">
-          <button className="proj-btn secondary" onClick={onClose}>{t("cancel")}</button>
-          <button className="proj-btn primary" onClick={handleSave}>{t("save")}</button>
-        </div>
-      </div>
-    </div>
+function Field({ label, value, onChange, type = "text" }: FieldProps) {
+  return (
+    <label style={{ display: "block", marginBottom: 12 }}>
+      <span style={{ display: "block", fontSize: "0.875rem", marginBottom: 4 }}>{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: "100%",
+          padding: "8px 12px",
+          border: "1px solid var(--theme-border, #D6D3D1)",
+          borderRadius: 8,
+          fontFamily: "var(--font-ui, Inter)",
+          fontSize: "0.875rem",
+          background: "var(--theme-input-bg, #fff)",
+          color: "var(--theme-text, inherit)",
+          boxSizing: "border-box",
+        }}
+      />
+    </label>
   );
 }
