@@ -1,0 +1,246 @@
+.welcome-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--theme-dialog-overlay);
+  animation: welcomeFadeIn 0.3s ease;
+}
+
+@keyframes welcomeFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.welcome-dialog {
+  background: var(--theme-dialog-bg);
+  border: 1px solid var(--theme-dialog-border);
+  border-radius: 12px;
+  box-shadow: var(--theme-dialog-shadow);
+  width: 640px;
+  max-width: 90vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: welcomeSlideUp 0.3s ease;
+}
+
+@keyframes welcomeSlideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.welcome-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 28px 16px;
+  border-bottom: 1px solid var(--theme-dialog-section-border);
+}
+
+.welcome-logo {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+}
+
+.welcome-logo svg {
+  width: 100%;
+  height: 100%;
+}
+
+.welcome-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--theme-accent);
+  margin: 0;
+}
+
+.welcome-subtitle {
+  font-size: 12px;
+  color: var(--theme-dialog-content-secondary);
+  margin: 2px 0 0;
+}
+
+.welcome-body {
+  display: flex;
+  gap: 24px;
+  padding: 20px 28px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.welcome-actions,
+.welcome-recent {
+  flex: 1;
+}
+
+.welcome-body h2 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--theme-accent);
+  margin: 0 0 12px;
+}
+
+.welcome-action-btn {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  background: var(--theme-accent-soft);
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: 8px;
+  color: var(--theme-text);
+  cursor: default;
+  text-align: left;
+  font-family: inherit;
+  margin-bottom: 8px;
+  transition: all 0.15s ease;
+}
+
+.welcome-action-btn:hover {
+  background: var(--theme-hover-strong);
+  border-color: var(--theme-accent);
+}
+
+.welcome-action-btn.primary {
+  border-color: var(--theme-accent);
+  background: rgba(217, 119, 6, 0.12);
+}
+
+.welcome-action-btn svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  stroke: var(--theme-accent);
+}
+
+.welcome-action-btn div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.welcome-action-btn strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--theme-text);
+}
+
+.welcome-action-btn span {
+  font-size: 11px;
+  color: var(--theme-text-secondary);
+}
+
+.welcome-action-btn:hover strong {
+  color: var(--theme-accent);
+}
+
+.welcome-empty {
+  font-size: 12px;
+  color: var(--theme-text-faint);
+  font-style: italic;
+}
+
+.welcome-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.welcome-recent-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--theme-text);
+  cursor: default;
+  font-family: inherit;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.welcome-recent-item:hover {
+  background: var(--theme-hover);
+}
+
+.welcome-recent-item svg {
+  flex-shrink: 0;
+  stroke: var(--theme-text-muted);
+}
+
+.welcome-recent-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.welcome-recent-name {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.welcome-recent-path {
+  font-size: 10px;
+  color: var(--theme-text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.welcome-recent-date {
+  font-size: 10px;
+  color: var(--theme-text-faint);
+  flex-shrink: 0;
+}
+
+.welcome-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 28px;
+  border-top: 1px solid var(--theme-dialog-section-border);
+}
+
+.welcome-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--theme-text-secondary);
+  cursor: default;
+}
+
+.welcome-checkbox input {
+  accent-color: var(--theme-accent);
+}
+
+.welcome-skip-btn {
+  padding: 6px 16px;
+  background: var(--theme-btn-secondary-bg);
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: 4px;
+  color: var(--theme-text);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: default;
+  transition: all 0.15s ease;
+}
+
+.welcome-skip-btn:hover {
+  background: var(--theme-btn-secondary-hover-bg);
+  border-color: var(--theme-accent);
+  color: var(--theme-accent);
+}

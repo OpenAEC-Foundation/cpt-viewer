@@ -1,0 +1,223 @@
+.ext-manager {
+  max-width: 560px;
+  padding: 24px 32px;
+}
+
+.ext-manager-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--theme-accent);
+  margin: 0 0 16px;
+}
+
+.ext-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--theme-border-subtle);
+}
+
+.ext-tab {
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--theme-text-secondary);
+  cursor: default;
+  transition: all 0.12s;
+}
+
+.ext-tab:hover {
+  color: var(--theme-accent);
+}
+
+.ext-tab.active {
+  color: var(--theme-accent);
+  border-bottom-color: var(--theme-accent);
+}
+
+.ext-search-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.ext-search {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--theme-dialog-input-bg);
+  border: 1px solid var(--theme-dialog-input-border);
+  border-radius: 4px;
+  color: var(--theme-dialog-input-text);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+
+.ext-search:focus {
+  border-color: var(--theme-accent);
+}
+
+.ext-upload-btn {
+  padding: 6px 10px;
+  background: var(--theme-btn-secondary-bg);
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: 4px;
+  color: var(--theme-text);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: default;
+  transition: all 0.12s;
+}
+
+.ext-upload-btn:hover {
+  background: var(--theme-btn-secondary-hover-bg);
+  border-color: var(--theme-accent);
+  color: var(--theme-accent);
+}
+
+.ext-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ext-card {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 14px;
+  background: var(--theme-accent-soft);
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: 6px;
+  transition: border-color 0.12s;
+}
+
+.ext-card:hover {
+  border-color: var(--theme-accent);
+}
+
+.ext-card.disabled {
+  opacity: 0.55;
+}
+
+.ext-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ext-category-badge {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: #000;
+}
+
+.ext-version {
+  font-size: 10px;
+  color: var(--theme-text-faint);
+  margin-left: auto;
+}
+
+.ext-card-body {
+  margin-bottom: 8px;
+}
+
+.ext-name {
+  font-size: 13px;
+  color: var(--theme-text);
+}
+
+.ext-desc {
+  font-size: 11px;
+  color: var(--theme-text-secondary);
+  margin: 2px 0 4px;
+  line-height: 1.4;
+}
+
+.ext-author {
+  font-size: 10px;
+  color: var(--theme-text-faint);
+}
+
+.ext-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Toggle switch */
+.ext-toggle {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  cursor: default;
+}
+
+.ext-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.ext-toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--theme-text-faint);
+  border-radius: 20px;
+  transition: background 0.2s;
+}
+
+.ext-toggle-slider::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.ext-toggle input:checked + .ext-toggle-slider {
+  background: var(--theme-accent);
+}
+
+.ext-toggle input:checked + .ext-toggle-slider::before {
+  transform: translateX(16px);
+}
+
+.ext-installed-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--theme-accent);
+  padding: 2px 8px;
+  border: 1px solid var(--theme-accent);
+  border-radius: 3px;
+}
+
+.ext-install-btn {
+  padding: 4px 12px;
+  background: var(--theme-btn-primary-bg);
+  border: none;
+  border-radius: 4px;
+  color: var(--theme-btn-primary-text);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: default;
+  transition: background 0.12s;
+}
+
+.ext-install-btn:hover {
+  background: var(--theme-btn-primary-hover-bg);
+}

@@ -1,0 +1,311 @@
+/* Feedback content padding */
+.feedback-content {
+  padding: 12px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.feedback-section {
+  margin-bottom: 12px;
+}
+
+.feedback-section:last-child {
+  margin-bottom: 0;
+}
+
+/* Email & Name fields */
+.feedback-field-row {
+  margin-bottom: 8px;
+}
+
+.feedback-field-label {
+  display: block;
+  font-size: 11px;
+  color: var(--theme-dialog-content-text);
+  margin-bottom: 3px;
+}
+
+.feedback-required {
+  color: var(--theme-danger-color);
+}
+
+.feedback-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 6px;
+  font-size: 12px;
+  font-family: inherit;
+  border: 1px solid var(--theme-dialog-input-border);
+  border-radius: 0;
+  background: var(--theme-dialog-input-bg);
+  color: var(--theme-dialog-input-text);
+  outline: none;
+}
+
+.feedback-input:focus {
+  border-color: var(--theme-focus-color);
+}
+
+/* Categories */
+.feedback-categories {
+  display: flex;
+  gap: 4px;
+}
+
+.feedback-category {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  border: 1px solid var(--theme-dialog-input-border);
+  border-radius: 2px;
+  background: var(--theme-dialog-input-bg);
+  color: var(--theme-dialog-content-text);
+  cursor: default;
+  transition: all 0.1s;
+}
+
+.feedback-category:hover {
+  background: var(--theme-dialog-tab-hover);
+}
+
+.feedback-category.active {
+  border-color: var(--theme-focus-color);
+  background: var(--theme-dialog-tab-active-bg);
+  color: var(--theme-dialog-tab-active-text);
+  box-shadow: inset 0 0 0 1px var(--theme-focus-color);
+}
+
+/* Textarea */
+.feedback-textarea {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  border: 1px solid var(--theme-dialog-input-border);
+  border-radius: 0;
+  background: var(--theme-dialog-input-bg);
+  color: var(--theme-dialog-input-text);
+  outline: none;
+  resize: vertical;
+  min-height: 80px;
+  box-sizing: border-box;
+  user-select: text;
+}
+
+.feedback-textarea:focus {
+  border-color: var(--theme-focus-color);
+}
+
+.feedback-char-count {
+  font-size: 10px;
+  color: var(--theme-dialog-content-secondary);
+  text-align: right;
+  margin-top: 2px;
+}
+
+.feedback-char-count.warning {
+  color: var(--theme-danger-color);
+}
+
+/* Image attachments */
+.feedback-images-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.feedback-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  border: 1px solid var(--theme-dialog-input-border);
+  border-radius: 2px;
+  background: var(--theme-dialog-input-bg);
+  color: var(--theme-dialog-content-text);
+  cursor: default;
+  transition: background 0.1s;
+}
+
+.feedback-attach-btn:hover:not(:disabled) {
+  background: var(--theme-dialog-tab-hover);
+}
+
+.feedback-attach-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.feedback-image-limit {
+  font-size: 10px;
+  color: var(--theme-dialog-content-secondary);
+}
+
+.feedback-previews {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.feedback-preview {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--theme-dialog-input-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.feedback-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.feedback-preview-remove {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  font-size: 12px;
+  line-height: 1;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 2px;
+}
+
+.feedback-preview-remove:hover {
+  background: var(--theme-danger-color);
+}
+
+/* Sentiment */
+.feedback-sentiment-label {
+  font-size: 11px;
+  color: var(--theme-dialog-content-text);
+  margin-bottom: 6px;
+}
+
+.feedback-sentiments {
+  display: flex;
+  gap: 6px;
+}
+
+.feedback-sentiment {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-family: inherit;
+  border: 1px solid var(--theme-dialog-input-border);
+  border-radius: 2px;
+  background: var(--theme-dialog-input-bg);
+  color: var(--theme-dialog-content-text);
+  cursor: default;
+  transition: all 0.1s;
+}
+
+.feedback-sentiment:hover {
+  background: var(--theme-dialog-tab-hover);
+}
+
+.feedback-sentiment.active {
+  border-color: var(--theme-focus-color);
+  background: var(--theme-dialog-tab-active-bg);
+}
+
+.feedback-sentiment-emoji {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.feedback-sentiment-text {
+  font-size: 11px;
+}
+
+/* Error */
+.feedback-error {
+  font-size: 11px;
+  color: var(--theme-danger-color);
+  padding: 4px 0;
+}
+
+/* Success */
+.feedback-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px 12px;
+  gap: 8px;
+}
+
+.feedback-success-emoji {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.feedback-success h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--theme-dialog-content-text);
+}
+
+.feedback-success p {
+  font-size: 11px;
+  color: var(--theme-dialog-content-secondary);
+  margin: 0;
+}
+
+/* Buttons */
+.feedback-btn {
+  padding: 5px 20px;
+  border: 1px solid var(--theme-dialog-input-border);
+  border-radius: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  font-family: inherit;
+  cursor: default;
+  transition: background 0.1s, border-color 0.1s;
+  min-width: 75px;
+}
+
+.feedback-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.feedback-btn-primary {
+  background: var(--theme-btn-primary-bg);
+  color: var(--theme-btn-primary-text);
+  border-color: var(--theme-btn-primary-border);
+  box-shadow: inset 0 0 0 1px var(--theme-btn-primary-border);
+}
+
+.feedback-btn-primary:hover:not(:disabled) {
+  background: var(--theme-btn-primary-hover-bg);
+  color: var(--theme-btn-primary-hover-text);
+  border-color: var(--theme-btn-primary-border);
+}
+
+.feedback-btn-secondary {
+  background: var(--theme-btn-secondary-bg);
+  color: var(--theme-btn-secondary-text);
+}
+
+.feedback-btn-secondary:hover {
+  background: var(--theme-btn-secondary-hover-bg);
+  border-color: var(--theme-btn-secondary-hover-border);
+}

@@ -1,0 +1,12 @@
+.three-viewer-container {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: #1a1a2e;
+}
+
+.three-viewer-container canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
