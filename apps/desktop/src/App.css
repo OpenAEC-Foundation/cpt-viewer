@@ -581,3 +581,17 @@ body,
 .sbt-name {
   flex: 1;
 }
+
+/* ───────────────────────────────────────────────────────────────────
+   Map view (Leaflet + PDOK BRT)
+   ─────────────────────────────────────────────────────────────────── */
+.map-view-wrap { width: 100%; height: 100%; position: relative; }
+.map-view-container { width: 100%; height: 100%; }
+.map-status {
+  position: absolute; left: 12px; bottom: 12px;
+  background: var(--theme-bg, white); color: var(--theme-text, #36363E);
+  border: 1px solid var(--theme-border, #E7E5E4);
+  border-radius: 4px; padding: 6px 10px;
+  font: 500 0.75rem var(--font-code, "JetBrains Mono");
+  z-index: 1000; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}

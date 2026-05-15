@@ -69,8 +69,10 @@ export default function Ribbon({ onFileTabClick, onProjectSettingsClick, onViewC
 
     // Switch main content view based on tab.
     // - rapport tab shows the report preview (full-width).
-    // - start / kaart use the default view (chart + map; wired in Tasks 7-9).
+    // - kaart tab shows the map (full-width).
+    // - start tab uses the default view (chart).
     if (newTab === "rapport") onViewChange("report");
+    else if (newTab === "kaart") onViewChange("map");
     else onViewChange("default");
   }, [activeTab, onViewChange]);
 

@@ -12,6 +12,7 @@ import { StartSidebar } from "./components/welcome/StartSidebar";
 import ProjectSettingsDialog from "./components/project/ProjectSettingsDialog";
 import ReportPreview from "./components/panels/ReportPreview";
 import ChartView from "./components/panels/ChartView";
+import MapView from "./components/panels/MapView";
 import LeftPanel from "./components/panels/LeftPanel";
 import RightPanel from "./components/panels/RightPanel";
 import { getDetachedParams, useWindowManager } from "./hooks/useWindowManager";
@@ -178,13 +179,14 @@ function App() {
   }, []);
 
   // Full-width views hide the side panels
-  const isFullWidthView = activeView === "report";
+  const isFullWidthView = activeView === "report" || activeView === "map";
 
   const renderMainContent = () => {
     switch (activeView) {
       case "report":
         return <ReportPreview />;
-      // case "map":  return <MapView />;   // wired in Task 9
+      case "map":
+        return <MapView />;
       default:
         return <ChartView />;
     }
