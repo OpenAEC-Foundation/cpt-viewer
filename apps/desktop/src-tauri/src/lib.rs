@@ -163,6 +163,8 @@ pub fn run() {
             commands::bro_api::fetch_bro_cpt,
             commands::report::preview_report,
             commands::report::generate_report,
+            commands::export::export_csv,
+            commands::export::export_geojson,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

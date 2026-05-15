@@ -40,6 +40,10 @@
   "extInstallBtn": "Installeren",
   "exportPanel": {
     "title": "Exporteren",
+    "asCsv": "CSV (actieve sondering)",
+    "asCsvDesc": "Exporteer meetwaarden van de actieve sondering naar CSV",
+    "asGeoJson": "GeoJSON (alle sonderingen)",
+    "asGeoJsonDesc": "Exporteer locaties van alle sonderingen als GeoJSON (WGS84)",
     "asPdf": "Exporteren als PDF",
     "asPdfDesc": "Sla het huidige document op als een PDF-bestand",
     "asImage": "Exporteren als afbeelding",

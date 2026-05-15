@@ -40,6 +40,10 @@
   "extInstallBtn": "Install",
   "exportPanel": {
     "title": "Export",
+    "asCsv": "CSV (active CPT)",
+    "asCsvDesc": "Export measurements of the active CPT as CSV",
+    "asGeoJson": "GeoJSON (all CPTs)",
+    "asGeoJsonDesc": "Export locations of all CPTs as GeoJSON (WGS84)",
     "asPdf": "Export as PDF",
     "asPdfDesc": "Save the current document as a PDF file",
     "asImage": "Export as Image",

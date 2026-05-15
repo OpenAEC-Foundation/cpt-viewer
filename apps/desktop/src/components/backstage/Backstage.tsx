@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { useRecentFiles, type RecentFile } from "../../hooks/useRecentFiles";
+import { useCptStore } from "../../store/useCptStore";
 import ExtensionManagerPanel from "./ExtensionManagerPanel";
 import "./Backstage.css";
 
@@ -455,48 +458,94 @@ function OpenPanel({
 
 function ExportPanel() {
   const { t } = useTranslation("backstage");
+  const activeId = useCptStore((s) => s.activeCptId);
+  const cptIds = useCptStore((s) => Array.from(s.cpts.keys()));
+  const hasActive = activeId != null;
+  const hasAny = cptIds.length > 0;
+
+  async function exportCsv() {
+    if (!activeId) return;
+    const dst = await save({
+      defaultPath: `${activeId}.csv`,
+      filters: [{ name: "CSV", extensions: ["csv"] }],
+    });
+    if (!dst) return;
+    try {
+      await invoke("export_csv", { cptId: activeId, path: dst });
+    } catch (e) {
+      console.error("export_csv failed", e);
+    }
+  }
+
+  async function exportGeoJson() {
+    if (cptIds.length === 0) return;
+    const dst = await save({
+      defaultPath: "cpt-locations.geojson",
+      filters: [{ name: "GeoJSON", extensions: ["geojson", "json"] }],
+    });
+    if (!dst) return;
+    try {
+      await invoke("export_geojson", { cptIds, path: dst });
+    } catch (e) {
+      console.error("export_geojson failed", e);
+    }
+  }
+
   return (
     <div className="bs-export-panel">
       <h2 className="bs-export-title">{t("exportPanel.title")}</h2>
       <div className="bs-export-cards">
-        <div className="bs-export-card">
+        <button
+          type="button"
+          className="bs-export-card"
+          onClick={() => void exportCsv()}
+          disabled={!hasActive}
+          style={{
+            cursor: hasActive ? "pointer" : "not-allowed",
+            opacity: hasActive ? 1 : 0.5,
+            textAlign: "left",
+            font: "inherit",
+            color: "inherit",
+            width: "100%",
+          }}
+        >
           <div className="bs-export-card-icon">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
               <path d="M14 2v6h6" />
+              <path d="M8 13h2M8 17h2M14 13h2M14 17h2" />
             </svg>
           </div>
           <div className="bs-export-card-info">
-            <h3>{t("exportPanel.asPdf")}</h3>
-            <p>{t("exportPanel.asPdfDesc")}</p>
+            <h3>{t("exportPanel.asCsv")}</h3>
+            <p>{t("exportPanel.asCsvDesc")}</p>
           </div>
-        </div>
-        <div className="bs-export-card">
+        </button>
+        <button
+          type="button"
+          className="bs-export-card"
+          onClick={() => void exportGeoJson()}
+          disabled={!hasAny}
+          style={{
+            cursor: hasAny ? "pointer" : "not-allowed",
+            opacity: hasAny ? 1 : 0.5,
+            textAlign: "left",
+            font: "inherit",
+            color: "inherit",
+            width: "100%",
+          }}
+        >
           <div className="bs-export-card-icon">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
-              <polyline points="21 15 16 10 5 21" />
+              <circle cx="12" cy="12" r="10" />
+              <path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10A15.3 15.3 0 0112 2z" />
             </svg>
           </div>
           <div className="bs-export-card-info">
-            <h3>{t("exportPanel.asImage")}</h3>
-            <p>{t("exportPanel.asImageDesc")}</p>
+            <h3>{t("exportPanel.asGeoJson")}</h3>
+            <p>{t("exportPanel.asGeoJsonDesc")}</p>
           </div>
-        </div>
-        <div className="bs-export-card">
-          <div className="bs-export-card-icon">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-          </div>
-          <div className="bs-export-card-info">
-            <h3>{t("exportPanel.asHtml")}</h3>
-            <p>{t("exportPanel.asHtmlDesc")}</p>
-          </div>
-        </div>
+        </button>
       </div>
     </div>
   );
