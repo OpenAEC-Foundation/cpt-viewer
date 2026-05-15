@@ -23,6 +23,12 @@
     "opener:default",
     "store:default",
     "os:default",
-    "dialog:default"
+    "dialog:default",
+    "fs:default",
+    "fs:allow-read-text-file",
+    {
+      "identifier": "fs:scope",
+      "allow": [{ "path": "**" }]
+    }
   ]
 }
