@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import TitleBar from "./components/TitleBar";
 import Ribbon from "./components/ribbon/Ribbon";
@@ -10,14 +10,11 @@ import FeedbackDialog from "./components/feedback/FeedbackDialog";
 import WelcomeScreen from "./components/welcome/WelcomeScreen";
 import { StartSidebar } from "./components/welcome/StartSidebar";
 import ProjectSettingsDialog from "./components/project/ProjectSettingsDialog";
-import IfcViewerPanel from "./components/panels/IfcViewerPanel";
 import ReportPreview from "./components/panels/ReportPreview";
 import { getDetachedParams, useWindowManager } from "./hooks/useWindowManager";
 import { getSetting, setSetting } from "./store";
 import "./themes.css";
 import "./App.css";
-
-const ThreeViewer = lazy(() => import("./components/panels/ThreeViewer"));
 
 /**
  * Detached window — shows only one view, no ribbon/backstage/etc.
@@ -39,16 +36,8 @@ function DetachedApp({ view, title }: { view: string; title: string }) {
 
   const renderView = () => {
     switch (view) {
-      case "ifc":
-        return <IfcViewerPanel />;
       case "report":
         return <ReportPreview />;
-      case "viewer":
-        return (
-          <Suspense fallback={<div className="placeholder"><p>Loading 3D Viewer...</p></div>}>
-            <ThreeViewer />
-          </Suspense>
-        );
       default:
         return <div className="placeholder"><p>Detached view</p></div>;
     }
@@ -185,21 +174,13 @@ function App() {
     document.addEventListener("mouseup", handleMouseUp);
   }, []);
 
-  // Full-width views (3D viewer, IFC viewer) hide the side panels
-  const isFullWidthView = activeView === "viewer" || activeView === "ifc" || activeView === "report";
+  // Full-width views hide the side panels
+  const isFullWidthView = activeView === "report";
 
   const renderMainContent = () => {
     switch (activeView) {
-      case "ifc":
-        return <IfcViewerPanel />;
       case "report":
         return <ReportPreview />;
-      case "viewer":
-        return (
-          <Suspense fallback={<div className="placeholder"><p>Loading 3D Viewer...</p></div>}>
-            <ThreeViewer />
-          </Suspense>
-        );
       default:
         return (
           <div className="placeholder">

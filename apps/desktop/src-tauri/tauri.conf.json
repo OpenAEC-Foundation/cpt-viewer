@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "open-template",
+  "productName": "Open GEO Studio",
   "version": "0.1.0",
-  "identifier": "com.impertio.open-template",
+  "identifier": "foundation.openaec.opengeostudio",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:3020",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Open Template",
+        "title": "Open GEO Studio",
         "width": 1000,
         "height": 700,
         "minWidth": 600,

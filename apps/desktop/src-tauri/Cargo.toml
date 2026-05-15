@@ -1,12 +1,12 @@
 [package]
-name = "open-template"
+name = "open-geo-studio"
 version = "0.1.0"
 description = "Open Template - A Tauri App"
 authors = ["Impertio"]
 edition = "2021"
 
 [lib]
-name = "open_template_lib"
+name = "open_geo_studio_lib"
 crate-type = ["staticlib", "rlib"]
 
 [build-dependencies]
