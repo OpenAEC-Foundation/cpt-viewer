@@ -1,14 +1,25 @@
-# CPT Viewer
+# Open GEO Studio
 
-Interactive viewer for geotechnical Cone Penetration Test (CPT) data.
+Desktop application for working with Dutch CPT (Cone Penetration Test) data — open GEF and BRO-XML files, visualize, classify (Robertson 1990 SBT), and generate professional PDF reports in OpenAEC house style.
 
-## Features
+## Status
 
-- Supports GEF and BRO-XML file formats
-- Soil classification via Robertson method
-- Side-by-side comparison of multiple CPTs
-- PDOK map integration for location visualization
+In active development. The previous vanilla-JS web viewer lives in `_archive/vanilla-js/` as a reference.
 
-## Tech Stack
+## Repos involved
 
-Vanilla JavaScript, HTML5 Canvas
+- This repo — Tauri+React desktop app (in `apps/desktop/`)
+- [crates-warehouse](https://github.com/OpenAEC-Foundation/crates-warehouse) — `cpt-core` Rust crate (parsers, Robertson, report builder)
+- [OpenAEC-Foundation/OpenAEC_stijlbook](https://github.com/OpenAEC-Foundation/OpenAEC_stijlbook) — design tokens and component reference
+
+## Development
+
+```bash
+cd apps/desktop
+npm install
+npm run tauri dev
+```
+
+## License
+
+MIT
