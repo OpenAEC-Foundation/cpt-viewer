@@ -25,7 +25,10 @@ ttf-parser = "0.25"
 lopdf = "0.34"
 serde_yaml = "0.9"
 
-# OpenAEC report engine — path dependency to the workspace at
-# C:\Users\rickd\Documents\GitHub\openaec-reports\rust\
-# Provides the production-grade PDF generator (V1/V2 schema).
-openaec-core = { path = "../../../../openaec-reports/rust/crates/openaec-core" }
+# Path dependencies into crates-warehouse/ (sibling of cpt-viewer/).
+# cpt-core: CPT domain library (parsers, Robertson, layers, report).
+# openaec-core: production-grade PDF generator (V1/V2 schema).
+# openaec-engine: PDF rendering engine.
+cpt-core       = { path = "../../../../crates-warehouse/cpt-core" }
+openaec-core   = { path = "../../../../crates-warehouse/openaec-core" }
+openaec-engine = { path = "../../../../crates-warehouse/openaec-engine" }

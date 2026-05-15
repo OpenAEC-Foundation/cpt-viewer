@@ -1,10 +1,13 @@
+mod commands;
 mod mcp;
 mod pdf;
+mod state;
 
 use pdf::brand::BrandConfig;
 use pdf::engine::ReportEngine;
 use pdf::model::{ReportData, TemplateInfo, TenantInfo};
 use pdf::tenant::TenantManager;
+use state::AppState as CptAppState;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -141,6 +144,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
+        .manage(CptAppState::default())
         .invoke_handler(tauri::generate_handler![
             greet,
             list_tenants,
@@ -150,6 +154,9 @@ pub fn run() {
             save_pdf,
             engine_generate_pdf,
             engine_save_pdf,
+            commands::cpt::open_cpt,
+            commands::cpt::close_cpt,
+            commands::cpt::list_cpts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
