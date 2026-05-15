@@ -1,0 +1,46 @@
+brand:
+  name: "OpenAEC Foundation"
+  short_name: "OpenAEC"
+  tagline: "Build free. Build together."
+  secondary_tagline: "Free and open-source tools for the built environment."
+
+colors:
+  primary: "#D97706"          # Construction Amber
+  secondary: "#36363E"        # Deep Forge
+  accent: "#EA580C"           # Signal Orange
+  warm_gold: "#F59E0B"        # Warm Gold
+  scaffold_gray: "#A1A1AA"    # Scaffold Gray
+  background_light: "#FAFAF9" # Blueprint White
+  background_card: "#F5F5F4"  # Concrete
+  background_dark: "#2A2A32"  # Night Build
+  text_dark: "#36363E"
+  text_light: "#FAFAF9"
+  text_muted: "#6B6B75"
+  success: "#16A34A"
+  error: "#DC2626"
+  info: "#2563EB"
+
+fonts:
+  heading: "SpaceGrotesk-Bold"
+  subheading: "SpaceGrotesk-Medium"
+  body: "Inter-Regular"
+  body_medium: "Inter-Medium"
+  body_bold: "Inter-SemiBold"
+  mono: "JetBrainsMono-Regular"
+
+font_files:
+  SpaceGrotesk-Bold: "fonts/SpaceGrotesk-Bold.ttf"
+  SpaceGrotesk-Medium: "fonts/SpaceGrotesk-Medium.ttf"
+  Inter-Regular: "fonts/Inter-Regular.ttf"
+  Inter-Medium: "fonts/Inter-Medium.ttf"
+  Inter-SemiBold: "fonts/Inter-SemiBold.ttf"
+  JetBrainsMono-Regular: "fonts/JetBrainsMono-Regular.ttf"
+
+margins:
+  top_mm: 20
+  bottom_mm: 20
+  left_mm: 20
+  right_mm: 20
+
+gradient:
+  accent_strip: ["#D97706", "#F59E0B", "#EA580C"]

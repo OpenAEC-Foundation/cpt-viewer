@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Open GEO Studio",
+  "version": "0.1.0",
+  "identifier": "foundation.openaec.opengeostudio",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:3020",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Open GEO Studio",
+        "width": 1000,
+        "height": 700,
+        "minWidth": 600,
+        "minHeight": 400,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": false,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "dmg", "deb", "appimage"],
+    "resources": {
+      "tenants/**/*": "tenants/"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "installerIcon": "icons/icon.ico"
+      }
+    }
+  }
+}

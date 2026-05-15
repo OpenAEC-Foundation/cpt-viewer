@@ -1,0 +1,37 @@
+[package]
+name = "open-geo-studio"
+version = "0.1.0"
+description = "Open Template - A Tauri App"
+authors = ["Impertio"]
+edition = "2021"
+
+[lib]
+name = "open_geo_studio_lib"
+crate-type = ["staticlib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["image-png"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-store = "2.4.2"
+tauri-plugin-os = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+pdf-writer = "0.13"
+ttf-parser = "0.25"
+lopdf = "0.34"
+serde_yaml = "0.9"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+chrono = "0.4"
+
+# Path dependencies into crates-warehouse/ (sibling of cpt-viewer/).
+# cpt-core: CPT domain library (parsers, Robertson, layers, report).
+# openaec-core: production-grade PDF generator (V1/V2 schema).
+# openaec-engine: PDF rendering engine.
+cpt-core       = { path = "../../../../crates-warehouse/cpt-core" }
+openaec-core   = { path = "../../../../crates-warehouse/openaec-core" }
+openaec-engine = { path = "../../../../crates-warehouse/openaec-engine" }

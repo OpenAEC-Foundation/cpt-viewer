@@ -1,0 +1,31 @@
+{
+  "title": "Instellingen",
+  "resetToDefaults": "Standaardwaarden herstellen",
+  "resetConfirm": "Weet je zeker dat je alle instellingen terug wilt zetten naar de standaardwaarden?",
+  "tabs": {
+    "general": "Algemeen",
+    "appearance": "Uiterlijk",
+    "about": "Over"
+  },
+  "general": {
+    "application": "Applicatie",
+    "language": "Taal"
+  },
+  "appearance": {
+    "theme": "Thema",
+    "light": "Licht",
+    "forge": "Forge (donker)",
+    "dark": "OpenAEC (donker)",
+    "blueprint": "Blueprint",
+    "contrast": "Hoog contrast"
+  },
+  "about": {
+    "appName": "Open GEO Studio",
+    "version": "Versie",
+    "license": "Licentie",
+    "description": "Desktop viewer en rapportgenerator voor Nederlandse CPT-data (sondering). Gebouwd op de OpenAEC Foundation visuele identiteit.",
+    "openaecLink": "OpenAEC Foundation",
+    "builtOn": "huisstijl en kernbibliotheken",
+    "sourceLink": "Broncode"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "title": "Settings",
+  "resetToDefaults": "Reset to Defaults",
+  "resetConfirm": "Are you sure you want to reset all settings to their default values?",
+  "tabs": {
+    "general": "General",
+    "appearance": "Appearance",
+    "about": "About"
+  },
+  "general": {
+    "application": "Application",
+    "language": "Language"
+  },
+  "appearance": {
+    "theme": "Theme",
+    "light": "Light",
+    "forge": "Forge (dark)",
+    "dark": "OpenAEC (dark)",
+    "blueprint": "Blueprint",
+    "contrast": "High contrast"
+  },
+  "about": {
+    "appName": "Open GEO Studio",
+    "version": "Version",
+    "license": "License",
+    "description": "Desktop viewer and report generator for Dutch CPT (Cone Penetration Test) data. Built on the OpenAEC Foundation visual identity.",
+    "openaecLink": "OpenAEC Foundation",
+    "builtOn": "visual identity and core libraries",
+    "sourceLink": "Source code"
+  }
+}

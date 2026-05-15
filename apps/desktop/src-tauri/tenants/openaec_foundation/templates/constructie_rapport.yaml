@@ -1,0 +1,292 @@
+name: "Constructietekening"
+description: "Standaard constructie rapport met tekenkader"
+format: A3
+orientation: landscape
+
+# Page dimensions (A3 landscape: 420 x 297 mm)
+page:
+  width_mm: 420
+  height_mm: 297
+
+page_types:
+  # ============================================
+  # VOORBLAD — Cover page with geometric elements
+  # ============================================
+  voorblad:
+    border:
+      margin_mm: 7
+      stroke_width_pt: 1.0
+      color: "$secondary"
+
+    zones:
+      # Amber geometric triangle top-left
+      - type: rect
+        x_mm: 0
+        y_mm: 0
+        w_mm: 115
+        h_mm: 115
+        fill: "$primary"
+        clip: triangle_tl
+
+      # Amber geometric triangle bottom-right
+      - type: rect
+        x_mm: 348
+        y_mm: 225
+        w_mm: 72
+        h_mm: 72
+        fill: "$primary"
+        clip: triangle_br
+
+      # Document type title
+      - type: text
+        bind: "drawing_type"
+        x_mm: 25
+        y_mm: 75
+        font: heading
+        size: 36
+        color: "$secondary"
+        max_width_mm: 200
+
+      # Drawing area outline
+      - type: rect
+        x_mm: 25
+        y_mm: 65
+        w_mm: 210
+        h_mm: 130
+        stroke: "#D4D4D4"
+        stroke_width_pt: 1.0
+
+      # Right info panel - Architect
+      - type: text
+        static: "ARCHITECT / ONTWERPER"
+        x_mm: 270
+        y_mm: 68
+        font: mono
+        size: 6
+        color: "$primary"
+
+      - type: text
+        bind: "architect"
+        x_mm: 270
+        y_mm: 74
+        font: body_medium
+        size: 11
+        color: "$secondary"
+
+      # Right info panel - Client
+      - type: text
+        static: "OPDRACHTGEVER"
+        x_mm: 270
+        y_mm: 90
+        font: mono
+        size: 6
+        color: "$primary"
+
+      - type: text
+        bind: "client"
+        x_mm: 270
+        y_mm: 96
+        font: body_medium
+        size: 11
+        color: "$secondary"
+        max_width_mm: 130
+
+      # Right info panel - Date
+      - type: text
+        static: "DATUM"
+        x_mm: 270
+        y_mm: 120
+        font: mono
+        size: 6
+        color: "$primary"
+
+      - type: text
+        bind: "date"
+        x_mm: 270
+        y_mm: 126
+        font: mono
+        size: 10
+        color: "$text_muted"
+
+      # Right info panel - Kenmerk
+      - type: text
+        static: "KENMERK"
+        x_mm: 270
+        y_mm: 140
+        font: mono
+        size: 6
+        color: "$primary"
+
+      - type: text
+        bind: "drawing_number"
+        x_mm: 270
+        y_mm: 146
+        font: mono
+        size: 10
+        color: "$primary"
+
+      # Right info panel - Fase
+      - type: text
+        static: "FASE"
+        x_mm: 270
+        y_mm: 160
+        font: mono
+        size: 6
+        color: "$primary"
+
+      - type: text
+        bind: "phase"
+        x_mm: 270
+        y_mm: 166
+        font: body
+        size: 10
+        color: "$text_muted"
+
+      # Project name block
+      - type: text
+        bind: "project"
+        x_mm: 25
+        y_mm: 210
+        font: subheading
+        size: 16
+        color: "$secondary"
+
+      - type: text
+        bind: "address"
+        x_mm: 25
+        y_mm: 220
+        font: body
+        size: 11
+        color: "$text_muted"
+
+    # Bottom bar (dark)
+    bottom_bar:
+      y_mm: 242
+      height_mm: 48
+      background: "$secondary"
+      gradient_strip: true
+      gradient_height_mm: 1
+
+      logo:
+        x_mm: 12
+        font: heading
+        size: 18
+
+      fields:
+        - bind: "project_number"
+          label: "PROJECTNR"
+          x_mm: 130
+        - bind: "scale"
+          label: "SCHAAL"
+          x_mm: 195
+        - bind: "format"
+          label: "FORMAAT"
+          x_mm: 245
+        - bind: "status"
+          label: "STATUS"
+          x_mm: 290
+          color: "$primary"
+        - bind: "sheet_label"
+          label: "BLAD"
+          x_mm: 370
+
+    disclaimer:
+      text: "Tekening ongeschikt voor uitvoeringsfase"
+      x_mm: 390
+      y_mm: 237
+      font: mono
+      size: 6
+      color: "$text_muted"
+      align: right
+
+  # ============================================
+  # DETAILBLAD — Working drawing with title block
+  # ============================================
+  detailblad:
+    border:
+      margin_mm: 7
+      stroke_width_pt: 0.75
+      color: "$secondary"
+
+    # Small logo top-left
+    header:
+      logo:
+        x_mm: 10
+        y_mm: 10
+        font: subheading
+        size: 11
+
+    # Title block at bottom
+    titleblock:
+      y_mm: 251
+      height_mm: 46
+
+      gradient_strip: true
+      gradient_height_mm: 1
+
+      # Project bar (full width, dark)
+      project_bar:
+        height_mm: 13
+        background: "$secondary"
+        fields:
+          - bind: "project"
+            font: heading
+            size: 12
+            color: "$text_light"
+          - bind: "address"
+            font: body
+            size: 9
+            color: "$scaffold_gray"
+          - bind: "drawing_type"
+            font: subheading
+            size: 10
+            color: "$primary"
+            align: right
+
+      # Logo cell (left, dark, spans 2 rows)
+      logo_cell:
+        width_mm: 64
+        background: "$secondary"
+        font: heading
+        size: 14
+
+      # Data fields grid (2 rows x 4 columns)
+      data_rows:
+        row1:
+          - { bind: "date", label: "1E DATUM", font: mono, size: 9 }
+          - { bind: "revision", label: "WIJZ.", font: mono, size: 9 }
+          - { bind: "scale", label: "SCHAAL", font: mono, size: 9 }
+          - { bind: "format", label: "FORMAAT", font: mono, size: 9 }
+        row2:
+          - { bind: "project_number", label: "PROJECTNR", font: mono, size: 9, color: "$primary" }
+          - { bind: "author", label: "AUTEUR", font: body_medium, size: 9 }
+          - { bind: "drawing_number", label: "KENMERK", font: mono, size: 9, color: "$primary" }
+          - { bind: "sheet", label: "BLAD", font: mono, size: 9 }
+
+      # Format indicator (right, dark)
+      format_cell:
+        width_mm: 64
+        background: "$secondary"
+        bind: "format"
+        label: "FORMAAT"
+        font: heading
+        size: 20
+        color: "$primary"
+
+    disclaimer:
+      text: "Tekening ongeschikt voor uitvoeringsfase"
+      y_mm: 248
+      align: right
+      font: mono
+      size: 5
+      color: "$scaffold_gray"
+
+  # ============================================
+  # CONTENT — Flow layout for report content
+  # ============================================
+  content:
+    inherits: detailblad
+    flow_layout: true
+    content_start_y_mm: 22
+    footer_y_mm: 248
+    column_margin_mm: 20

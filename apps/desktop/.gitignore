@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+src-tauri/target/
+
+# Tauri generated
+src-tauri/gen/schemas/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.claude/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temp
+temp/
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+
+# TypeScript
+*.tsbuildinfo
+
+# Rust
+**/*.rs.bk
