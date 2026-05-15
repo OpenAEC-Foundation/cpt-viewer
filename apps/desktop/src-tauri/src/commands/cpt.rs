@@ -1,7 +1,7 @@
 //! CPT file open + parse commands.
 
 use tauri::State;
-use cpt_core::{parse_auto, Cpt};
+use cpt_core::{detect_layers as core_detect_layers, parse_auto, Cpt, Layer};
 use crate::state::AppState;
 
 #[tauri::command]
@@ -21,4 +21,11 @@ pub fn close_cpt(id: String, state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 pub fn list_cpts(state: State<'_, AppState>) -> Vec<Cpt> {
     state.cpts.lock().unwrap().values().cloned().collect()
+}
+
+#[tauri::command]
+pub fn detect_layers(id: String, state: State<'_, AppState>) -> Result<Vec<Layer>, String> {
+    let cpts = state.cpts.lock().unwrap();
+    let cpt = cpts.get(&id).ok_or_else(|| format!("unknown CPT id: {id}"))?;
+    Ok(core_detect_layers(cpt))
 }

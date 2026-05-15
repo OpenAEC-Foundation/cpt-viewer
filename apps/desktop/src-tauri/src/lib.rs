@@ -158,6 +158,7 @@ pub fn run() {
             commands::cpt::open_cpt,
             commands::cpt::close_cpt,
             commands::cpt::list_cpts,
+            commands::cpt::detect_layers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

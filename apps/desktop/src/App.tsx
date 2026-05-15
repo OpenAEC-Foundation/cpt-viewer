@@ -12,6 +12,8 @@ import { StartSidebar } from "./components/welcome/StartSidebar";
 import ProjectSettingsDialog from "./components/project/ProjectSettingsDialog";
 import ReportPreview from "./components/panels/ReportPreview";
 import ChartView from "./components/panels/ChartView";
+import LeftPanel from "./components/panels/LeftPanel";
+import RightPanel from "./components/panels/RightPanel";
 import { getDetachedParams, useWindowManager } from "./hooks/useWindowManager";
 import { getSetting, setSetting } from "./store";
 import "./themes.css";
@@ -230,14 +232,7 @@ function App() {
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2.5A1.5 1.5 0 013.5 1h9A1.5 1.5 0 0114 2.5v11a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 13.5v-11zM3.5 2a.5.5 0 00-.5.5v11a.5.5 0 00.5.5H6V2H3.5zM7 2v12h5.5a.5.5 0 00.5-.5v-11a.5.5 0 00-.5-.5H7z" /></svg>
                   </button>
                 </div>
-                <div className="left-panel-body">
-                  <PanelSection title={t("section", { number: 1 })} defaultOpen>
-                    <div className="panel-placeholder">{t("contentPlaceholder")}</div>
-                  </PanelSection>
-                  <PanelSection title={t("section", { number: 2 })} defaultOpen>
-                    <div className="panel-placeholder">{t("contentPlaceholder")}</div>
-                  </PanelSection>
-                </div>
+                <LeftPanel />
                 <div className="left-panel-resize" onMouseDown={handleLeftResizeMouseDown} />
               </>
             ) : (
@@ -264,14 +259,7 @@ function App() {
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2.5A1.5 1.5 0 013.5 1h9A1.5 1.5 0 0114 2.5v11a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 13.5v-11zM3.5 2a.5.5 0 00-.5.5v11a.5.5 0 00.5.5H9V2H3.5zM10 2v12h2.5a.5.5 0 00.5-.5v-11a.5.5 0 00-.5-.5H10z" /></svg>
                   </button>
                 </div>
-                <div className="right-panel-body">
-                  <PanelSection title={t("section", { number: 1 })} defaultOpen>
-                    <div className="panel-placeholder">{t("contentPlaceholder")}</div>
-                  </PanelSection>
-                  <PanelSection title={t("section", { number: 2 })} defaultOpen>
-                    <div className="panel-placeholder">{t("contentPlaceholder")}</div>
-                  </PanelSection>
-                </div>
+                <RightPanel />
               </>
             ) : (
               <button className="right-panel-collapsed-tab" onClick={() => setRightPanelOpen(true)} title={t("properties")}>
@@ -295,19 +283,6 @@ function App() {
         />
       )}
     </>
-  );
-}
-
-function PanelSection({ title, defaultOpen = true, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="panel-section">
-      <button className="panel-section-header" onClick={() => setOpen(!open)}>
-        <svg className={`panel-section-chevron${open ? " open" : ""}`} width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,3 5,6 8,3" /></svg>
-        <span className="panel-section-title">{title}</span>
-      </button>
-      {open && <div className="panel-section-body">{children}</div>}
-    </div>
   );
 }
 

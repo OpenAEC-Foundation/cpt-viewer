@@ -1,4 +1,21 @@
 {
   "noCptOpenTitle": "Geen sondering geopend",
-  "noCptOpenHint": "Open een GEF of BRO-XML bestand om te beginnen."
+  "noCptOpenHint": "Open een GEF of BRO-XML bestand om te beginnen.",
+  "sonderingen": "Sonderingen",
+  "sonderingsgegevens": "Sonderingsgegevens",
+  "layers": "Grondopbouw",
+  "measurements": "Meetdata",
+  "robertsonSbt": "Robertson SBT",
+  "noCpts": "Geen sonderingen geopend",
+  "noLayers": "Geen lagen gedetecteerd",
+  "close": "Sluit",
+  "projectName": "Project",
+  "projectNumber": "Projectnr.",
+  "date": "Datum",
+  "equipment": "Apparaat",
+  "groundLevel": "Maaiveld",
+  "position": "Positie (RD)",
+  "top": "Top",
+  "bottom": "Bot.",
+  "zone": "Zone"
 }
