@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use tauri::State;
 use chrono::NaiveDate;
-use cpt_core::{build_report, ProjectMeta};
+use cpt_core::{build_report, generate_single_cpt_pdf_bytes, ProjectMeta};
 use openaec_core::generate_pdf_bytes;
 use crate::state::AppState;
 
@@ -49,7 +49,18 @@ pub fn preview_report(
             .filter_map(|id| cpts_map.get(id).cloned())
             .collect()
     };
-    let report = build_report(&cpts, &project.into());
+    let meta: ProjectMeta = project.into();
+
+    // Single-CPT projects use the direct printpdf path which produces the
+    // Dutch-convention full-bleed A4 chart matching the reference plot.
+    // Multi-CPT projects go through openaec-engine (cover + coordinate
+    // table + per-CPT pages) until the multi-CPT renderer is consolidated.
+    if cpts.len() == 1 {
+        // `generate_single_cpt_pdf_bytes` returns `Vec<u8>` directly (no Result).
+        return Ok(generate_single_cpt_pdf_bytes(&cpts[0], &meta));
+    }
+
+    let report = build_report(&cpts, &meta);
     generate_pdf_bytes(&report).map_err(|e| e.to_string())
 }
 

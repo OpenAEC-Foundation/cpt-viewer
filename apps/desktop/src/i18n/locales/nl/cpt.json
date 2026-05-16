@@ -24,5 +24,12 @@
   "location": "Locatie",
   "author": "Auteur",
   "save": "Opslaan",
-  "cancel": "Annuleer"
+  "cancel": "Annuleer",
+  "cptsInProject": "Sonderingen in dit project",
+  "addCpt": "Sondering toevoegen",
+  "removeAll": "Verwijder alle",
+  "remove": "Verwijder",
+  "hide": "Verbergen",
+  "show": "Tonen",
+  "noCptsHint": "Nog geen sonderingen toegevoegd. Klik op 'Sondering toevoegen' of sleep GEF/BRO-XML bestanden in het venster."
 }

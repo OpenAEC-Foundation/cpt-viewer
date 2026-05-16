@@ -1,163 +1,118 @@
-import { useState, useRef, useCallback, useEffect } from "react";
-import {
-  useWindowManager,
-  EVT_DOCK_REQUEST,
-  type DockBackPayload,
-} from "../hooks/useWindowManager";
-import { getDetachedParams } from "../hooks/useWindowManager";
+import { useCptStore } from "../store/useCptStore";
 import "./DocumentBar.css";
 
-interface DocTab {
-  id: string;
-  title: string;
-  view?: string;
-  modified?: boolean;
+interface DocumentBarProps {
+  /** Optional handler for the "+" button — wired by App.tsx to open Backstage. */
+  onOpenClick?: () => void;
 }
 
-const INITIAL_DOCS: DocTab[] = [
-  { id: "1", title: "Project Overview.oaec", view: "default", modified: false },
-  { id: "2", title: "Floor Plan - Level 1.oaec", view: "default", modified: true },
-  { id: "3", title: "Structural Analysis.oaec", view: "default", modified: false },
-];
-
-const DRAG_DETACH_THRESHOLD = 60;
-
-let nextId = 100;
-
-export default function DocumentBar() {
-  const [docs, setDocs] = useState<DocTab[]>(INITIAL_DOCS);
-  const [activeId, setActiveId] = useState("1");
-  const [dockIndicator, setDockIndicator] = useState(false);
-  const { createDetachedWindow, listenEvent, confirmDock } = useWindowManager();
-
-  const dragStartPos = useRef<{ x: number; y: number } | null>(null);
-  const dragTabId = useRef<string | null>(null);
-  const isDragging = useRef(false);
-
-  // ── Listen for dock-back requests from detached windows ──
-  useEffect(() => {
-    const { detached } = getDetachedParams();
-    if (detached) return; // Don't listen in detached windows
-
-    listenEvent(EVT_DOCK_REQUEST, (payload) => {
-      const data = payload as DockBackPayload;
-
-      // Add the tab back
-      nextId++;
-      const newTab: DocTab = {
-        id: `docked-${nextId}`,
-        title: data.title,
-        view: data.view,
-        modified: false,
-      };
-
-      setDocs((prev) => [...prev, newTab]);
-      setActiveId(newTab.id);
-
-      // Flash the dock indicator briefly
-      setDockIndicator(true);
-      setTimeout(() => setDockIndicator(false), 600);
-
-      // Close the detached window
-      confirmDock(data.label);
-    });
-  }, [listenEvent, confirmDock]);
-
-  const closeDoc = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const remaining = docs.filter((d) => d.id !== id);
-    setDocs(remaining);
-    if (activeId === id && remaining.length > 0) {
-      setActiveId(remaining[0].id);
-    }
-  };
-
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent, tabId: string) => {
-      dragStartPos.current = { x: e.screenX, y: e.screenY };
-      dragTabId.current = tabId;
-      isDragging.current = false;
-
-      const handleMouseMove = (ev: MouseEvent) => {
-        if (!dragStartPos.current || !dragTabId.current) return;
-        const dy = ev.screenY - dragStartPos.current.y;
-
-        if (Math.abs(dy) > DRAG_DETACH_THRESHOLD && !isDragging.current) {
-          isDragging.current = true;
-
-          const tab = docs.find((d) => d.id === dragTabId.current);
-          if (tab && docs.length > 1) {
-            createDetachedWindow({
-              view: tab.view ?? "default",
-              title: tab.title,
-              x: ev.screenX - 400,
-              y: ev.screenY - 50,
-            });
-
-            setDocs((prev) => {
-              const remaining = prev.filter((d) => d.id !== dragTabId.current);
-              if (activeId === dragTabId.current && remaining.length > 0) {
-                setActiveId(remaining[0].id);
-              }
-              return remaining;
-            });
-          }
-
-          cleanup();
-        }
-      };
-
-      const handleMouseUp = () => {
-        if (!isDragging.current && dragTabId.current) {
-          setActiveId(dragTabId.current);
-        }
-        cleanup();
-      };
-
-      const cleanup = () => {
-        dragStartPos.current = null;
-        dragTabId.current = null;
-        isDragging.current = false;
-        document.removeEventListener("mousemove", handleMouseMove);
-        document.removeEventListener("mouseup", handleMouseUp);
-      };
-
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-    },
-    [docs, activeId, createDetachedWindow]
-  );
+export default function DocumentBar({ onOpenClick }: DocumentBarProps) {
+  const documents = useCptStore((s) => s.documents);
+  const activeDocId = useCptStore((s) => s.activeDocId);
+  const setActiveDoc = useCptStore((s) => s.setActiveDoc);
+  const closeDoc = useCptStore((s) => s.closeDoc);
 
   return (
-    <div className={`document-bar${dockIndicator ? " dock-flash" : ""}`}>
+    <div className="document-bar">
       <div className="document-tabs">
-        {docs.map((doc) => (
-          <button
-            key={doc.id}
-            className={`document-tab${activeId === doc.id ? " active" : ""}`}
-            onMouseDown={(e) => handleMouseDown(e, doc.id)}
-          >
-            <span className="document-tab-title">{doc.title}</span>
-            {doc.modified && <span className="document-tab-modified" />}
-            <span
-              className="document-tab-close"
-              onClick={(e) => closeDoc(doc.id, e)}
+        {documents.map((doc) => {
+          const active = doc.id === activeDocId;
+          return (
+            <button
+              key={doc.id}
+              type="button"
+              className={`document-tab${active ? " active" : ""}`}
+              onClick={() => setActiveDoc(doc.id)}
+              title={doc.path ?? doc.title}
             >
-              <svg
-                width="10"
-                height="10"
-                viewBox="0 0 10 10"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
+              <span className="document-tab-icon">
+                {doc.kind === "project" ? <FolderIcon /> : <FileIcon />}
+              </span>
+              <span className="document-tab-title">{doc.title}</span>
+              <span
+                className="document-tab-close"
+                role="button"
+                tabIndex={-1}
+                aria-label="Sluiten"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void closeDoc(doc.id);
+                }}
               >
-                <path d="M2.5 2.5l5 5M7.5 2.5l-5 5" />
-              </svg>
-            </span>
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 10 10"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                >
+                  <path d="M2.5 2.5l5 5M7.5 2.5l-5 5" />
+                </svg>
+              </span>
+            </button>
+          );
+        })}
+        {onOpenClick && (
+          <button
+            type="button"
+            className="document-tab document-tab-add"
+            onClick={onOpenClick}
+            title="Openen"
+            aria-label="Openen"
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
           </button>
-        ))}
+        )}
       </div>
     </div>
+  );
+}
+
+function FileIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+    </svg>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+    </svg>
   );
 }

@@ -65,4 +65,19 @@
   color: var(--theme-status-text);
   font-weight: 500;
   font-size: 12px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  min-width: 36px;
+  text-align: right;
+}
+
+.status-item-unit {
+  color: var(--theme-status-text-label);
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.status-item-soil {
+  color: var(--theme-status-text);
+  font-size: 12px;
+  font-style: italic;
 }

@@ -13,10 +13,16 @@ import ProjectSettingsDialog from "./components/project/ProjectSettingsDialog";
 import ReportPreview from "./components/panels/ReportPreview";
 import ChartView from "./components/panels/ChartView";
 import MapView from "./components/panels/MapView";
+import IfcView from "./components/panels/IfcView";
+import "./components/panels/IfcView.css";
+import SonderingstekeningView from "./components/panels/SonderingstekeningView";
 import LeftPanel from "./components/panels/LeftPanel";
+import GisLayerPanel from "./components/panels/GisLayerPanel";
 import RightPanel from "./components/panels/RightPanel";
 import { getDetachedParams, useWindowManager } from "./hooks/useWindowManager";
 import { getSetting, setSetting } from "./store";
+import { openPathByExtension } from "./store/useCptStore";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "./themes.css";
 import "./App.css";
 
@@ -109,6 +115,46 @@ function App() {
 
   const [isResizing, setIsResizing] = useState(false);
 
+  // Drag-and-drop: receive native OS file drops and route them to the
+  // appropriate doc-loader by file extension. GEF/XML → CptDocument tab,
+  // .ifcgis → ProjectDocument tab.
+  const [dragOver, setDragOver] = useState(false);
+  useEffect(() => {
+    const isOpenable = (path: string) =>
+      /\.(gef|xml|ifcgis)$/i.test(path);
+
+    const unsubscribePromise = getCurrentWebview().onDragDropEvent(async (event) => {
+      const t = event.payload.type;
+      if (t === "enter" || t === "over") {
+        const paths = (event.payload as { paths?: string[] }).paths ?? [];
+        // Only highlight if at least one dragged item looks openable.
+        if (paths.length === 0 || paths.some(isOpenable)) setDragOver(true);
+      } else if (t === "leave") {
+        setDragOver(false);
+      } else if (t === "drop") {
+        setDragOver(false);
+        const paths = (event.payload as { paths: string[] }).paths;
+        for (const path of paths) {
+          try {
+            await openPathByExtension(path);
+          } catch (err) {
+            console.error("drag-drop open failed for", path, err);
+          }
+        }
+      }
+    });
+    return () => { void unsubscribePromise.then((unsub) => unsub()); };
+  }, []);
+
+  // Allow other components (eg. ReportPreview's sidebar action) to open
+  // the ProjectSettingsDialog without prop-drilling — listen for a global
+  // event and bounce it into the existing modal state.
+  useEffect(() => {
+    const onOpen = () => setProjectSettingsOpen(true);
+    window.addEventListener("ogs:open-project-settings", onOpen);
+    return () => window.removeEventListener("ogs:open-project-settings", onOpen);
+  }, []);
+
   useEffect(() => {
     getSetting("theme", "light").then((saved) => {
       setTheme(saved);
@@ -161,7 +207,7 @@ function App() {
 
     const handleMouseMove = (ev: MouseEvent) => {
       if (!isRightResizing.current) return;
-      const newWidth = Math.max(160, Math.min(480, window.innerWidth - ev.clientX));
+      const newWidth = Math.max(160, Math.min(640, window.innerWidth - ev.clientX));
       setRightPanelWidth(newWidth);
     };
 
@@ -178,8 +224,14 @@ function App() {
     document.addEventListener("mouseup", handleMouseUp);
   }, []);
 
-  // Full-width views hide the side panels
-  const isFullWidthView = activeView === "report" || activeView === "map";
+  // Full-width views hide the side panels. Map view keeps the right panel
+  // so the Robertson legend + LocationMiniMap stay accessible alongside it.
+  // The IFC view also goes full-width — its two-pane layout fills the
+  // viewport and doesn't need the Explorer / Properties sidebars.
+  // The Sonderingstekening view is also full-width — the paper + toolbox
+  // already take the whole canvas.
+  const isFullWidthView =
+    activeView === "report" || activeView === "ifc" || activeView === "tekening";
 
   const renderMainContent = () => {
     switch (activeView) {
@@ -187,6 +239,10 @@ function App() {
         return <ReportPreview />;
       case "map":
         return <MapView />;
+      case "ifc":
+        return <IfcView />;
+      case "tekening":
+        return <SonderingstekeningView />;
       default:
         return <ChartView />;
     }
@@ -195,6 +251,18 @@ function App() {
   return (
     <>
       <TitleBar onSettingsClick={() => setSettingsOpen(true)} onFeedbackClick={() => setFeedbackOpen(true)} />
+      {dragOver && (
+        <div className="drop-overlay">
+          <div className="drop-overlay-card">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <p>Laat los om te openen — GEF, BRO-XML of .ifcgis</p>
+          </div>
+        </div>
+      )}
       <Ribbon
         onFileTabClick={() => setBackstageOpen(true)}
         onSettingsClick={() => setSettingsOpen(true)}
@@ -202,7 +270,7 @@ function App() {
         activeView={activeView}
         onViewChange={setActiveView}
       />
-      <DocumentBar />
+      <DocumentBar onOpenClick={() => setBackstageOpen(true)} />
       <div className="content">
         {/* Start sidebar — shown only on first launch. Once dismissed, gone for good. */}
         {startSidebarVisible && (
@@ -234,7 +302,7 @@ function App() {
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2.5A1.5 1.5 0 013.5 1h9A1.5 1.5 0 0114 2.5v11a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 13.5v-11zM3.5 2a.5.5 0 00-.5.5v11a.5.5 0 00.5.5H6V2H3.5zM7 2v12h5.5a.5.5 0 00.5-.5v-11a.5.5 0 00-.5-.5H7z" /></svg>
                   </button>
                 </div>
-                <LeftPanel />
+                {activeView === "map" ? <GisLayerPanel /> : <LeftPanel />}
                 <div className="left-panel-resize" onMouseDown={handleLeftResizeMouseDown} />
               </>
             ) : (

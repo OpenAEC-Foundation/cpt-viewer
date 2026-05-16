@@ -20,7 +20,7 @@
     "contrast": "High contrast"
   },
   "about": {
-    "appName": "Open GEO Studio",
+    "appName": "Open Geotechniek Studio",
     "version": "Version",
     "license": "License",
     "description": "Desktop viewer and report generator for Dutch CPT (Cone Penetration Test) data. Built on the OpenAEC Foundation visual identity.",

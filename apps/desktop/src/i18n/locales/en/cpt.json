@@ -24,5 +24,12 @@
   "location": "Location",
   "author": "Author",
   "save": "Save",
-  "cancel": "Cancel"
+  "cancel": "Cancel",
+  "cptsInProject": "CPTs in this project",
+  "addCpt": "Add CPT",
+  "removeAll": "Remove all",
+  "remove": "Remove",
+  "hide": "Hide",
+  "show": "Show",
+  "noCptsHint": "No CPTs added yet. Click 'Add CPT' or drag GEF/BRO-XML files onto the window."
 }

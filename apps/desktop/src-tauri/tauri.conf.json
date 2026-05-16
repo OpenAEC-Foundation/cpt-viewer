@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Open GEO Studio",
+  "productName": "Open Geotechniek Studio",
   "version": "0.1.0",
-  "identifier": "foundation.openaec.opengeostudio",
+  "identifier": "foundation.openaec.opengeotechniekstudio",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:3020",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Open GEO Studio",
+        "title": "Open Geotechniek Studio",
         "width": 1000,
         "height": 700,
         "minWidth": 600,

@@ -1,5 +1,16 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+
+// DEBUG: catch all runtime errors and render them on the page so the white-screen issue is diagnosable.
+function showError(label: string, err: unknown) {
+  const root = document.getElementById("root");
+  if (!root) return;
+  const detail = err instanceof Error ? `${err.name}: ${err.message}\n\n${err.stack ?? ""}` : String(err);
+  root.innerHTML = `<pre style="padding:20px;font:12px/1.4 'JetBrains Mono',monospace;color:#DC2626;background:#FAFAF9;white-space:pre-wrap;word-break:break-word">[${label}]\n${detail.replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"} as Record<string,string>)[c])}</pre>`;
+}
+window.addEventListener("error", (e) => showError("window.error", e.error ?? e.message));
+window.addEventListener("unhandledrejection", (e) => showError("unhandledrejection", e.reason));
+
 import "./i18n/config";
 import App from "./App";
 
@@ -25,8 +36,12 @@ if (import.meta.env.PROD) {
   });
 }
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+try {
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+} catch (err) {
+  showError("render", err);
+}

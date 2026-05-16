@@ -1,0 +1,160 @@
+/* ─────────────────────────────────────────────────────────────────────
+   IfcView — two horizontal panes (IFC4x3 on top, IFCX on the bottom).
+   Each pane has its own header (format badge + actions) and a scrollable
+   body. The split is 50/50 by default and each side scrolls independently.
+   ───────────────────────────────────────────────────────────────────── */
+
+.ifc-view-twopane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--theme-bg);
+  color: var(--theme-text);
+  gap: 1px; /* hairline divider between panes */
+  background-color: var(--theme-border-subtle, #e7e5e4);
+}
+
+.ifc-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 50%;
+  min-height: 0;
+  background: var(--theme-bg);
+}
+
+.ifc-pane-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--theme-border-subtle);
+  background: var(--theme-bg-lighter);
+  flex-shrink: 0;
+  min-height: 36px;
+}
+
+.ifc-pane-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ifc-pane-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid var(--theme-border);
+}
+.ifc-pane-badge-ifc4x3 {
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.08);
+}
+.ifc-pane-badge-ifcx {
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.5);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.ifc-pane-filename {
+  font: 500 12px var(--font-code, "JetBrains Mono"), 'Inter', sans-serif;
+  color: var(--theme-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.ifc-pane-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.ifc-pane-btn {
+  appearance: none;
+  background: var(--theme-bg);
+  color: var(--theme-text);
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.ifc-pane-btn:hover:not(:disabled) {
+  background: var(--theme-bg-lighter);
+  border-color: var(--amber, #d97706);
+  color: var(--amber, #d97706);
+}
+.ifc-pane-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ifc-pane-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--theme-bg);
+  overflow: hidden; /* delegate scrolling to inner element */
+}
+
+.ifc-pane-content {
+  flex: 1;
+  margin: 0;
+  padding: 12px 14px;
+  overflow: auto;
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Mono", "Consolas", monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--theme-text);
+  background: var(--theme-bg);
+  white-space: pre;
+}
+
+.ifc-pane-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  color: var(--theme-text-secondary);
+}
+
+.ifc-pane-empty-sub {
+  font-size: 13px;
+  margin: 0;
+  color: var(--theme-text-secondary);
+}
+
+.ifc-pane-empty-error {
+  font-size: 12px;
+  color: var(--error, #dc2626);
+}
+
+.ifc-pane-generate-btn {
+  appearance: none;
+  background: var(--amber, #d97706);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font: 600 13px 'Inter', system-ui, sans-serif;
+  padding: 10px 24px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.ifc-pane-generate-btn:hover {
+  background: var(--signal-orange, #ea580c);
+}

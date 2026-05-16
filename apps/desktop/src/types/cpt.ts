@@ -14,6 +14,14 @@ export interface Metadata {
   equipment?: string;
   ground_level_nap?: number;
   source_file: string;
+  /**
+   * Verbatim file metadata — every keyword/property from the source GEF
+   * or BRO file that isn't already mapped to a typed field above. Surfaced
+   * in the LeftPanel "Bestandsmetadata" section so the user can inspect
+   * everything the parser saw. Lossy (BTreeMap on the Rust side), so
+   * repeated keys are joined with " | ".
+   */
+  extra?: Record<string, string>;
 }
 
 export interface Position {

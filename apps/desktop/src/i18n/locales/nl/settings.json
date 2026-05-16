@@ -20,7 +20,7 @@
     "contrast": "Hoog contrast"
   },
   "about": {
-    "appName": "Open GEO Studio",
+    "appName": "Open Geotechniek Studio",
     "version": "Versie",
     "license": "Licentie",
     "description": "Desktop viewer en rapportgenerator voor Nederlandse CPT-data (sondering). Gebouwd op de OpenAEC Foundation visuele identiteit.",

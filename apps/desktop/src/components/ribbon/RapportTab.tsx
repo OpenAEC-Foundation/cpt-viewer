@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import RibbonGroup from "./RibbonGroup";
 import RibbonButton from "./RibbonButton";
@@ -14,7 +15,8 @@ interface RapportTabProps {
 
 export default function RapportTab({ onOpenProjectSettings }: RapportTabProps) {
   const { t } = useTranslation("ribbon");
-  const cpts = useCptStore((s) => Array.from(s.cpts.values()));
+  const cptsMap = useCptStore((s) => s.cpts);
+  const cpts = useMemo(() => Array.from(cptsMap.values()), [cptsMap]);
   const projectMeta = useCptStore((s) => s.projectMeta);
 
   async function generatePdf() {

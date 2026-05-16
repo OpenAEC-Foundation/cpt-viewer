@@ -1,6 +1,13 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { readTextFile } from "@tauri-apps/plugin-fs";
 import Modal from "../Modal";
-import { useCptStore } from "../../store/useCptStore";
+import {
+  useCptStore,
+  addCptToActiveProject,
+  newProjectDocument,
+} from "../../store/useCptStore";
 
 interface ProjectSettingsDialogProps {
   open: boolean;
@@ -8,45 +15,165 @@ interface ProjectSettingsDialogProps {
 }
 
 /**
- * Dialog for editing the project metadata used on the PDF cover page.
+ * Project setup dialog — only meaningful when the active document is a
+ * ProjectDocument. Edits the project metadata used on the PDF cover and
+ * manages the list of CPTs that belong to the project.
  *
- * Fields are bound directly to the `projectMeta` slice of `useCptStore`;
- * a re-render of the report preview happens automatically because
- * `ReportPreview` watches the same slice.
+ * If the active doc is a CptDocument (or there is no active doc), the
+ * dialog renders a hint explaining that there is no project active.
  */
 export default function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogProps) {
   const { t } = useTranslation("cpt");
-  const meta = useCptStore((s) => s.projectMeta);
+  const documents = useCptStore((s) => s.documents);
+  const activeDocId = useCptStore((s) => s.activeDocId);
+  const activeDoc = useMemo(
+    () => documents.find((d) => d.id === activeDocId),
+    [documents, activeDocId],
+  );
   const setMeta = useCptStore((s) => s.setProjectMeta);
+  const closeCpt = useCptStore((s) => s.closeCpt);
+
+  const isProject = activeDoc?.kind === "project";
+  const meta = isProject ? activeDoc.meta : null;
+  const cpts = useMemo(
+    () => (isProject ? Array.from(activeDoc.cpts.values()) : []),
+    [isProject, activeDoc],
+  );
+
+  async function addCpts() {
+    const selected = await openDialog({
+      multiple: true,
+      filters: [{ name: "CPT", extensions: ["gef", "GEF", "xml", "XML"] }],
+    });
+    if (!selected) return;
+    const paths = Array.isArray(selected) ? selected : [selected];
+    for (const p of paths) {
+      try {
+        const content = await readTextFile(p);
+        const filename = p.split(/[\\/]/).pop() ?? p;
+        await addCptToActiveProject(content, filename);
+      } catch (err) {
+        console.error("addCpts: failed to open", p, err);
+      }
+    }
+  }
+
+  function removeAllCpts() {
+    if (!isProject) return;
+    const ids = Array.from(activeDoc.cpts.keys());
+    for (const id of ids) void closeCpt(id);
+  }
 
   return (
-    <Modal open={open} onClose={onClose} title={t("projectInfo", "Projectinfo")} width={560}>
-      <form onSubmit={(e) => { e.preventDefault(); onClose(); }}>
-        <Field label={t("title", "Titel")}
-               value={meta.title}
-               onChange={(v) => setMeta({ title: v })} />
-        <Field label={t("client", "Opdrachtgever")}
-               value={meta.client}
-               onChange={(v) => setMeta({ client: v })} />
-        <Field label={t("location", "Locatie")}
-               value={meta.location}
-               onChange={(v) => setMeta({ location: v })} />
-        <Field label={t("projectNumber", "Projectnummer")}
-               value={meta.project_number}
-               onChange={(v) => setMeta({ project_number: v })} />
-        <Field label={t("author", "Auteur")}
-               value={meta.author}
-               onChange={(v) => setMeta({ author: v })} />
-        <Field type="date"
-               label={t("date", "Datum")}
-               value={meta.date}
-               onChange={(v) => setMeta({ date: v })} />
-        <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <button type="button" onClick={onClose}>{t("cancel", "Annuleer")}</button>
-          <button type="submit" className="btn-primary">{t("save", "Opslaan")}</button>
-        </div>
-      </form>
+    <Modal open={open} onClose={onClose} title={t("projectInfo", "Projectinfo")} width={640}>
+      {!isProject ? (
+        <NoProjectHint
+          onClose={onClose}
+          onCreate={() => {
+            newProjectDocument();
+            // Keep the dialog open so the user can immediately edit the new
+            // project; the active doc has just switched to it.
+          }}
+        />
+      ) : (
+        <form onSubmit={(e) => { e.preventDefault(); onClose(); }}>
+          <h3 className="ps-section-title">{t("projectInfo", "Projectinfo")}</h3>
+          <Field label={t("title", "Titel")}
+                 value={meta!.title}
+                 onChange={(v) => setMeta({ title: v })} />
+          <Field label={t("client", "Opdrachtgever")}
+                 value={meta!.client}
+                 onChange={(v) => setMeta({ client: v })} />
+          <Field label={t("location", "Locatie")}
+                 value={meta!.location}
+                 onChange={(v) => setMeta({ location: v })} />
+          <Field label={t("projectNumber", "Projectnummer")}
+                 value={meta!.project_number}
+                 onChange={(v) => setMeta({ project_number: v })} />
+          <Field label={t("author", "Auteur")}
+                 value={meta!.author}
+                 onChange={(v) => setMeta({ author: v })} />
+          <Field type="date"
+                 label={t("date", "Datum")}
+                 value={meta!.date}
+                 onChange={(v) => setMeta({ date: v })} />
+
+          <div className="ps-section-header">
+            <h3 className="ps-section-title">
+              {t("cptsInProject", "Sonderingen in dit project")}
+              <span className="ps-count">({cpts.length})</span>
+            </h3>
+            <div className="ps-section-actions">
+              {cpts.length > 0 && (
+                <button type="button" className="ps-link-btn"
+                        onClick={removeAllCpts}>
+                  {t("removeAll", "Verwijder alle")}
+                </button>
+              )}
+              <button type="button" className="ps-add-btn"
+                      onClick={() => void addCpts()}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"/>
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span>{t("addCpt", "Sondering toevoegen")}</span>
+              </button>
+            </div>
+          </div>
+
+          {cpts.length === 0 ? (
+            <div className="ps-empty">
+              <p>{t("noCptsHint", "Nog geen sonderingen toegevoegd. Klik op 'Sondering toevoegen' of sleep GEF/BRO-XML bestanden in het venster.")}</p>
+            </div>
+          ) : (
+            <ul className="ps-cpt-list">
+              {cpts.map((c) => (
+                <li key={c.id} className="ps-cpt-item">
+                  <div className="ps-cpt-info">
+                    <span className="ps-cpt-id">{c.id}</span>
+                    <span className="ps-cpt-meta">
+                      {c.points.length} punten · {(c.points.reduce((m, p) => Math.max(m, p.depth), 0)).toFixed(1)} m diepte
+                      {c.position && ` · RD ${c.position.x_rd.toFixed(0)}, ${c.position.y_rd.toFixed(0)}`}
+                    </span>
+                  </div>
+                  <button type="button" className="ps-remove-btn"
+                          onClick={() => void closeCpt(c.id)}
+                          aria-label={t("remove", "Verwijder")}>
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="ps-footer">
+            <button type="button" onClick={onClose}>{t("cancel", "Annuleer")}</button>
+            <button type="submit" className="btn-primary">{t("save", "Opslaan")}</button>
+          </div>
+        </form>
+      )}
     </Modal>
+  );
+}
+
+function NoProjectHint({ onClose, onCreate }: { onClose: () => void; onCreate: () => void }) {
+  return (
+    <div style={{ padding: "16px 4px" }}>
+      <p style={{ margin: 0, marginBottom: 12, color: "var(--theme-text)" }}>
+        Geen project actief — open of maak een <code>.ifcgis</code> project.
+      </p>
+      <p style={{ margin: 0, marginBottom: 20, color: "var(--theme-text-muted)", fontSize: "0.9rem" }}>
+        De huidige actieve tab is een losse sondering. Projectinfo (titel,
+        opdrachtgever, locatie, sonderingenlijst) leeft binnen een project —
+        maak er een aan of open een bestaand <code>.ifcgis</code> bestand.
+      </p>
+      <div className="ps-footer">
+        <button type="button" onClick={onClose}>Sluiten</button>
+        <button type="button" className="btn-primary" onClick={onCreate}>
+          Nieuw project
+        </button>
+      </div>
+    </div>
   );
 }
 

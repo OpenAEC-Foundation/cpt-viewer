@@ -97,6 +97,17 @@
   color: var(--theme-accent);
 }
 
+.document-tab-add {
+  width: 24px;
+  padding: 0;
+  justify-content: center;
+  color: var(--theme-text-muted);
+}
+
+.document-tab-add:hover {
+  color: var(--theme-accent);
+}
+
 /* Dock-back flash animation */
 .document-bar.dock-flash {
   animation: dock-flash 0.6s ease;

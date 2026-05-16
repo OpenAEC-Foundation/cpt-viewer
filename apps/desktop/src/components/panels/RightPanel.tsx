@@ -1,4 +1,7 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { useCptStore } from "../../store/useCptStore";
+import LocationMiniMap from "./LocationMiniMap";
 
 const ROBERTSON_ZONES = [
   { number: 1, name: "Gevoelig fijnkorrelig",  color: "#00BCD4" },
@@ -9,23 +12,41 @@ const ROBERTSON_ZONES = [
   { number: 6, name: "Zand",                    color: "#FF9800" },
   { number: 7, name: "Grof zand / grind",       color: "#FF5722" },
   { number: 8, name: "Zeer vast zand/klei",     color: "#F44336" },
-  { number: 9, name: "Zeer vast fijnkorrelig",  color: "#9C27B0" },
+  { number: 9, name: "Zeer vast fijnkorrelig", color: "#9C27B0" },
 ];
 
 export default function RightPanel() {
   const { t } = useTranslation("cpt");
+  const cptsMap = useCptStore((s) => s.cpts);
+  const activeId = useCptStore((s) => s.activeCptId);
+  const hiddenCptIds = useCptStore((s) => s.hiddenCptIds);
+  const cpts = useMemo(
+    () => Array.from(cptsMap.values()).filter((c) => !hiddenCptIds.has(c.id)),
+    [cptsMap, hiddenCptIds],
+  );
+  // Show map when at least one visible CPT has an RD position.
+  const hasGeoCpt = cpts.some((c) => c.position != null);
+
   return (
     <div className="right-panel-body">
-      <h3 className="right-panel-title">{t("robertsonSbt", "Robertson SBT")}</h3>
-      <ul className="sbt-legend">
-        {ROBERTSON_ZONES.map((z) => (
-          <li key={z.number}>
-            <span className="sbt-swatch" style={{ background: z.color }} />
-            <span className="sbt-num">{z.number}</span>
-            <span className="sbt-name">{z.name}</span>
-          </li>
-        ))}
-      </ul>
+      {hasGeoCpt && (
+        <section className="right-panel-section">
+          <h3 className="right-panel-title">{t("location", "Locatie")}</h3>
+          <LocationMiniMap cpts={cpts} activeId={activeId} />
+        </section>
+      )}
+      <section className="right-panel-section">
+        <h3 className="right-panel-title">{t("robertsonSbt", "Robertson SBT")}</h3>
+        <ul className="sbt-legend">
+          {ROBERTSON_ZONES.map((z) => (
+            <li key={z.number}>
+              <span className="sbt-swatch" style={{ background: z.color }} />
+              <span className="sbt-num">{z.number}</span>
+              <span className="sbt-name">{z.name}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   );
 }

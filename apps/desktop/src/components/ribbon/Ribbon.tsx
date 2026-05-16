@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next";
 import RibbonTab from "./RibbonTab";
 import StartTab from "./StartTab";
 import KaartTab from "./KaartTab";
+import IfcTab from "./IfcTab";
 import RapportTab from "./RapportTab";
+import SonderingstekeningTab from "./SonderingstekeningTab";
 import "./Ribbon.css";
 
 interface RibbonProps {
@@ -14,7 +16,10 @@ interface RibbonProps {
   onViewChange: (view: string) => void;
 }
 
-const TABS = ["start", "kaart", "rapport"] as const;
+// IFC sits between Kaart and Rapport so the workflow reads
+// left → right: Start (project) → Kaart (location) → IFC (model) →
+// Rapport → Sonderingstekening (tekening/plan).
+const TABS = ["start", "kaart", "ifc", "rapport", "tekening"] as const;
 type TabId = (typeof TABS)[number];
 
 export default function Ribbon({ onFileTabClick, onProjectSettingsClick, onViewChange }: RibbonProps) {
@@ -68,11 +73,10 @@ export default function Ribbon({ onFileTabClick, onProjectSettingsClick, onViewC
     setAnimating(true);
 
     // Switch main content view based on tab.
-    // - rapport tab shows the report preview (full-width).
-    // - kaart tab shows the map (full-width).
-    // - start tab uses the default view (chart).
     if (newTab === "rapport") onViewChange("report");
     else if (newTab === "kaart") onViewChange("map");
+    else if (newTab === "ifc") onViewChange("ifc");
+    else if (newTab === "tekening") onViewChange("tekening");
     else onViewChange("default");
   }, [activeTab, onViewChange]);
 
@@ -97,9 +101,11 @@ export default function Ribbon({ onFileTabClick, onProjectSettingsClick, onViewC
 
   const renderContent = (tab: TabId) => {
     switch (tab) {
-      case "start":   return <StartTab />;
-      case "kaart":   return <KaartTab />;
-      case "rapport": return <RapportTab onOpenProjectSettings={onProjectSettingsClick ?? (() => {})} />;
+      case "start":    return <StartTab onViewChange={onViewChange} />;
+      case "kaart":    return <KaartTab />;
+      case "ifc":      return <IfcTab />;
+      case "rapport":  return <RapportTab onOpenProjectSettings={onProjectSettingsClick ?? (() => {})} />;
+      case "tekening": return <SonderingstekeningTab />;
     }
   };
 

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 64" role="img" aria-label="Open Geotechniek Studio">
+  <!--
+    Open GEO Studio horizontal wordmark.
+    Icon on the left, "Open" + "GEO Studio" wordmark on the right.
+    Mirrors the OpenAEC logo convention (white "Open" + amber accent word).
+    On dark backgrounds (Deep Forge). For light backgrounds, swap Open's fill to #36363E.
+  -->
+
+  <!-- ── Icon (reuse of open-geo-studio-icon.svg, fitted at 64x64) ── -->
+  <g transform="translate(0,0)">
+    <path d="M 32 2 L 58 17 L 58 47 L 32 62 L 6 47 L 6 17 Z" fill="#36363E" />
+    <path d="M 32 4.3 L 56 18.2 L 56 45.8 L 32 59.7 L 8 45.8 L 8 18.2 Z" fill="none" stroke="#27272A" stroke-width="0.8" />
+    <line x1="16" y1="14" x2="16" y2="50" stroke="#A1A1AA" stroke-width="0.6" stroke-linecap="round" />
+    <g stroke="#A1A1AA" stroke-width="0.5">
+      <line x1="14.5" y1="20" x2="16" y2="20" />
+      <line x1="14.5" y1="26" x2="16" y2="26" />
+      <line x1="14.5" y1="32" x2="16" y2="32" />
+      <line x1="14.5" y1="38" x2="16" y2="38" />
+      <line x1="14.5" y1="44" x2="16" y2="44" />
+    </g>
+    <line x1="16" y1="14" x2="48" y2="14" stroke="#FAFAF9" stroke-width="0.8" stroke-linecap="round" />
+    <rect x="46" y="14" width="3" height="9"  fill="#4CAF50" />
+    <rect x="46" y="23" width="3" height="8"  fill="#8BC34A" />
+    <rect x="46" y="31" width="3" height="11" fill="#F59E0B" />
+    <rect x="46" y="42" width="3" height="8"  fill="#EA580C" />
+    <polyline points="20,15 22,18 26,22 23,26 28,30 25,34 30,38 24,42 31,46 27,50"
+              fill="none" stroke="#D97706" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="27" cy="50" r="1.4" fill="#D97706" />
+  </g>
+
+  <!--
+    Wordmark — "Open" white, "Geotechniek" amber, "Studio" white.
+    Uses Space Grotesk Bold (OpenAEC primary heading typeface).
+    Falls back to system sans-serif if not loaded.
+  -->
+  <g font-family="'Space Grotesk', 'Inter', system-ui, sans-serif" font-weight="700">
+    <text x="74" y="42" font-size="28" fill="#FAFAF9" letter-spacing="-0.5">Open</text>
+    <text x="153" y="42" font-size="28" fill="#D97706" letter-spacing="-0.5">Geotechniek</text>
+    <text x="333" y="42" font-size="28" fill="#FAFAF9" letter-spacing="-0.5">Studio</text>
+  </g>
+</svg>

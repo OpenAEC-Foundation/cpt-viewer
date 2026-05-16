@@ -1,0 +1,29 @@
+# IDE / agent state
+.claude/
+.vscode/
+.idea/
+*.swp
+*~
+
+# Dependencies + build artefacts
+node_modules/
+target/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Rust
+**/*.rs.bk
+
+# Local test/sample data (real CPT files — don't commit)
+sample/
+
+# Docs work-in-progress / prompt notes
+PROMPTS.md
+docs/

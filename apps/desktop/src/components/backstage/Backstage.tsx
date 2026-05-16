@@ -1,9 +1,13 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
+import { save, open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useRecentFiles, type RecentFile } from "../../hooks/useRecentFiles";
-import { useCptStore } from "../../store/useCptStore";
+import {
+  useCptStore,
+  newProjectDocument,
+  openPathByExtension,
+} from "../../store/useCptStore";
 import ExtensionManagerPanel from "./ExtensionManagerPanel";
 import "./Backstage.css";
 
@@ -66,6 +70,12 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
   const { t } = useTranslation("backstage");
   const [activePanel, setActivePanel] = useState<string>("none");
   const { recentFiles, removeRecentFile, clearRecentFiles } = useRecentFiles();
+  const documents = useCptStore((s) => s.documents);
+  const activeDocId = useCptStore((s) => s.activeDocId);
+  const activeDoc = useMemo(
+    () => documents.find((d) => d.id === activeDocId),
+    [documents, activeDocId],
+  );
 
   const actionAndClose = useCallback(
     (fn?: () => void) => {
@@ -74,6 +84,103 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
     },
     [onClose]
   );
+
+  // ── .ifcgis project file actions ────────────────────────────
+  // Save only makes sense when the active doc is a project.
+  const saveProject = useCallback(async () => {
+    if (!activeDoc || activeDoc.kind !== "project") {
+      alert("Geen project actief — open of maak een .ifcgis project.");
+      return;
+    }
+    const dst = await save({
+      defaultPath: `${activeDoc.meta.title || "project"}.ifcgis`,
+      filters: [{ name: "Open Geotechniek Studio project", extensions: ["ifcgis"] }],
+    });
+    if (!dst) return;
+    try {
+      await invoke("save_project_ifcgis", {
+        project: activeDoc.meta,
+        path: dst,
+      });
+      onClose();
+    } catch (err) {
+      console.error("save_project_ifcgis failed", err);
+      alert(`Opslaan mislukt: ${err}`);
+    }
+  }, [activeDoc, onClose]);
+
+  /// Save-as for a CPT document — offers GEF / BRO-XML / IfcGeo format
+  /// conversion. Project documents fall through to `saveProject`.
+  const [showCptSaveAsMenu, setShowCptSaveAsMenu] = useState(false);
+  const saveCptAs = useCallback(
+    async (format: "gef" | "bro" | "ifcgeo") => {
+      if (!activeDoc || activeDoc.kind !== "cpt") return;
+      const ext = format === "bro" ? "xml" : format;
+      const filterName =
+        format === "gef"
+          ? "GEF (.gef)"
+          : format === "bro"
+          ? "BRO XML (.xml)"
+          : "Geotechniek-object (.ifcgeo)";
+      const baseName = activeDoc.cpt.id || "sondering";
+      const dst = await save({
+        defaultPath: `${baseName}.${ext}`,
+        filters: [{ name: filterName, extensions: [ext] }],
+      });
+      if (!dst) return;
+      try {
+        await invoke("save_cpt_as", {
+          cptId: activeDoc.cpt.id,
+          format,
+          path: dst,
+        });
+        setShowCptSaveAsMenu(false);
+        onClose();
+      } catch (err) {
+        console.error("save_cpt_as failed", err);
+        alert(`Opslaan mislukt: ${err}`);
+      }
+    },
+    [activeDoc, onClose],
+  );
+
+  /// Routes the Save-As button by document kind. CPT docs surface the
+  /// format-picker submenu; project docs save .ifcgis directly.
+  const onSaveAs = useCallback(() => {
+    if (activeDoc?.kind === "cpt") {
+      setShowCptSaveAsMenu((v) => !v);
+      return;
+    }
+    void saveProject();
+  }, [activeDoc, saveProject]);
+
+  // Single "open anything" entry. Combined filter — the file's extension
+  // determines whether we create a CptDocument or a ProjectDocument tab.
+  const openAny = useCallback(async () => {
+    const selected = await openDialog({
+      multiple: true,
+      filters: [
+        { name: "Open Geotechniek Studio", extensions: ["gef", "GEF", "xml", "XML", "ifcgis"] },
+      ],
+    });
+    if (!selected) return;
+    const paths = Array.isArray(selected) ? selected : [selected];
+    let openedAny = false;
+    for (const p of paths) {
+      try {
+        const handled = await openPathByExtension(p);
+        if (handled) openedAny = true;
+      } catch (err) {
+        console.error("open failed for", p, err);
+      }
+    }
+    if (openedAny) onClose();
+  }, [onClose]);
+
+  const newProject = useCallback(() => {
+    newProjectDocument();
+    onClose();
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) {
@@ -119,7 +226,7 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
             icon={ICONS.new}
             label={t("new")}
             shortcut="Ctrl+N"
-            onClick={() => actionAndClose()}
+            onClick={newProject}
           />
           <MenuItem
             icon={ICONS.open}
@@ -132,14 +239,36 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
             icon={ICONS.save}
             label={t("save")}
             shortcut="Ctrl+S"
-            onClick={() => actionAndClose()}
+            onClick={() => void saveProject()}
           />
           <MenuItem
             icon={ICONS.saveAs}
             label={t("saveAs")}
             shortcut="Ctrl+Shift+S"
-            onClick={() => actionAndClose()}
+            onClick={onSaveAs}
           />
+          {showCptSaveAsMenu && activeDoc?.kind === "cpt" && (
+            <div className="backstage-submenu">
+              <button
+                className="backstage-subitem"
+                onClick={() => void saveCptAs("gef")}
+              >
+                GEF (.gef)
+              </button>
+              <button
+                className="backstage-subitem"
+                onClick={() => void saveCptAs("bro")}
+              >
+                BRO XML (.xml)
+              </button>
+              <button
+                className="backstage-subitem"
+                onClick={() => void saveCptAs("ifcgeo")}
+              >
+                Geotechniek-object (.ifcgeo)
+              </button>
+            </div>
+          )}
           <MenuItem
             icon={ICONS.print}
             label={t("print")}
@@ -201,6 +330,7 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
               onOpenFile={(path) => { onClose(); onOpenFile?.(path); }}
               onRemoveFile={removeRecentFile}
               onClearAll={clearRecentFiles}
+              onOpenAny={openAny}
             />
           )}
           {activePanel === "about" && <AboutPanel />}
@@ -341,11 +471,13 @@ function OpenPanel({
   onOpenFile,
   onRemoveFile,
   onClearAll,
+  onOpenAny,
 }: {
   recentFiles: RecentFile[];
   onOpenFile: (path: string) => void;
   onRemoveFile: (path: string) => void;
   onClearAll: () => void;
+  onOpenAny: () => void | Promise<void>;
 }) {
   const { t } = useTranslation("backstage");
 
@@ -378,8 +510,26 @@ function OpenPanel({
 
   return (
     <div className="bs-export-panel">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <h2 className="bs-export-title" style={{ margin: 0 }}>{t("openPanel.title", "Recent Files")}</h2>
+      <h2 className="bs-export-title" style={{ marginTop: 0, marginBottom: 16 }}>
+        {t("openPanel.openTitle", "Openen")}
+      </h2>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12, marginBottom: 28 }}>
+        <button className="bs-open-card" onClick={() => void onOpenAny()}>
+          <div className="bs-open-card-icon" style={{ color: "var(--amber, #D97706)" }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
+            </svg>
+          </div>
+          <div className="bs-open-card-text">
+            <strong>{t("openPanel.openTitle", "Openen")}</strong>
+            <span>{t("openPanel.openAnyHint", "Sondering (GEF / BRO-XML) of project (.ifcgis) — elk bestand opent in een eigen tab")}</span>
+          </div>
+        </button>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <h3 className="bs-export-title" style={{ margin: 0, fontSize: "1rem" }}>{t("openPanel.title", "Recent Files")}</h3>
         {recentFiles.length > 0 && (
           <button
             onClick={onClearAll}
@@ -459,7 +609,8 @@ function OpenPanel({
 function ExportPanel() {
   const { t } = useTranslation("backstage");
   const activeId = useCptStore((s) => s.activeCptId);
-  const cptIds = useCptStore((s) => Array.from(s.cpts.keys()));
+  const cptsMap = useCptStore((s) => s.cpts);
+  const cptIds = useMemo(() => Array.from(cptsMap.keys()), [cptsMap]);
   const hasActive = activeId != null;
   const hasAny = cptIds.length > 0;
 

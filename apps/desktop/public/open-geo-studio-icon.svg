@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Open Geotechniek Studio">
+  <!--
+    Open GEO Studio app icon.
+    Hexagonal motif inherited from OpenAEC's isometric block, repurposed for
+    geotechnics: a stylised CPT qc-curve descending through Robertson SBT
+    colour layers.
+
+    Palette (OpenAEC Foundation house style):
+      Deep Forge      #36363E  – background
+      Construction Amber #D97706 – qc curve, "AEC"-style accent
+      Warm Gold       #F59E0B  – mid layer
+      Signal Orange   #EA580C  – lower layer
+      Scaffold Gray   #A1A1AA  – depth axis
+      Blueprint White #FAFAF9  – grid + ground line
+      Layer greens (Robertson) – #4CAF50, #8BC34A for upper clayey/silty bands
+  -->
+
+  <!-- Hexagonal background -->
+  <path
+    d="M 32 2 L 58 17 L 58 47 L 32 62 L 6 47 L 6 17 Z"
+    fill="#36363E" />
+
+  <!-- Subtle inner border (1 unit inset) -->
+  <path
+    d="M 32 4.3 L 56 18.2 L 56 45.8 L 32 59.7 L 8 45.8 L 8 18.2 Z"
+    fill="none" stroke="#27272A" stroke-width="0.8" />
+
+  <!-- Vertical depth axis on the left (m NAP), scaffold gray -->
+  <line x1="16" y1="14" x2="16" y2="50" stroke="#A1A1AA" stroke-width="0.6" stroke-linecap="round" />
+  <!-- Depth tick marks -->
+  <g stroke="#A1A1AA" stroke-width="0.5">
+    <line x1="14.5" y1="20" x2="16" y2="20" />
+    <line x1="14.5" y1="26" x2="16" y2="26" />
+    <line x1="14.5" y1="32" x2="16" y2="32" />
+    <line x1="14.5" y1="38" x2="16" y2="38" />
+    <line x1="14.5" y1="44" x2="16" y2="44" />
+  </g>
+
+  <!-- Ground line (maaiveld) at top -->
+  <line x1="16" y1="14" x2="48" y2="14" stroke="#FAFAF9" stroke-width="0.8" stroke-linecap="round" />
+
+  <!-- Robertson SBT layer strip on the right (4 bands) -->
+  <rect x="46" y="14"   width="3" height="9"  fill="#4CAF50" />  <!-- Klei -->
+  <rect x="46" y="23"   width="3" height="8"  fill="#8BC34A" />  <!-- Silt -->
+  <rect x="46" y="31"   width="3" height="11" fill="#F59E0B" />  <!-- Zand mengsels -->
+  <rect x="46" y="42"   width="3" height="8"  fill="#EA580C" />  <!-- Zand -->
+
+  <!-- qc curve: amber, descending zigzag (typical CPT signature) -->
+  <polyline
+    points="20,15 22,18 26,22 23,26 28,30 25,34 30,38 24,42 31,46 27,50"
+    fill="none"
+    stroke="#D97706"
+    stroke-width="2.2"
+    stroke-linecap="round"
+    stroke-linejoin="round" />
+
+  <!-- Highlight node at the deepest measurement -->
+  <circle cx="27" cy="50" r="1.4" fill="#D97706" />
+</svg>

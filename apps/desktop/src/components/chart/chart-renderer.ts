@@ -12,6 +12,8 @@
  * Public API:
  *   - renderChart(ctx, cpts, opts, curves)
  *   - hitTest(cpts, opts, x, y) → HitResult | null
+ *   - hitTestSplitter(cpts, opts, x, y) → splitter index (between cols i and i+1) | null
+ *   - computeColumnLayout(cpts, opts) → array of { left, width } per CPT
  *
  * Purity contract: no DOM mutation, no React, no event handlers, no
  * window globals beyond `getComputedStyle(document.documentElement)`
@@ -91,8 +93,32 @@ export interface ChartRenderOptions {
   height: number;
   /** 1.0 = depth range fits. >1 zooms in (smaller visible range). */
   zoom: number;
-  /** Pan offset in meters (positive shifts the visible range deeper). */
-  pan: number;
+  /** Vertical pan offset in meters (positive shifts the visible range deeper). */
+  panY: number;
+  /** Horizontal pan as a fraction of each axis maximum (0 = default). */
+  panX: number;
+  /**
+   * Per-CPT column width ratios. Sum is normalized internally.
+   * Length must equal `cpts.length`; otherwise renderer falls back to even split.
+   */
+  columnRatios?: number[];
+  /**
+   * Optional reference marker(s) — horizontal lines drawn across all panels.
+   * Each marker is anchored either to NAP (preferred: shared across CPTs)
+   * or to depth (fallback for CPTs without known ground-level).
+   *
+   * Backwards compat: `marker` (singular) is still accepted for existing
+   * callers; if both are present the singular is appended to `markers`.
+   */
+  markers?: { nap?: number; depth?: number }[];
+  marker?: { nap?: number; depth?: number };
+  /**
+   * Optional hover indicator — short dashed line + bullets on every curve
+   * at the hovered depth, with value labels. Set by ChartCanvas on mousemove.
+   */
+  hover?: { cptId: string; depth: number };
+  /** Currently-active CPT id — drawn with an amber accent in its tab strip. */
+  activeCptId?: string | null;
 }
 
 export interface ChartCurves {
@@ -104,13 +130,22 @@ export interface ChartCurves {
 
 export interface HitResult {
   cptId: string;
+  /** Depth below ground level in metres. */
   depth: number;
+  /** Depth relative to NAP (m), if the CPT has a known ground-level. */
+  depthNap?: number;
   qc?: number;
   fs?: number;
   rf?: number;
   u2?: number;
   zone: RobertsonZone | null;
 }
+
+/** Width (px) of the splitter hit zone between adjacent CPT columns. */
+export const SPLITTER_HALF_WIDTH = 4;
+
+/** Vertical hit zone (px) for grabbing the horizontal reference marker. */
+export const MARKER_HALF_HEIGHT = 5;
 
 // ─────────────────────────────────────────────────────────────
 // Internal layout helpers
@@ -138,6 +173,8 @@ interface SharedLayout {
   plotB: number;
   plotH: number;
   headerH: number;
+  /** Height of the per-CPT name tab strip above the chart panels (0 if a single CPT). */
+  tabH: number;
   narrow: boolean;
 }
 
@@ -160,6 +197,7 @@ interface ChartColors {
   text: string;
   textBright: string;
   headerBg: string;
+  splitter: string;
   qc: string;
   fs: string;
   rf: string;
@@ -167,10 +205,8 @@ interface ChartColors {
 }
 
 function readColors(): ChartColors {
-  // Domain curve colors come from CSS variables so themes flow through.
-  // The chart body still uses fixed dark surface colors because the original
-  // vanilla chart was tuned for a dark canvas — light theme variants can
-  // ride on top later once a design pass lands.
+  // Both surface and curve colors come from CSS variables so the chart
+  // tracks the active theme. The fallbacks match OpenAEC light defaults.
   const root = typeof document !== "undefined" ? document.documentElement : null;
   const cs = root ? getComputedStyle(root) : null;
   const cssVar = (name: string, fallback: string): string => {
@@ -178,15 +214,21 @@ function readColors(): ChartColors {
     const v = cs.getPropertyValue(name).trim();
     return v || fallback;
   };
+  const bg = cssVar("--theme-bg", "#FAFAF9");
+  const panelBg = cssVar("--theme-bg-elevated", cssVar("--theme-bg-lighter", "#FFFFFF"));
+  const text = cssVar("--theme-text", "#36363E");
+  const gridLine = cssVar("--theme-border-subtle", "#E7E5E4");
+  const gridMajor = cssVar("--theme-border", "#D6D3D1");
   return {
-    bg: "#0d1117",
-    panelBg: "#0f1318",
-    grid: "rgba(255,255,255,0.05)",
-    gridMajor: "rgba(255,255,255,0.10)",
-    border: "rgba(255,255,255,0.08)",
-    text: "#6e7681",
-    textBright: "#8b949e",
-    headerBg: "#161b22",
+    bg,
+    panelBg,
+    grid: gridLine,
+    gridMajor,
+    border: gridMajor,
+    text,
+    textBright: text,
+    headerBg: panelBg,
+    splitter: gridMajor,
     qc: cssVar("--domain-cpt-qc", "#D97706"),
     fs: cssVar("--domain-cpt-fs", "#EA580C"),
     rf: cssVar("--domain-cpt-rf", "#F59E0B"),
@@ -238,9 +280,15 @@ function computeScales(points: MeasurementPoint[]): CptScales {
       .map((p) => p[k])
       .filter((v): v is number => typeof v === "number" && v > 0);
 
-  const qcMax = niceMax(Math.max(0.1, ...positive("qc")));
+  // Pinned axis ranges per Dutch geotechnical convention:
+  //   qc default 0-30 MPa (auto-extends if measured peak exceeds 30)
+  //   Rf  default 0-10 %  (auto-extends if measured peak exceeds 10)
+  // fs is auto-fit because its scale varies more by soil type.
+  const qcPeak = Math.max(0, ...positive("qc"));
+  const rfPeak = Math.max(0, ...positive("rf"));
+  const qcMax = qcPeak > 30 ? niceMax(qcPeak) : 30;
   const fsMax = niceMax(Math.max(0.01, ...positive("fs")));
-  const rfMax = niceMax(Math.max(1, ...positive("rf")));
+  const rfMax = rfPeak > 10 ? niceMax(rfPeak) : 10;
 
   const u2vals = points.map((p) => p.u2).filter((v): v is number => v != null);
   const hasU2 = u2vals.length > 10;
@@ -253,28 +301,32 @@ function computeScales(points: MeasurementPoint[]): CptScales {
   return { depthMin, depthMax, qcMax, fsMax, rfMax, u2Max, hasU2 };
 }
 
-/** Compute the visible depth window from base depth range + zoom + pan. */
-function visibleDepthWindow(scales: CptScales, zoom: number, pan: number) {
+/** Compute the visible depth window from base depth range + zoom + panY. */
+function visibleDepthWindow(scales: CptScales, zoom: number, panY: number) {
   const fullRange = scales.depthMax - scales.depthMin;
   const visibleRange = fullRange / Math.max(0.05, zoom);
-  const center = (scales.depthMin + scales.depthMax) / 2 + pan;
+  const center = (scales.depthMin + scales.depthMax) / 2 + panY;
   return {
     depthViewMin: center - visibleRange / 2,
     depthViewMax: center + visibleRange / 2,
   };
 }
 
-function layoutShared(opts: ChartRenderOptions): SharedLayout {
+function layoutShared(opts: ChartRenderOptions, cptCount: number = 1): SharedLayout {
   const narrow = opts.width < 280;
   const headerH = 28;
+  // When showing multiple CPTs we reserve a 24px strip ABOVE the panels for
+  // a centred CPT-name tab per column. Single-CPT view keeps the chart taller.
+  const tabH = cptCount > 1 ? 24 : 0;
   const bottomPad = 4;
-  const plotT = headerH;
+  const plotT = headerH + tabH;
   const plotB = opts.height - bottomPad;
   return {
     plotT,
     plotB,
     plotH: plotB - plotT,
     headerH,
+    tabH,
     narrow,
   };
 }
@@ -286,7 +338,8 @@ function layoutCpt(
   hasU2: boolean,
   narrow: boolean,
 ): CptLayout {
-  const depthW = narrow ? 30 : 42;
+  // Depth axis is wider when narrow=false to fit stacked depth/NAP labels.
+  const depthW = narrow ? 36 : 50;
   const soilW = narrow ? 14 : 22;
   const gap = 1;
 
@@ -344,17 +397,116 @@ interface CptComputed {
   depthViewMin: number;
   depthViewMax: number;
   depths: (number | null)[];
+  /**
+   * Per-axis "view min" / "view max" — the bounds currently visible.
+   * Width = scales.{q,f,r,u}Max / zoom so horizontal zoom mirrors depth zoom.
+   * Min = panX * scales.{q,f,r,u}Max so horizontal pan slides the window.
+   */
+  qcViewMin: number;
+  qcViewMax: number;
+  fsViewMin: number;
+  fsViewMax: number;
+  rfViewMin: number;
+  rfViewMax: number;
+  u2ViewMin: number;
+  u2ViewMax: number;
+}
+
+/**
+ * Compute per-CPT column slot widths from `columnRatios`.
+ * Falls back to an even split when ratios are missing or mis-shaped.
+ */
+function computeSlotWidths(opts: ChartRenderOptions, cptCount: number): number[] {
+  if (cptCount <= 0) return [];
+  const ratios =
+    opts.columnRatios && opts.columnRatios.length === cptCount
+      ? opts.columnRatios
+      : new Array(cptCount).fill(1);
+  const sum = ratios.reduce((a, b) => a + Math.max(0.0001, b), 0);
+  return ratios.map((r) => (Math.max(0.0001, r) / sum) * opts.width);
 }
 
 function computeAll(cpts: Cpt[], opts: ChartRenderOptions, shared: SharedLayout): CptComputed[] {
   if (cpts.length === 0) return [];
-  const cptSlotWidth = opts.width / cpts.length;
+  const slotWidths = computeSlotWidths(opts, cpts.length);
+  const zoom = Math.max(0.05, opts.zoom);
+  const panX = Number.isFinite(opts.panX) ? opts.panX : 0;
+
+  // Pass 1 — per-CPT base scales.
+  const scalesArr = cpts.map((cpt) => computeScales(cpt.points));
+
+  // Pass 2 — compute a SHARED NAP window across all CPTs that have
+  // `ground_level_nap`. This keeps NAP=0 anchored at the same y-pixel for
+  // every CPT in a multi-CPT view, so cross-CPT comparison is honest.
+  // Top of the chart = the highest ground level; bottom = the deepest NAP
+  // point reached by any CPT. CPTs without NAP fall back to their own
+  // depth range (legacy behavior).
+  let sharedNapTop: number | null = null;     // highest NAP value (top of chart)
+  let sharedNapBottom: number | null = null;  // most negative NAP (bottom of chart)
+  for (let i = 0; i < cpts.length; i++) {
+    const groundNap = cpts[i].metadata.ground_level_nap;
+    if (typeof groundNap !== "number") continue;
+    const napAtBottom = groundNap - scalesArr[i].depthMax;
+    if (sharedNapTop === null || groundNap > sharedNapTop) sharedNapTop = groundNap;
+    if (sharedNapBottom === null || napAtBottom < sharedNapBottom) sharedNapBottom = napAtBottom;
+  }
+  const haveSharedNap = sharedNapTop !== null && sharedNapBottom !== null && sharedNapTop > sharedNapBottom;
+
+  let cursor = 0;
   return cpts.map((cpt, i) => {
-    const scales = computeScales(cpt.points);
-    const layout = layoutCpt(i * cptSlotWidth, cptSlotWidth, scales.hasU2, shared.narrow);
-    const { depthViewMin, depthViewMax } = visibleDepthWindow(scales, opts.zoom, opts.pan);
+    const scales = scalesArr[i];
+    const slotW = slotWidths[i];
+    const layout = layoutCpt(cursor, slotW, scales.hasU2, shared.narrow);
+    cursor += slotW;
+
+    // Depth view: prefer the shared-NAP window (mapped back into this
+    // CPT's depth-below-ground frame). Fall back to per-CPT depth window
+    // if this CPT lacks ground_level_nap or if no CPT in the set has it.
+    const groundNap = cpt.metadata.ground_level_nap;
+    let cptDepthViewMin: number;
+    let cptDepthViewMax: number;
+    if (haveSharedNap && typeof groundNap === "number") {
+      // depth = groundNap - nap, so the depth at sharedNapTop (top of chart)
+      // is `groundNap - sharedNapTop`. For CPTs whose ground level is below
+      // the highest, this yields a negative depth (i.e. the chart top is
+      // ABOVE this CPT's surface) — the curve naturally starts further
+      // down because drawCurve is clipped to the panel.
+      const fullMin = groundNap - sharedNapTop!;
+      const fullMax = groundNap - sharedNapBottom!;
+      const fullRange = fullMax - fullMin;
+      const visibleRange = fullRange / Math.max(0.05, zoom);
+      const center = (fullMin + fullMax) / 2 + opts.panY;
+      cptDepthViewMin = center - visibleRange / 2;
+      cptDepthViewMax = center + visibleRange / 2;
+    } else {
+      const win = visibleDepthWindow(scales, opts.zoom, opts.panY);
+      cptDepthViewMin = win.depthViewMin;
+      cptDepthViewMax = win.depthViewMax;
+    }
+
     const depths = cpt.points.map((p) => (p.depth != null ? Math.abs(p.depth) : null));
-    return { cpt, scales, layout, depthViewMin, depthViewMax, depths };
+    const qcWindow = Math.max(0.1,  scales.qcMax / zoom);
+    const fsWindow = Math.max(0.01, scales.fsMax / zoom);
+    const rfWindow = Math.max(0.1,  scales.rfMax / zoom);
+    const u2Window = Math.max(0.01, scales.u2Max / zoom);
+    const qcViewMin = panX * scales.qcMax;
+    const fsViewMin = panX * scales.fsMax;
+    const rfViewMin = panX * scales.rfMax;
+    const u2ViewMin = panX * scales.u2Max;
+    return {
+      cpt, scales, layout,
+      depthViewMin: cptDepthViewMin,
+      depthViewMax: cptDepthViewMax,
+      depths,
+      qcViewMin,
+      qcViewMax: qcViewMin + qcWindow,
+      fsViewMin,
+      fsViewMax: fsViewMin + fsWindow,
+      rfViewMin,
+      rfViewMax: rfViewMin + rfWindow,
+      u2ViewMin,
+      u2ViewMax: u2ViewMin + u2Window,
+    };
   });
 }
 
@@ -441,17 +593,58 @@ function drawGridH(
   }
 }
 
+/**
+ * Pick a step from a fixed candidate ladder (largest first).
+ * Returns the smallest step such that no more than ~12 ticks land in the
+ * visible range. This guarantees grid lines always sit on "logical"
+ * positions (multiples of 5, 1, 0.5, 0.1 …) regardless of zoom — no more
+ * weird off-grid divisions like 2/4/6/8 when the user zoomed qc to 0–15.
+ */
+function pickLadderStep(range: number, ladder: number[], maxTicks = 12): number {
+  if (range <= 0) return ladder[0];
+  for (const s of ladder) {
+    if (range / s <= maxTicks) return s;
+  }
+  return ladder[ladder.length - 1];
+}
+
+/** Default ladder for qc / fs / u2 (MPa) and rf (%) — covers reasonable zoom range. */
+const QC_LADDER = [10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01];
+const FS_LADDER = [1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001];
+const RF_LADDER = [10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05];
+const U2_LADDER = FS_LADDER;
+
 function drawGridV(
   ctx: CanvasRenderingContext2D,
   colors: ChartColors,
   shared: SharedLayout,
   panel: PanelRect,
+  minVal: number,
+  maxVal: number,
+  ladder: number[] = QC_LADDER,
 ) {
-  const steps = Math.max(2, Math.min(6, Math.floor(panel.w / 35)));
-  for (let i = 1; i < steps; i++) {
-    const x = Math.round(panel.l + (i / steps) * panel.w) + 0.5;
-    ctx.strokeStyle = colors.grid;
-    ctx.lineWidth = 1;
+  const range = maxVal - minVal;
+  if (range <= 0) return;
+  const step = pickLadderStep(range, ladder);
+  // Major step = the largest step in the ladder (e.g. 5 for qc) — those
+  // ticks get a heavier line. Always emphasises the "primary" grid.
+  const majorStep = ladder[0];
+
+  ctx.lineWidth = 1;
+  for (
+    let v = Math.ceil(minVal / step) * step;
+    v <= maxVal + 1e-9;
+    v = +(v + step).toFixed(6)
+  ) {
+    if (Math.abs(v - minVal) < 1e-9) continue;   // skip the panel edge
+    if (Math.abs(v - maxVal) < 1e-9) continue;
+    const x = Math.round(panel.l + ((v - minVal) / range) * panel.w) + 0.5;
+    // A line is "major" when it sits on a multiple of the largest ladder
+    // step. Concretely for qc that's every multiple of 5 MPa, even when
+    // we're also drawing 1-MPa lines because the user zoomed in.
+    const ratio = v / majorStep;
+    const major = Math.abs(ratio - Math.round(ratio)) < 1e-6;
+    ctx.strokeStyle = major ? colors.gridMajor : colors.grid;
     ctx.beginPath();
     ctx.moveTo(x, shared.plotT);
     ctx.lineTo(x, shared.plotB);
@@ -466,26 +659,44 @@ function drawPanelHeader(
   panel: PanelRect,
   label: string,
   color: string,
+  minVal: number | null,
   maxVal: number | null,
 ) {
   const cx = panel.l + panel.w / 2;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  ctx.font = `600 ${shared.narrow ? 9 : 10}px Inter, system-ui, sans-serif`;
+  // Pick a font size that lets the longer Dutch labels still fit. We
+  // measure the text and step down once if it'd overflow the panel.
+  let labelFont = `600 ${shared.narrow ? 9 : 10}px Inter, system-ui, sans-serif`;
+  ctx.font = labelFont;
+  let displayLabel = label;
+  let textW = ctx.measureText(displayLabel).width;
+  if (textW > panel.w - 4) {
+    labelFont = `600 ${shared.narrow ? 8 : 9}px Inter, system-ui, sans-serif`;
+    ctx.font = labelFont;
+    textW = ctx.measureText(displayLabel).width;
+    if (textW > panel.w - 4) {
+      // Last resort: trim with an ellipsis so we never spill into a neighbour.
+      while (displayLabel.length > 2 && ctx.measureText(displayLabel + "…").width > panel.w - 4) {
+        displayLabel = displayLabel.slice(0, -1);
+      }
+      displayLabel += "…";
+    }
+  }
   ctx.fillStyle = color;
-  ctx.fillText(label, cx, 3);
+  ctx.fillText(displayLabel, cx, 3);
 
   if (maxVal !== null && panel.w > 30) {
     ctx.font = `${shared.narrow ? 7 : 9}px "JetBrains Mono", monospace`;
     ctx.fillStyle = colors.text;
     ctx.textAlign = "left";
-    ctx.fillText("0", panel.l + 2, 15);
+    ctx.fillText(fmtScale(minVal ?? 0), panel.l + 2, 15);
     ctx.textAlign = "right";
     ctx.fillText(fmtScale(maxVal), panel.l + panel.w - 2, 15);
 
     if (panel.w > 60) {
       ctx.textAlign = "center";
-      ctx.fillText(fmtScale(maxVal / 2), cx, 15);
+      ctx.fillText(fmtScale(((minVal ?? 0) + maxVal) / 2), cx, 15);
     }
   }
 }
@@ -498,10 +709,14 @@ function drawDepthAxis(
 ) {
   const range = c.depthViewMax - c.depthViewMin;
   const step = niceStep(range, 8);
+  const groundNap = c.cpt.metadata.ground_level_nap;
+  const hasNap = typeof groundNap === "number";
+  const labelRight = c.layout.cptLeft + c.layout.depthW - 4;
+  const depthFont = `${shared.narrow ? 8 : 9}px "JetBrains Mono", monospace`;
 
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
-  ctx.font = `${shared.narrow ? 8 : 9}px "JetBrains Mono", monospace`;
+  ctx.font = depthFont;
   ctx.fillStyle = colors.text;
 
   for (
@@ -511,7 +726,14 @@ function drawDepthAxis(
   ) {
     const y = depthToY(d, shared, c.depthViewMin, c.depthViewMax);
     if (y < shared.plotT + 6 || y > shared.plotB - 3) continue;
-    ctx.fillText(d.toFixed(1), c.layout.cptLeft + c.layout.depthW - 4, y);
+
+    // Show NAP value if ground-level is known, else fall back to depth
+    // below ground (always reported as a negative number — convention:
+    // depth grows downward, so deeper = more negative).
+    const label = hasNap
+      ? formatNap(groundNap! - d)
+      : (-d).toFixed(1);
+    ctx.fillText(label, labelRight, y);
   }
 
   if (!shared.narrow) {
@@ -521,9 +743,15 @@ function drawDepthAxis(
     ctx.textAlign = "center";
     ctx.font = '600 9px Inter, system-ui, sans-serif';
     ctx.fillStyle = colors.text;
-    ctx.fillText("Diepte (m)", 0, 0);
+    ctx.fillText(hasNap ? "NAP (m)" : "Diepte (m)", 0, 0);
     ctx.restore();
   }
+}
+
+/** Format an NAP value: "+2.50" or "-12.50". */
+function formatNap(v: number): string {
+  if (v >= 0) return `+${v.toFixed(2)}`;
+  return v.toFixed(2);
 }
 
 function drawCurve(
@@ -532,10 +760,13 @@ function drawCurve(
   c: CptComputed,
   panel: PanelRect,
   key: "qc" | "fs" | "rf" | "u2",
+  minVal: number,
   maxVal: number,
   color: string,
   lineWidth: number,
 ) {
+  const span = maxVal - minVal;
+  if (span <= 0) return;
   ctx.save();
   ctx.beginPath();
   ctx.rect(panel.l, shared.plotT, panel.w, shared.plotH);
@@ -554,7 +785,7 @@ function drawCurve(
       started = false;
       continue;
     }
-    const x = panel.l + (v / maxVal) * panel.w;
+    const x = panel.l + ((v - minVal) / span) * panel.w;
     const y = depthToY(d, shared, c.depthViewMin, c.depthViewMax);
     if (!started) {
       ctx.moveTo(x, y);
@@ -578,6 +809,392 @@ function drawPanelBorder(
   ctx.strokeRect(panel.l + 0.5, shared.plotT + 0.5, panel.w - 1, shared.plotH - 1);
 }
 
+/**
+ * Draw a thin vertical splitter between two adjacent CPT columns.
+ * The splitter sits at the boundary x and is purely a visual cue —
+ * hit-testing is handled by `hitTestSplitter`.
+ */
+function drawSplitter(
+  ctx: CanvasRenderingContext2D,
+  colors: ChartColors,
+  shared: SharedLayout,
+  x: number,
+  height: number,
+) {
+  // Slightly stronger than the panel border so it reads as draggable.
+  ctx.fillStyle = colors.splitter;
+  const w = 2;
+  ctx.fillRect(Math.round(x) - w / 2, shared.plotT, w, height);
+  // Grip dots at vertical midpoint
+  const cy = shared.plotT + height / 2;
+  ctx.fillStyle = colors.text;
+  ctx.globalAlpha = 0.55;
+  for (let i = -1; i <= 1; i++) {
+    ctx.fillRect(Math.round(x) - 1, Math.round(cy + i * 6), 2, 2);
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** Convert a marker (NAP-anchored or depth-anchored) to a depth in this CPT's frame. */
+function markerDepthForCpt(c: CptComputed, marker: { nap?: number; depth?: number }): number | null {
+  if (marker.nap != null) {
+    const groundNap = c.cpt.metadata.ground_level_nap;
+    if (typeof groundNap === "number") return groundNap - marker.nap;
+    // CPT has no NAP reference but marker is in NAP — use the depth-fallback
+    // if the caller provided one; otherwise we can't place the marker here.
+    if (marker.depth != null) return marker.depth;
+    return null;
+  }
+  if (marker.depth != null) return marker.depth;
+  return null;
+}
+
+/**
+ * Draw the horizontal reference marker across all panels of a single CPT.
+ * Blue line + grip dots at the right edge + depth/NAP label at the right.
+ *
+ * Also draws colored bullets + value labels at each curve intersection,
+ * so the marker reports qc/fs/Rf/u2 at its anchored depth — like the
+ * hover indicator, but persistent.
+ */
+function drawMarker(
+  ctx: CanvasRenderingContext2D,
+  colors: ChartColors,
+  shared: SharedLayout,
+  c: CptComputed,
+  marker: { nap?: number; depth?: number },
+) {
+  const depth = markerDepthForCpt(c, marker);
+  if (depth == null) return;
+  if (depth < c.depthViewMin || depth > c.depthViewMax) return;
+  const y = Math.round(depthToY(depth, shared, c.depthViewMin, c.depthViewMax)) + 0.5;
+
+  const lastPanel = c.layout.u2 ?? c.layout.rf;
+  const xStart = c.layout.soil.l;
+  const xEnd = lastPanel.l + lastPanel.w;
+
+  // Use OpenAEC info-blue for the reference marker (visually distinct
+  // from the amber qc curve and the orange fs curve).
+  const markerColor = colors.u2;
+
+  ctx.strokeStyle = markerColor;
+  ctx.lineWidth = 1.4;
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath();
+  ctx.moveTo(xStart, y);
+  ctx.lineTo(xEnd, y);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Grip dots near the right edge — visual hint that you can drag.
+  ctx.fillStyle = markerColor;
+  for (let i = -1; i <= 1; i++) {
+    ctx.fillRect(xEnd - 8 + i * 4, Math.round(y) - 1, 2, 2);
+  }
+
+  // ── Per-curve intersection bullets + value labels ──
+  // Find the closest measurement point to the marker depth (same logic
+  // as drawHoverIndicator) and draw a colored bullet + value on every
+  // curve so the marker reports qc/fs/Rf/u2 at its anchored depth.
+  let bestI = -1;
+  let bestDist = Infinity;
+  for (let i = 0; i < c.cpt.points.length; i++) {
+    const dPt = c.depths[i];
+    if (dPt == null) continue;
+    const dist = Math.abs(dPt - depth);
+    if (dist < bestDist) { bestDist = dist; bestI = i; }
+  }
+  if (bestI >= 0) {
+    const pt = c.cpt.points[bestI];
+    type Series = { panel: PanelRect; min: number; max: number; color: string; value?: number; fmt: (v: number) => string };
+    const series: Series[] = [
+      { panel: c.layout.qc, min: c.qcViewMin, max: c.qcViewMax, color: colors.qc, value: pt.qc, fmt: (v) => v.toFixed(2) },
+      { panel: c.layout.fs, min: c.fsViewMin, max: c.fsViewMax, color: colors.fs, value: pt.fs, fmt: (v) => v.toFixed(3) },
+      { panel: c.layout.rf, min: c.rfViewMin, max: c.rfViewMax, color: colors.rf, value: pt.rf, fmt: (v) => v.toFixed(2) },
+    ];
+    if (c.layout.u2) {
+      series.push({ panel: c.layout.u2, min: c.u2ViewMin, max: c.u2ViewMax, color: colors.u2, value: pt.u2, fmt: (v) => v.toFixed(3) });
+    }
+
+    ctx.font = '600 9px "JetBrains Mono", monospace';
+    for (const s of series) {
+      if (s.value == null) continue;
+      const span = s.max - s.min;
+      if (span <= 0) continue;
+      const t = Math.max(0, Math.min(1, (s.value - s.min) / span));
+      const bx = s.panel.l + t * s.panel.w;
+      // White halo + filled colored bullet (matches curve color).
+      ctx.fillStyle = colors.bg;
+      ctx.beginPath();
+      ctx.arc(bx, y, 4.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = s.color;
+      ctx.beginPath();
+      ctx.arc(bx, y, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      // Value label — placed above the bullet, with a halo for readability.
+      const txt = s.fmt(s.value);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      const labelY = Math.max(shared.plotT + 10, y - 7);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = colors.bg;
+      ctx.strokeText(txt, bx, labelY);
+      ctx.fillStyle = s.color;
+      ctx.fillText(txt, bx, labelY);
+    }
+  }
+
+  // Depth label on the right side, anchored to the marker line.
+  const groundNap = c.cpt.metadata.ground_level_nap;
+  let label: string;
+  if (marker.nap != null) {
+    label = formatNap(marker.nap);
+  } else if (typeof groundNap === "number" && marker.depth != null) {
+    label = formatNap(groundNap - marker.depth);
+  } else if (marker.depth != null) {
+    label = `${(-marker.depth).toFixed(1)} m`;
+  } else {
+    return;
+  }
+  ctx.font = '600 9px "JetBrains Mono", monospace';
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  const textPad = 4;
+  const w = ctx.measureText(label).width + textPad * 2;
+  const h = 14;
+  // Background pill behind the label so it stays readable over curves
+  ctx.fillStyle = colors.bg;
+  ctx.strokeStyle = markerColor;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  // Rounded rect (manual)
+  const rx = xEnd + 2, ry = y - h / 2, rw = w, rh = h, rr = 3;
+  ctx.moveTo(rx + rr, ry);
+  ctx.lineTo(rx + rw - rr, ry);
+  ctx.arcTo(rx + rw, ry, rx + rw, ry + rr, rr);
+  ctx.lineTo(rx + rw, ry + rh - rr);
+  ctx.arcTo(rx + rw, ry + rh, rx + rw - rr, ry + rh, rr);
+  ctx.lineTo(rx + rr, ry + rh);
+  ctx.arcTo(rx, ry + rh, rx, ry + rh - rr, rr);
+  ctx.lineTo(rx, ry + rr);
+  ctx.arcTo(rx, ry, rx + rr, ry, rr);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = markerColor;
+  ctx.fillText(label, rx + textPad, y);
+}
+
+/**
+ * Normalize the markers list from `ChartRenderOptions`. Combines `markers`
+ * (plural) and `marker` (singular, legacy) into a single ordered array.
+ * Returns an empty array if neither is provided.
+ */
+function collectMarkers(opts: ChartRenderOptions): { nap?: number; depth?: number }[] {
+  const list: { nap?: number; depth?: number }[] = [];
+  if (opts.markers && opts.markers.length > 0) list.push(...opts.markers);
+  if (opts.marker) list.push(opts.marker);
+  return list;
+}
+
+/**
+ * Hit-test the horizontal marker. Returns true if (x, y) is within the
+ * MARKER_HALF_HEIGHT band of the marker on any CPT.
+ */
+/**
+ * Hover indicator: short horizontal line at the hovered depth + a filled
+ * bullet on each curve (qc, fs, rf, u2) with a value label next to it.
+ */
+function drawHoverIndicator(
+  ctx: CanvasRenderingContext2D,
+  colors: ChartColors,
+  shared: SharedLayout,
+  c: CptComputed,
+  hoverDepth: number,
+) {
+  if (hoverDepth < c.depthViewMin || hoverDepth > c.depthViewMax) return;
+  const y = depthToY(hoverDepth, shared, c.depthViewMin, c.depthViewMax);
+
+  // Find the measurement point closest to the hovered depth.
+  let bestI = -1;
+  let bestDist = Infinity;
+  for (let i = 0; i < c.cpt.points.length; i++) {
+    const d = c.depths[i];
+    if (d == null) continue;
+    const dist = Math.abs(d - hoverDepth);
+    if (dist < bestDist) { bestDist = dist; bestI = i; }
+  }
+  if (bestI < 0) return;
+  const pt = c.cpt.points[bestI];
+
+  // Faint horizontal guide line across the panels.
+  const lastPanel = c.layout.u2 ?? c.layout.rf;
+  const xStart = c.layout.soil.l;
+  const xEnd = lastPanel.l + lastPanel.w;
+  ctx.save();
+  ctx.strokeStyle = colors.text;
+  ctx.globalAlpha = 0.25;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(xStart, Math.round(y) + 0.5);
+  ctx.lineTo(xEnd, Math.round(y) + 0.5);
+  ctx.stroke();
+  ctx.restore();
+
+  type Series = { panel: PanelRect; min: number; max: number; color: string; value?: number; label: string; fmt: (v: number) => string };
+  const series: Series[] = [
+    { panel: c.layout.qc, min: c.qcViewMin, max: c.qcViewMax, color: colors.qc, value: pt.qc, label: "qc", fmt: (v) => v.toFixed(2) },
+    { panel: c.layout.fs, min: c.fsViewMin, max: c.fsViewMax, color: colors.fs, value: pt.fs, label: "fs", fmt: (v) => v.toFixed(3) },
+    { panel: c.layout.rf, min: c.rfViewMin, max: c.rfViewMax, color: colors.rf, value: pt.rf, label: "Rf", fmt: (v) => v.toFixed(2) },
+  ];
+  if (c.layout.u2) {
+    series.push({ panel: c.layout.u2, min: c.u2ViewMin, max: c.u2ViewMax, color: colors.u2, value: pt.u2, label: "u2", fmt: (v) => v.toFixed(3) });
+  }
+
+  ctx.font = '600 9px "JetBrains Mono", monospace';
+  for (const s of series) {
+    if (s.value == null) continue;
+    const span = s.max - s.min;
+    if (span <= 0) continue;
+    // Clamp x to panel range so the bullet stays visible even for off-scale values.
+    const t = Math.max(0, Math.min(1, (s.value - s.min) / span));
+    const x = s.panel.l + t * s.panel.w;
+    // White halo + filled colored bullet
+    ctx.fillStyle = colors.bg;
+    ctx.beginPath();
+    ctx.arc(x, y, 4.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = s.color;
+    ctx.beginPath();
+    ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+    // Value label — place above the bullet, inside the panel.
+    const txt = s.fmt(s.value);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    const labelY = Math.max(shared.plotT + 10, y - 7);
+    // Halo for readability
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = colors.bg;
+    ctx.strokeText(txt, x, labelY);
+    ctx.fillStyle = s.color;
+    ctx.fillText(txt, x, labelY);
+  }
+}
+
+export function hitTestMarker(
+  cpts: Cpt[],
+  opts: ChartRenderOptions,
+  x: number,
+  y: number,
+): boolean {
+  return hitTestMarkerIndex(cpts, opts, x, y) !== null;
+}
+
+/**
+ * Like hitTestMarker but returns the INDEX of the hit marker (in the
+ * combined `markers + marker` order, see collectMarkers) so callers can
+ * identify *which* marker the user grabbed. Returns null on miss.
+ *
+ * If multiple markers overlap at a single (x,y), the closest one wins.
+ */
+export function hitTestMarkerIndex(
+  cpts: Cpt[],
+  opts: ChartRenderOptions,
+  x: number,
+  y: number,
+): number | null {
+  const markers = collectMarkers(opts);
+  if (markers.length === 0) return null;
+  if (cpts.length === 0) return null;
+  const shared = layoutShared(opts, cpts.length);
+  if (y < shared.plotT || y > shared.plotB) return null;
+  const computed = computeAll(cpts, opts, shared);
+  let bestIdx: number | null = null;
+  let bestDist = Infinity;
+  for (const c of computed) {
+    if (x < c.layout.soil.l) continue;
+    const lastPanel = c.layout.u2 ?? c.layout.rf;
+    const xEnd = lastPanel.l + lastPanel.w;
+    if (x > xEnd + 60) continue;   // include label area
+    for (let mi = 0; mi < markers.length; mi++) {
+      const depth = markerDepthForCpt(c, markers[mi]);
+      if (depth == null) continue;
+      if (depth < c.depthViewMin || depth > c.depthViewMax) continue;
+      const my = depthToY(depth, shared, c.depthViewMin, c.depthViewMax);
+      const d = Math.abs(y - my);
+      if (d <= MARKER_HALF_HEIGHT && d < bestDist) {
+        bestDist = d;
+        bestIdx = mi;
+      }
+    }
+  }
+  return bestIdx;
+}
+
+/**
+ * Convert a canvas (x, y) into the marker shape that should be created for
+ * a double-click at that location. Picks NAP-anchored if the CPT under the
+ * cursor has a known ground-level, otherwise falls back to depth-anchored.
+ */
+export function pickMarkerAt(
+  cpts: Cpt[],
+  opts: ChartRenderOptions,
+  x: number,
+  y: number,
+): { nap?: number; depth?: number } | null {
+  if (cpts.length === 0) return null;
+  const shared = layoutShared(opts, cpts.length);
+  if (y < shared.plotT || y > shared.plotB) return null;
+  const computed = computeAll(cpts, opts, shared);
+  let owner: CptComputed | null = null;
+  for (const c of computed) {
+    if (x >= c.layout.cptLeft && x < c.layout.cptLeft + c.layout.cptWidth) {
+      owner = c;
+      break;
+    }
+  }
+  if (!owner) owner = computed[0];
+  const depth = yToDepth(y, shared, owner.depthViewMin, owner.depthViewMax);
+  const groundNap = owner.cpt.metadata.ground_level_nap;
+  if (typeof groundNap === "number") {
+    return { nap: groundNap - depth };
+  }
+  return { depth };
+}
+
+/**
+ * Update an existing marker so it lands at canvas y in the CPT under cursor.
+ * Returns the new marker shape (preserves anchor kind: nap stays nap, depth stays depth).
+ */
+export function moveMarkerTo(
+  cpts: Cpt[],
+  opts: ChartRenderOptions,
+  marker: { nap?: number; depth?: number },
+  x: number,
+  y: number,
+): { nap?: number; depth?: number } {
+  if (cpts.length === 0) return marker;
+  const shared = layoutShared(opts, cpts.length);
+  const computed = computeAll(cpts, opts, shared);
+  let owner: CptComputed | null = null;
+  for (const c of computed) {
+    if (x >= c.layout.cptLeft && x < c.layout.cptLeft + c.layout.cptWidth) {
+      owner = c;
+      break;
+    }
+  }
+  if (!owner) owner = computed[0];
+  const clampedY = Math.max(shared.plotT, Math.min(shared.plotB, y));
+  const depth = yToDepth(clampedY, shared, owner.depthViewMin, owner.depthViewMax);
+  const groundNap = owner.cpt.metadata.ground_level_nap;
+  if (marker.nap != null && typeof groundNap === "number") {
+    return { nap: groundNap - depth };
+  }
+  return { depth };
+}
+
 // ─────────────────────────────────────────────────────────────
 // Public: renderChart
 // ─────────────────────────────────────────────────────────────
@@ -590,7 +1207,7 @@ export function renderChart(
 ): void {
   if (opts.width <= 0 || opts.height <= 0) return;
   const colors = readColors();
-  const shared = layoutShared(opts);
+  const shared = layoutShared(opts, cpts.length);
 
   // Background
   ctx.fillStyle = colors.bg;
@@ -616,36 +1233,70 @@ export function renderChart(
     drawSoilStrip(ctx, shared, c);
 
     drawGridH(ctx, colors, shared, c);
-    drawGridV(ctx, colors, shared, c.layout.qc);
-    drawGridV(ctx, colors, shared, c.layout.fs);
-    drawGridV(ctx, colors, shared, c.layout.rf);
-    if (c.layout.u2) drawGridV(ctx, colors, shared, c.layout.u2);
+    drawGridV(ctx, colors, shared, c.layout.qc, c.qcViewMin, c.qcViewMax, QC_LADDER);
+    drawGridV(ctx, colors, shared, c.layout.fs, c.fsViewMin, c.fsViewMax, FS_LADDER);
+    drawGridV(ctx, colors, shared, c.layout.rf, c.rfViewMin, c.rfViewMax, RF_LADDER);
+    if (c.layout.u2) drawGridV(ctx, colors, shared, c.layout.u2, c.u2ViewMin, c.u2ViewMax, U2_LADDER);
 
     drawDepthAxis(ctx, colors, shared, c);
 
-    // Title strip — show the CPT id so multi-CPT comparison is readable.
-    if (cpts.length > 1) {
-      ctx.fillStyle = colors.textBright;
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
-      ctx.font = "600 9px Inter, system-ui, sans-serif";
-      const title = c.cpt.metadata.project_name
-        ? `${c.cpt.id} — ${c.cpt.metadata.project_name}`
-        : c.cpt.id;
-      ctx.fillText(title, c.layout.cptLeft + 4, 2);
+    // Tab strip — when multiple CPTs are shown, each column gets its own
+    // tall (24px) header tab with the CPT id centred and a coloured under-bar.
+    // Active CPT (if any) gets an amber accent so the user can tell which
+    // panel is "selected" in the project context.
+    if (cpts.length > 1 && shared.tabH > 0) {
+      const tabTop = shared.headerH;
+      const tabBot = shared.plotT;
+      const tabL = c.layout.cptLeft;
+      const tabW = c.layout.cptWidth;
+      const isActive = c.cpt.id === opts.activeCptId;
+
+      // Tab background — slightly raised look so it reads as a tab/handle.
+      ctx.fillStyle = isActive ? "#FFF3E0" : colors.panelBg;
+      ctx.fillRect(tabL, tabTop, tabW, tabBot - tabTop);
+      // Bottom border (thicker for active)
+      ctx.strokeStyle = isActive ? colors.qc : colors.gridMajor;
+      ctx.lineWidth = isActive ? 2 : 1;
+      ctx.beginPath();
+      ctx.moveTo(tabL, tabBot - 0.5);
+      ctx.lineTo(tabL + tabW, tabBot - 0.5);
+      ctx.stroke();
+      // Vertical separators between adjacent tabs.
+      ctx.strokeStyle = colors.gridMajor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(tabL + 0.5, tabTop + 4);
+      ctx.lineTo(tabL + 0.5, tabBot - 4);
+      ctx.moveTo(tabL + tabW - 0.5, tabTop + 4);
+      ctx.lineTo(tabL + tabW - 0.5, tabBot - 4);
+      ctx.stroke();
+
+      // Centred CPT id — bigger so it reads at a glance.
+      ctx.fillStyle = isActive ? colors.qc : colors.text;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `${isActive ? "700" : "600"} 12px Inter, system-ui, sans-serif`;
+      // Truncate if too wide for the tab.
+      let label = c.cpt.id;
+      const padding = 12;
+      while (label.length > 3 && ctx.measureText(label).width > tabW - padding) {
+        label = label.slice(0, -1);
+      }
+      if (label !== c.cpt.id) label += "…";
+      ctx.fillText(label, tabL + tabW / 2, tabTop + (tabBot - tabTop) / 2);
     }
 
-    drawPanelHeader(ctx, colors, shared, c.layout.soil, "SBT", colors.textBright, null);
-    drawPanelHeader(ctx, colors, shared, c.layout.qc,   "qc (MPa)", colors.qc, c.scales.qcMax);
-    drawPanelHeader(ctx, colors, shared, c.layout.fs,   "fs (MPa)", colors.fs, c.scales.fsMax);
-    drawPanelHeader(ctx, colors, shared, c.layout.rf,   "Rf (%)",   colors.rf, c.scales.rfMax);
-    if (c.layout.u2) drawPanelHeader(ctx, colors, shared, c.layout.u2, "u2 (MPa)", colors.u2, c.scales.u2Max);
+    drawPanelHeader(ctx, colors, shared, c.layout.soil, "SBT", colors.textBright, null, null);
+    drawPanelHeader(ctx, colors, shared, c.layout.qc,   "Conusweerstand (qc, MPa)",  colors.qc, c.qcViewMin, c.qcViewMax);
+    drawPanelHeader(ctx, colors, shared, c.layout.fs,   "Plaatselijke wrijving (fs, MPa)", colors.fs, c.fsViewMin, c.fsViewMax);
+    drawPanelHeader(ctx, colors, shared, c.layout.rf,   "Wrijvingsgetal (Rf, %)",   colors.rf, c.rfViewMin, c.rfViewMax);
+    if (c.layout.u2) drawPanelHeader(ctx, colors, shared, c.layout.u2, "Waterspanning (u2, MPa)", colors.u2, c.u2ViewMin, c.u2ViewMax);
 
-    if (curves.qc) drawCurve(ctx, shared, c, c.layout.qc, "qc", c.scales.qcMax, colors.qc, 1.8);
-    if (curves.fs) drawCurve(ctx, shared, c, c.layout.fs, "fs", c.scales.fsMax, colors.fs, 1.4);
-    if (curves.rf) drawCurve(ctx, shared, c, c.layout.rf, "rf", c.scales.rfMax, colors.rf, 1.4);
+    if (curves.qc) drawCurve(ctx, shared, c, c.layout.qc, "qc", c.qcViewMin, c.qcViewMax, colors.qc, 1.8);
+    if (curves.fs) drawCurve(ctx, shared, c, c.layout.fs, "fs", c.fsViewMin, c.fsViewMax, colors.fs, 1.4);
+    if (curves.rf) drawCurve(ctx, shared, c, c.layout.rf, "rf", c.rfViewMin, c.rfViewMax, colors.rf, 1.4);
     if (curves.u2 && c.layout.u2) {
-      drawCurve(ctx, shared, c, c.layout.u2, "u2", c.scales.u2Max, colors.u2, 1.4);
+      drawCurve(ctx, shared, c, c.layout.u2, "u2", c.u2ViewMin, c.u2ViewMax, colors.u2, 1.4);
     }
 
     drawPanelBorder(ctx, colors, shared, c.layout.soil);
@@ -653,11 +1304,32 @@ export function renderChart(
     drawPanelBorder(ctx, colors, shared, c.layout.fs);
     drawPanelBorder(ctx, colors, shared, c.layout.rf);
     if (c.layout.u2) drawPanelBorder(ctx, colors, shared, c.layout.u2);
+
+    // Optional reference marker(s) — horizontal lines spanning all panels.
+    const allMarkers = collectMarkers(opts);
+    for (const m of allMarkers) {
+      drawMarker(ctx, colors, shared, c, m);
+    }
+
+    // Hover indicator — only for the CPT under the cursor.
+    if (opts.hover && opts.hover.cptId === c.cpt.id) {
+      drawHoverIndicator(ctx, colors, shared, c, opts.hover.depth);
+    }
+  }
+
+  // Splitters between adjacent CPT columns. Drawn last so they sit on top.
+  if (computed.length > 1) {
+    const splitterH = shared.plotB - shared.plotT;
+    for (let i = 0; i < computed.length - 1; i++) {
+      const left = computed[i];
+      const x = left.layout.cptLeft + left.layout.cptWidth;
+      drawSplitter(ctx, colors, shared, x, splitterH);
+    }
   }
 }
 
 // ─────────────────────────────────────────────────────────────
-// Public: hitTest
+// Public: hitTest + hitTestSplitter
 // ─────────────────────────────────────────────────────────────
 
 /**
@@ -675,7 +1347,7 @@ export function hitTest(
   y: number,
 ): HitResult | null {
   if (cpts.length === 0) return null;
-  const shared = layoutShared(opts);
+  const shared = layoutShared(opts, cpts.length);
   if (y < shared.plotT || y > shared.plotB) return null;
 
   const computed = computeAll(cpts, opts, shared);
@@ -710,10 +1382,55 @@ export function hitTest(
   return {
     cptId: owner.cpt.id,
     depth: owner.depths[bestI]!,
+    depthNap: pt.depth_nap ?? undefined,
     qc: pt.qc,
     fs: pt.fs,
     rf: pt.rf,
     u2: pt.u2,
     zone: classifyRobertson(pt.qc, pt.rf),
   };
+}
+
+/**
+ * Hit-test the splitter regions between adjacent CPT columns.
+ * Returns the index `i` if (x, y) is within `SPLITTER_HALF_WIDTH` of the
+ * boundary between columns `i` and `i+1`, else null. Y must be in the
+ * plot area for a hit.
+ */
+export function hitTestSplitter(
+  cpts: Cpt[],
+  opts: ChartRenderOptions,
+  x: number,
+  y: number,
+): number | null {
+  if (cpts.length < 2) return null;
+  const shared = layoutShared(opts, cpts.length);
+  if (y < shared.plotT || y > shared.plotB) return null;
+
+  const slotWidths = computeSlotWidths(opts, cpts.length);
+  let cursor = 0;
+  for (let i = 0; i < cpts.length - 1; i++) {
+    cursor += slotWidths[i];
+    if (Math.abs(x - cursor) <= SPLITTER_HALF_WIDTH) return i;
+  }
+  return null;
+}
+
+/**
+ * Compute the per-CPT slot widths the renderer would use, for callers that
+ * need to derive layout (eg. drag handlers) without re-running the full
+ * layout. Returned widths sum to `opts.width`.
+ */
+export function computeColumnLayout(
+  cpts: Cpt[],
+  opts: ChartRenderOptions,
+): { left: number; width: number }[] {
+  if (cpts.length === 0) return [];
+  const slotWidths = computeSlotWidths(opts, cpts.length);
+  let cursor = 0;
+  return slotWidths.map((w) => {
+    const out = { left: cursor, width: w };
+    cursor += w;
+    return out;
+  });
 }

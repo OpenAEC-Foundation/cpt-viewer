@@ -319,10 +319,17 @@ body,
 .main-view {
   flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   background: var(--theme-content-bg);
-  overflow: auto;
+  overflow: hidden;
+}
+
+/* Placeholder is centred via its own rule (the parent must NOT centre or
+   real panels like ReportPreview would shrink instead of stretching). */
+.main-view .placeholder {
+  margin: auto;
 }
 
 /* Placeholder shown when no document is open */
@@ -455,6 +462,38 @@ body,
   opacity: 1;
 }
 
+/* Eye toggle (hide / show CPT) — sits between name and close */
+.cpt-list-eye {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 2px 4px;
+  color: inherit;
+  opacity: 0.55;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cpt-list-eye:hover {
+  opacity: 1;
+  color: var(--amber, #D97706);
+}
+
+.cpt-list-eye.is-hidden {
+  /* Eye-slash uses neutral (scaffold) gray; hover still goes amber. */
+  color: var(--theme-text-muted, #A1A1AA);
+  opacity: 0.85;
+}
+
+/* Muted appearance for hidden CPT rows. The name button still works (you
+   can click to make it active in the project), only the visuals are dimmed. */
+.cpt-list li.hidden .cpt-list-name {
+  opacity: 0.5;
+  font-style: italic;
+}
+
 /* Metadata list (Sonderingsgegevens) */
 .metadata-list {
   display: grid;
@@ -471,6 +510,22 @@ body,
 .metadata-list dd {
   margin: 0;
   color: var(--theme-text);
+}
+
+/* Extra metadata (verbatim file fields) — keys may be long ALL-CAPS GEF
+   keywords or camelCase BRO names. Allow them to wrap and use a slightly
+   smaller font so the panel stays scannable. */
+.metadata-list-extra {
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  font-size: 0.7rem;
+}
+.metadata-list-extra dt {
+  font-family: 'JetBrains Mono', monospace;
+  word-break: break-word;
+  font-size: 0.68rem;
+}
+.metadata-list-extra dd {
+  word-break: break-word;
 }
 
 /* Layers + measurements tables */
@@ -588,10 +643,555 @@ body,
 .map-view-wrap { width: 100%; height: 100%; position: relative; }
 .map-view-container { width: 100%; height: 100%; }
 .map-status {
-  position: absolute; left: 12px; bottom: 12px;
+  /* Shifted upward to clear the Topotijdreis slider docked at the very
+     bottom of the wrap. */
+  position: absolute; left: 12px; bottom: 96px;
   background: var(--theme-bg, white); color: var(--theme-text, #36363E);
   border: 1px solid var(--theme-border, #E7E5E4);
   border-radius: 4px; padding: 6px 10px;
   font: 500 0.75rem var(--font-code, "JetBrains Mono");
   z-index: 1000; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* ── Topotijdreis slider (bottom-docked, ~80mm) ── */
+.topotijdreis-slider {
+  position: absolute;
+  left: 12px; right: 12px;
+  bottom: 12px;
+  z-index: 1000;
+  background: var(--theme-bg, white);
+  color: var(--theme-text, #36363E);
+  border: 1px solid var(--theme-border, #E7E5E4);
+  border-radius: 8px;
+  padding: 8px 16px 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  /* Don't get wider than ~720px or it dominates the viewport. */
+  max-width: 720px;
+  margin: 0 auto;
+  pointer-events: auto;
+}
+.topotijdreis-year-display {
+  text-align: center;
+  margin-bottom: 4px;
+}
+.topotijdreis-year-label {
+  font: 700 2rem var(--font-heading, "Space Grotesk"), 'Inter', sans-serif;
+  letter-spacing: -0.02em;
+  color: var(--amber, #D97706);
+  line-height: 1;
+}
+.topotijdreis-year-off {
+  font: 500 0.85rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #A1A1AA);
+  line-height: 1;
+}
+.topotijdreis-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.topotijdreis-off-btn,
+.topotijdreis-latest-btn {
+  appearance: none;
+  background: var(--theme-bg-lighter, #F5F5F4);
+  color: var(--theme-text, #36363E);
+  border: 1px solid var(--theme-border, #E7E5E4);
+  border-radius: 4px;
+  font: 600 0.75rem 'Inter', system-ui, sans-serif;
+  padding: 4px 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+  min-width: 48px;
+}
+.topotijdreis-off-btn:hover:not(:disabled),
+.topotijdreis-latest-btn:hover:not(:disabled) {
+  background: var(--theme-bg, white);
+  border-color: var(--amber, #D97706);
+  color: var(--amber, #D97706);
+}
+.topotijdreis-off-btn:disabled,
+.topotijdreis-latest-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.topotijdreis-range {
+  flex: 1;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #D97706 0%, #F59E0B 40%, #EA580C 100%);
+  outline: none;
+  cursor: pointer;
+}
+.topotijdreis-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--amber, #D97706);
+  border: 2px solid var(--theme-bg, white);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  cursor: pointer;
+}
+.topotijdreis-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--amber, #D97706);
+  border: 2px solid var(--theme-bg, white);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  cursor: pointer;
+}
+.topotijdreis-ticks {
+  position: relative;
+  height: 14px;
+  margin-top: 2px;
+  /* Constrain ticks to the slider track area (matches button widths). */
+  margin-left: 58px;
+  margin-right: 58px;
+}
+.topotijdreis-tick {
+  position: absolute;
+  transform: translateX(-50%);
+  font: 500 0.65rem var(--font-code, "JetBrains Mono"), monospace;
+  color: var(--theme-text-secondary, #A1A1AA);
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* ── Drag-and-drop overlay (file dropped from OS) ── */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(54, 54, 62, 0.55);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  animation: drop-fade-in 0.12s ease-out;
+}
+.drop-overlay-card {
+  background: var(--theme-bg, #FAFAF9);
+  color: var(--amber, #D97706);
+  border: 2px dashed var(--amber, #D97706);
+  border-radius: 12px;
+  padding: 40px 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  font: 600 0.95rem 'Inter', system-ui, sans-serif;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+.drop-overlay-card p { margin: 0; }
+@keyframes drop-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── ProjectSettingsDialog: CPT-list section ── */
+.ps-section-title {
+  font: 700 0.85rem var(--font-heading, "Space Grotesk"), 'Inter', sans-serif;
+  margin: 0 0 8px;
+  color: var(--theme-text, inherit);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ps-section-header {
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ps-section-header .ps-section-title { margin-bottom: 0; }
+.ps-count { font-weight: 500; color: var(--theme-text-muted, #A1A1AA); font-size: 0.8rem; }
+.ps-section-actions { display: flex; align-items: center; gap: 8px; }
+.ps-link-btn {
+  background: transparent; border: 0; padding: 4px 8px;
+  font: 500 0.75rem 'Inter', sans-serif;
+  color: var(--theme-text-muted, #A1A1AA);
+  cursor: pointer;
+}
+.ps-link-btn:hover { color: var(--error, #DC2626); }
+.ps-add-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--amber, #D97706); color: white;
+  border: 0; border-radius: 8px;
+  padding: 6px 12px;
+  font: 600 0.8rem 'Inter', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.ps-add-btn:hover { background: var(--signal-orange, #EA580C); }
+.ps-empty {
+  border: 1.5px dashed var(--theme-border, #D6D3D1);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-top: 8px;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--theme-text-muted, #A1A1AA);
+}
+.ps-empty p { margin: 0; }
+.ps-cpt-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--theme-border, #E7E5E4);
+  border-radius: 8px;
+}
+.ps-cpt-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--theme-border-subtle, #F5F5F4);
+  gap: 8px;
+}
+.ps-cpt-item:last-child { border-bottom: 0; }
+.ps-cpt-info { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ps-cpt-id { font: 600 0.85rem var(--font-code, "JetBrains Mono"), monospace; color: var(--theme-text, inherit); }
+.ps-cpt-meta { font: 400 0.7rem 'Inter', sans-serif; color: var(--theme-text-muted, #A1A1AA); }
+.ps-remove-btn {
+  background: transparent; border: 0; cursor: pointer;
+  width: 28px; height: 28px; border-radius: 4px;
+  font-size: 1.2rem; line-height: 1;
+  color: var(--theme-text-muted, #A1A1AA);
+  flex-shrink: 0;
+}
+.ps-remove-btn:hover { background: rgba(220, 38, 38, 0.1); color: var(--error, #DC2626); }
+.ps-footer {
+  margin-top: 20px;
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--theme-border, #E7E5E4);
+}
+
+/* ── RightPanel: stacked sections ── */
+.right-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 8px 10px;
+  height: 100%;
+}
+/* The Locatie section reserves 50% of the right-panel height for the map. */
+.right-panel-section:has(.mini-map) { flex: 1 1 50%; min-height: 0; }
+.right-panel-section { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.mini-map {
+  width: 100%;
+  flex: 1;
+  min-height: 120px;
+  border: 1px solid var(--theme-border, #E7E5E4);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* ── MapView: project CPT marker labels + distance labels ── */
+.cpt-marker-label {
+  background: var(--theme-bg, #FAFAF9);
+  color: var(--amber, #D97706);
+  border: 1px solid var(--amber, #D97706);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font: 600 0.7rem 'JetBrains Mono', monospace;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+.cpt-marker-label::before { display: none; }   /* hide leaflet tooltip arrow */
+
+.cpt-distance-label {
+  pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.cpt-distance-label span {
+  background: var(--theme-bg, #FAFAF9);
+  color: var(--theme-text, #36363E);
+  border: 1px solid var(--amber, #D97706);
+  border-radius: 9px;
+  padding: 1px 6px;
+  font: 500 0.65rem 'JetBrains Mono', monospace;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.map-cpt-count { color: var(--amber, #D97706); font-weight: 600; }
+
+/* ── LeftPanel: project browser header + section + button ── */
+.project-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: var(--theme-bg-elevated, var(--theme-bg-lighter, transparent));
+  border-bottom: 1px solid var(--theme-border, #E7E5E4);
+  margin-bottom: 4px;
+}
+.project-header-icon {
+  width: 28px; height: 28px;
+  background: var(--amber, #D97706);
+  color: white;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.project-header-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.project-header-title {
+  font: 700 0.85rem 'Space Grotesk', 'Inter', sans-serif;
+  color: var(--theme-text, inherit);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.project-header-sub {
+  font: 400 0.7rem 'Inter', sans-serif;
+  color: var(--theme-text-muted, var(--scaffold-gray, #888));
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* + button at section header */
+.panel-section-header-row {
+  display: flex; align-items: stretch; justify-content: space-between;
+  padding-right: 6px;
+}
+.panel-section-header-row .panel-section-header { flex: 1; }
+.panel-section-add {
+  background: transparent; border: 0; cursor: pointer;
+  width: 24px; height: 24px;
+  border-radius: 4px;
+  color: var(--amber, #D97706);
+  display: flex; align-items: center; justify-content: center;
+  align-self: center;
+  transition: background 0.12s ease;
+}
+.panel-section-add:hover { background: rgba(217, 119, 6, 0.12); }
+
+/* CPT-list: file icon + name */
+.cpt-list-name {
+  display: flex; align-items: center; gap: 6px;
+}
+
+/* ── MapView: sondeer-symbool driehoek + label ── */
+.cpt-sondeer-icon {
+  background: transparent !important;
+  border: 0 !important;
+  width: 22px !important;
+  height: 22px !important;
+}
+.cpt-sondeer-marker {
+  position: relative;
+  width: 22px; height: 22px;
+}
+.cpt-sondeer-marker svg {
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.35));
+}
+.cpt-sondeer-label {
+  position: absolute;
+  left: 26px;          /* to the right of the triangle */
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  background: var(--theme-bg, #FAFAF9);
+  color: var(--theme-text, #36363E);
+  border: 1px solid var(--amber, #D97706);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font: 600 0.7rem 'JetBrains Mono', monospace;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+.cpt-sondeer-marker.active .cpt-sondeer-label {
+  background: var(--amber, #D97706);
+  color: white;
+  border-color: var(--amber, #D97706);
+}
+
+/* ── MapView: BRO archive sonderingen (small grey triangles) ── */
+.bro-sondering-icon {
+  background: transparent !important;
+  border: 0 !important;
+}
+.bro-sondering-marker {
+  width: 14px; height: 14px;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
+}
+
+/* ── MapView: measurement-mode cursor + label ── */
+.map-view-container.measuring {
+  cursor: crosshair;
+}
+.map-view-container.measuring .leaflet-marker-icon {
+  cursor: crosshair !important;
+}
+.cpt-measure-label {
+  pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.cpt-measure-label span {
+  background: var(--theme-bg, #FAFAF9);
+  color: #2563EB;
+  border: 1.5px solid #2563EB;
+  border-radius: 10px;
+  padding: 2px 8px;
+  font: 600 0.7rem 'JetBrains Mono', monospace;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+/* ── GisLayerPanel: layer-toggle list ── */
+.gis-layer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gis-layer-list li {
+  margin: 0;
+}
+.gis-layer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  font-size: 0.78rem;
+  color: var(--theme-text, #36363E);
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 0.12s ease;
+}
+.gis-layer-row:hover {
+  background: var(--theme-hover, rgba(217, 119, 6, 0.08));
+}
+.gis-layer-row input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--amber, #D97706);
+  cursor: inherit;
+  flex-shrink: 0;
+}
+
+/* ── GisLayerPanel: BRO load summary footer ── */
+.gis-bro-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  font-size: 0.72rem;
+  color: var(--theme-text-muted, #71717A);
+  background: var(--theme-hover, rgba(217, 119, 6, 0.05));
+  border-radius: 4px;
+}
+.gis-bro-counts {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+}
+.gis-bro-refresh {
+  border: 1px solid var(--theme-border, #D4D4D8);
+  background: var(--theme-bg, #FAFAF9);
+  color: var(--theme-text, #36363E);
+  font: 600 0.72rem 'Inter', system-ui, sans-serif;
+  padding: 3px 9px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.gis-bro-refresh:hover {
+  background: var(--amber, #D97706);
+  color: white;
+  border-color: var(--amber, #D97706);
+}
+
+/* ── MapView: BRO popup styling ── */
+.bro-popup {
+  font: 0.78rem/1.4 'Inter', system-ui, sans-serif;
+  color: var(--theme-text, #36363E);
+}
+.bro-popup-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--theme-border, #D4D4D8);
+}
+.bro-popup-header strong {
+  font-size: 0.86rem;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--amber, #D97706);
+}
+.bro-popup-kind {
+  font-size: 0.7rem;
+  color: var(--theme-text-muted, #71717A);
+}
+.bro-popup-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+.bro-popup-table td {
+  padding: 2px 6px 2px 0;
+  vertical-align: top;
+}
+.bro-popup-table td:first-child {
+  color: var(--theme-text-muted, #71717A);
+  white-space: nowrap;
+}
+.bro-popup-table td:last-child {
+  font-variant-numeric: tabular-nums;
+}
+.bro-popup-actions {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--theme-border, #D4D4D8);
+  text-align: right;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  justify-content: flex-end;
+}
+.bro-popup-actions a.bro-popup-open,
+.bro-popup-actions a.bro-popup-merge,
+.bro-popup-actions a.bro-popup-add-to-project {
+  font-weight: 600;
+  color: var(--amber, #D97706);
+  text-decoration: none;
+  cursor: pointer;
+}
+.bro-popup-actions a.bro-popup-open:hover,
+.bro-popup-actions a.bro-popup-merge:hover,
+.bro-popup-actions a.bro-popup-add-to-project:hover {
+  text-decoration: underline;
+}
+.bro-popup-actions a.bro-popup-merge,
+.bro-popup-actions a.bro-popup-add-to-project {
+  color: var(--theme-accent, #2563EB);
+}
+
+/* ── Chart context menu (right-click on marker) ── */
+.chart-context-menu {
+  z-index: 9999;
+  background: var(--theme-bg, #FAFAF9);
+  border: 1px solid var(--theme-border, #D6D3D1);
+  border-radius: 6px;
+  padding: 4px;
+  min-width: 140px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  font: 400 0.8rem 'Inter', sans-serif;
+}
+.chart-context-item {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 6px 12px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--theme-text, inherit);
+  border-radius: 4px;
+}
+.chart-context-item:hover {
+  background: var(--theme-hover, rgba(0, 0, 0, 0.05));
 }

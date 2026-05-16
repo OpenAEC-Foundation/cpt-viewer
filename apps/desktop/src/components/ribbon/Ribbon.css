@@ -191,6 +191,31 @@
   border-top: 1px solid var(--theme-border-subtle);
 }
 
+/* Informational ribbon block — used when a tab has no buttons but
+   needs to convey state (eg. IFC auto-generation status). */
+.ribbon-info-block {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 12px;
+  min-width: 200px;
+  max-width: 320px;
+}
+
+.ribbon-info-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--theme-text);
+  letter-spacing: 0.01em;
+}
+
+.ribbon-info-sub {
+  font-size: 11px;
+  color: var(--theme-text-secondary);
+  line-height: 1.35;
+}
+
 /* Button Stack */
 .ribbon-btn-stack {
   display: flex;
