@@ -2,7 +2,7 @@
   "name": "open-geo-studio",
   "description": "Open Geotechniek Studio — desktop CPT viewer and report generator",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -21,6 +21,7 @@
     "i18next": "^25.8.14",
     "i18next-browser-languagedetector": "^8.2.1",
     "leaflet": "^1.9.4",
+    "pdfjs-dist": "^5.7.284",
     "proj4": "^2.11.0",
     "proj4leaflet": "^1.0.2",
     "react": "^19.2.4",

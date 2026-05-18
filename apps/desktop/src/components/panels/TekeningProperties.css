@@ -1,0 +1,134 @@
+/* ─────────────────────────────────────────────────────────────────
+   TekeningProperties — right-side eigenschappen panel for the
+   Sonderingstekening tab. Replaces the default LocationMiniMap
+   when activeView === "tekening" so the user can edit the title
+   block + selected object directly from the sidebar.
+   ─────────────────────────────────────────────────────────────── */
+
+.tekprops {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 10px 12px 16px;
+  overflow-y: auto;
+  height: 100%;
+  background: var(--theme-bg, #fff);
+  color: var(--theme-text, #36363e);
+}
+
+.tekprops-empty {
+  font: 500 0.82rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+}
+
+.tekprops-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.tekprops-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font: 600 0.7rem 'Inter', system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--theme-text-secondary, #71717a);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--theme-border, #e7e5e4);
+  margin-bottom: 6px;
+}
+
+.tekprops-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tekprops-hint {
+  font: 400 0.75rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+  margin: 4px 0;
+  line-height: 1.4;
+}
+
+.tekprops-row {
+  display: flex;
+  gap: 6px;
+}
+
+.tekprops-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.tekprops-field-wide {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.tekprops-field > span {
+  font: 500 0.65rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tekprops-field-wide > span {
+  font: 500 0.75rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+  min-width: 100px;
+  flex-shrink: 0;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.tekprops-field input[type="text"],
+.tekprops-field input[type="number"],
+.tekprops-field-wide input[type="text"],
+.tekprops-field-wide input[type="number"] {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--theme-border, #e7e5e4);
+  border-radius: 4px;
+  background: var(--theme-bg, #fff);
+  color: var(--theme-text, #36363e);
+  font: 500 0.82rem 'Inter', system-ui, sans-serif;
+}
+.tekprops-field input[type="range"],
+.tekprops-field-wide input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+.tekprops-num-val {
+  width: 38px;
+  text-align: right;
+  font: 500 0.72rem var(--font-code, 'JetBrains Mono'), monospace;
+  color: var(--theme-text-secondary, #71717a);
+}
+
+.tekprops-btn {
+  appearance: none;
+  margin-top: 6px;
+  background: var(--theme-bg-lighter, #f5f5f4);
+  border: 1px solid var(--theme-border, #e7e5e4);
+  border-radius: 5px;
+  padding: 6px 10px;
+  font: 600 0.78rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text, #36363e);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.tekprops-btn:hover {
+  background: var(--theme-bg, #fff);
+}
+.tekprops-btn-danger {
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+.tekprops-btn-danger:hover {
+  background: #fef2f2;
+}

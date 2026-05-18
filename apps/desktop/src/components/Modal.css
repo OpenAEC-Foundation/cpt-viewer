@@ -12,14 +12,15 @@
   justify-content: center;
 }
 
-/* Modal Dialog */
+/* Modal Dialog — duidelijke rand + slagschaduw zodat de dialog
+   visueel los staat van de donkere canvas-achtergrond. */
 .modal-dialog {
-  background: var(--theme-dialog-bg);
-  border: 1px solid var(--theme-dialog-border);
-  border-radius: 0;
+  background: var(--theme-dialog-bg, #ffffff);
+  border: 1px solid #36363e;
+  border-radius: 4px;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--theme-dialog-shadow);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
   position: absolute;
   left: 50%;
   top: 50%;

@@ -87,3 +87,39 @@ pub fn open_project_ifcgis(
         cpts: file.cpts,
     })
 }
+
+/// Full-fidelity save — frontend bouwt het complete ifcgis-0.2 JSON
+/// (inclusief bores, tekening-layout, title-block, crs) en wij valideren
+/// het tegen het schema voordat het naar schijf gaat. Geeft een
+/// duidelijke fout terug als het schema niet klopt zodat de frontend
+/// de gebruiker iets zinnigs kan tonen.
+#[tauri::command]
+pub fn save_project_ifcgis_full(
+    payload: serde_json::Value,
+    path: String,
+) -> Result<(), String> {
+    let file: ifcgis::ProjectFile = serde_json::from_value(payload)
+        .map_err(|e| format!("invalid ifcgis payload: {e}"))?;
+    let text = serde_json::to_string_pretty(&file)
+        .map_err(|e| format!("ifcgis serialize: {e}"))?;
+    std::fs::write(PathBuf::from(path), text).map_err(|e| e.to_string())
+}
+
+/// Full-fidelity open — leest een `.ifcgis` van schijf, valideert tegen
+/// het schema, mergeed de CPTs in de Rust-cache, en geeft het complete
+/// JSON document terug aan de frontend zodat tekening / bores / title-
+/// block ook hersteld kunnen worden.
+#[tauri::command]
+pub fn open_project_ifcgis_full(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let file = ifcgis::load(&text).map_err(|e| e.to_string())?;
+    let mut cpts_map = state.cpts.lock().unwrap();
+    for cpt in &file.cpts {
+        cpts_map.insert(cpt.id.clone(), cpt.clone());
+    }
+    drop(cpts_map);
+    serde_json::to_value(&file).map_err(|e| format!("serialize for return: {e}"))
+}

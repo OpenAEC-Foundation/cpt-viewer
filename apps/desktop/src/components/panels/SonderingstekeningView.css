@@ -106,24 +106,33 @@
 .tek-canvas {
   flex: 1;
   display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 12px;
   padding: 16px;
   min-height: 0;
   background: var(--theme-bg);
-  overflow: auto;
+  overflow: hidden; /* CAD-style viewport: clip overflow, no scrollbars */
+}
+
+/* Stage-wrapper: heeft de visuele (gescaled) afmetingen van het
+   papier. De canvas-flex centreert deze; de echte paper-div zit er
+   absoluut in en wordt via CSS transform: scale verkleind. */
+.tek-paper-stage {
+  position: relative;
+  flex: 0 0 auto;
+  /* width/height worden inline gezet via paperStageStyle */
 }
 
 .tek-paper {
-  flex: 0 1 auto;
-  width: min(72%, 1400px);
-  height: auto;
+  /* width/height/transform worden inline gezet via paperStyle —
+     vaste mm × DPI grootte zodat 1:N exact uitkomt en het titleblock
+     niet uitrekt bij venster-resize. */
   background: white;
   color: #111;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
-  position: relative;
   overflow: hidden;
   border: 1px solid #d4d4d4;
-  margin: 0 auto;
 }
 .tek-paper-dragover {
   outline: 3px dashed var(--amber, #d97706);

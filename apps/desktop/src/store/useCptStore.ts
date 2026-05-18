@@ -3,6 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Cpt, ProjectMeta } from "../types/cpt";
 import type { Bore } from "../types/bore";
 import { parseBhrgtXml, looksLikeBoringXml } from "../types/bore";
+import {
+  setPendingTekeningRestore,
+  tekeningStateFromIfcgis,
+  titleBlockFromIfcgis,
+} from "./tekeningState";
 
 // ─── Document model ──────────────────────────────────────────────
 //
@@ -28,6 +33,10 @@ export interface BoreDocument {
   title: string;
   path?: string;
   bore: Bore;
+  /** Origineel BHR-XML, bewaard zodat de verkenner een "Ruwe data"-
+   *  paneel kan tonen. Geen Rust roundtrip nodig — alle borings
+   *  worden client-side geparsed dus we hebben de tekst toch al. */
+  rawXml?: string;
 }
 
 export interface ProjectDocument {
@@ -624,6 +633,7 @@ export async function loadBoreFromContent(
       title: bore.id || filename,
       path,
       bore,
+      rawXml: xml,
     };
     const documents = [...s.documents, doc];
     const activeDocId = doc.id;
@@ -699,27 +709,61 @@ export async function addCptToActiveProject(
 }
 
 /**
- * Opens a `.ifcgis` project file via the `open_project_ifcgis` Tauri command
- * and creates a new ProjectDocument tab.
+ * Opens a `.ifcgis` project file via the `open_project_ifcgis_full` Tauri
+ * command (ifcgis-0.2 schema, includes optional tekening + title_block)
+ * and creates a new ProjectDocument tab. Falls back to the legacy
+ * `open_project_ifcgis` command for older 0.1 files that Rust may not
+ * be able to parse strictly under 0.2's stricter schema.
+ *
+ * Tekening + title-block worden in de module-level singleton gezet
+ * (`setPendingTekeningRestore`) zodat SonderingstekeningView ze op
+ * mount kan oppikken. Een bestaand gemount component krijgt ze niet
+ * vanzelf — dat is v2-werk (event dispatch + listener).
  */
 export async function openProjectIfcgis(path: string): Promise<void> {
-  const result = await invoke<{ project: ProjectMeta; cpts: Cpt[] }>(
-    "open_project_ifcgis",
-    { path },
-  );
+  // ifcgis-0.2 full payload: header + project + cpts + bores + crs +
+  // tekening? + title_block?. Snake_case zoals Rust het serialiseert.
+  type IfcgisProjectInfo = {
+    type?: string;
+    title: string;
+    client?: string;
+    location?: string;
+    project_number?: string;
+    author?: string;
+    date: string;
+  };
+  type IfcgisFile = {
+    header: { schema: string; originating_system: string; timestamp: string };
+    project: IfcgisProjectInfo;
+    cpts?: Cpt[];
+    bores?: unknown[];
+    crs?: { epsg: number; name?: string };
+    tekening?: unknown;
+    title_block?: unknown;
+  };
+  const result = await invoke<IfcgisFile>("open_project_ifcgis_full", { path });
+  const projectMeta: ProjectMeta = {
+    title: result.project.title ?? "",
+    client: result.project.client ?? "",
+    location: result.project.location ?? "",
+    project_number: result.project.project_number ?? "",
+    author: result.project.author ?? "",
+    date: result.project.date ?? "",
+  };
+  const cptList: Cpt[] = Array.isArray(result.cpts) ? result.cpts : [];
   let createdDoc: ProjectDocument | null = null;
   useCptStore.setState((s) => {
     const cpts = new Map<string, Cpt>();
-    for (const c of result.cpts) cpts.set(c.id, c);
+    for (const c of cptList) cpts.set(c.id, c);
     const filename = path.split(/[\\/]/).pop() ?? path;
     const doc: ProjectDocument = {
       kind: "project",
       id: makeId(),
-      title: result.project.title || filename,
+      title: projectMeta.title || filename,
       path,
-      meta: result.project,
+      meta: projectMeta,
       cpts,
-      activeCptId: result.cpts[0]?.id ?? null,
+      activeCptId: cptList[0]?.id ?? null,
     };
     createdDoc = doc;
     const documents = [...s.documents, doc];
@@ -730,6 +774,34 @@ export async function openProjectIfcgis(path: string): Promise<void> {
   if (createdDoc) {
     schedulePdfPreview(createdDoc);
     scheduleIfcGenerate(createdDoc);
+  }
+  // Tekening + title-block in de singleton zetten zodat
+  // SonderingstekeningView ze bij mount kan herstellen.
+  if (result.tekening || result.title_block) {
+    const tekState = tekeningStateFromIfcgis(result.tekening) ?? {
+      paperSize: "A2" as const,
+      scale: 1000,
+      center: { lat: 52.0, lon: 5.0, zoom: 8 },
+      markers: [],
+      rasters: [],
+      lines: [],
+      coordTags: [],
+      overlay: null,
+      titleBlock: {
+        project: "",
+        projectNumber: "",
+        address: "",
+        drawingNumber: "",
+        scale: "",
+        date: "",
+        drawnBy: "",
+        checkedBy: "",
+        version: "",
+      },
+    };
+    const titleBlock = titleBlockFromIfcgis(result.title_block);
+    if (titleBlock) tekState.titleBlock = titleBlock;
+    setPendingTekeningRestore(tekState);
   }
 }
 

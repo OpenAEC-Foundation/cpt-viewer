@@ -1,0 +1,89 @@
+/* ─────────────────────────────────────────────────────────────────────
+   PdfCropDialog — additions on top of ImageCropDialog.css.
+
+   The page-picker phase needs a grid of thumbnails; the crop phase
+   reuses the icrop chrome but adds a "back to picker" affordance in
+   the header.
+   ───────────────────────────────────────────────────────────────────── */
+
+.pcrop-picker-dialog {
+  width: min(880px, calc(100vw - 48px));
+}
+
+.pcrop-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 16px;
+  align-content: start;
+  padding: 4px;
+  overflow: auto;
+  max-height: 60vh;
+  background: var(--theme-bg, #ffffff);
+}
+
+.pcrop-thumb {
+  appearance: none;
+  background: var(--theme-bg, #ffffff);
+  border: 1px solid var(--theme-border, #cbd5e1);
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 0.08s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.pcrop-thumb:hover {
+  border-color: var(--amber, #d97706);
+  box-shadow: 0 4px 10px rgba(217, 119, 6, 0.18);
+  transform: translateY(-1px);
+}
+.pcrop-thumb:focus-visible {
+  outline: 2px solid var(--amber, #d97706);
+  outline-offset: 2px;
+}
+
+.pcrop-thumb img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  background: #f8fafc;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.18);
+}
+
+.pcrop-thumb-label {
+  font: 500 12px 'Inter', system-ui, sans-serif;
+  color: var(--theme-text, #0f172a);
+}
+
+.pcrop-loading {
+  padding: 48px 24px;
+  text-align: center;
+  font: 500 13px 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #64748b);
+}
+
+.pcrop-error {
+  padding: 16px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+  border-radius: 6px;
+  font: 500 12px var(--font-code, "JetBrains Mono"), monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 640px;
+}
+
+.pcrop-header {
+  /* Back-button gets the natural read-order position (left) while the
+     title still sits centred / left-ish via the existing flex layout. */
+  gap: 12px;
+}
+
+.pcrop-back-btn {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 12px;
+}

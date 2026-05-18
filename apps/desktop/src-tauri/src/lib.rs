@@ -156,6 +156,32 @@ pub fn run() {
         .collect();
 
     tauri::Builder::default()
+        // Single-instance plugin: a second `open-geo-studio.exe path/to/file.gef`
+        // invocation (e.g. double-clicking a .gef while the app is running)
+        // forwards its CLI args to the already-running instance and exits.
+        // Inside the callback we surface the window and emit the same
+        // `ogs:open-file` event the startup flow uses, so the file lands
+        // in a fresh tab on the existing instance.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            use tauri::{Emitter, Manager};
+            // Surface any existing window — bring it to front for the user.
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+            for arg in argv.iter().skip(1) {
+                if arg.starts_with("--") { continue; }
+                let lower = arg.to_lowercase();
+                if lower.ends_with(".gef")
+                    || lower.ends_with(".ifcgis")
+                    || lower.ends_with(".ifcgeo")
+                    || lower.ends_with(".xml")
+                {
+                    let _ = app.emit("ogs:open-file", arg.clone());
+                }
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_os::init())
@@ -206,6 +232,8 @@ pub fn run() {
             commands::export::export_geojson,
             commands::project::save_project_ifcgis,
             commands::project::open_project_ifcgis,
+            commands::project::save_project_ifcgis_full,
+            commands::project::open_project_ifcgis_full,
             commands::ifc::generate_ifc,
             commands::ifc::list_generated_ifc,
             commands::ifc::read_generated_ifc,

@@ -8,6 +8,11 @@ import {
   newProjectDocument,
   openPathByExtension,
 } from "../../store/useCptStore";
+import {
+  getLatestTekening,
+  tekeningStateToIfcgis,
+  titleBlockToIfcgis,
+} from "../../store/tekeningState";
 import ExtensionManagerPanel from "./ExtensionManagerPanel";
 import "./Backstage.css";
 
@@ -87,6 +92,11 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
 
   // ── .ifcgis project file actions ────────────────────────────
   // Save only makes sense when the active doc is a project.
+  // We bouwen een volledig ifcgis-0.2 payload (header + project + cpts
+  // + bores + crs + tekening + title_block) en geven dat aan de
+  // Rust-command `save_project_ifcgis_full`. Daar wordt het tegen het
+  // schema gevalideerd vóór schrijven, zodat een corrupt project niet
+  // op schijf belandt.
   const saveProject = useCallback(async () => {
     if (!activeDoc || activeDoc.kind !== "project") {
       alert("Geen project actief — open of maak een .ifcgis project.");
@@ -98,13 +108,54 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
     });
     if (!dst) return;
     try {
-      await invoke("save_project_ifcgis", {
-        project: activeDoc.meta,
+      // Project-meta → ifcgis ProjectInfo (snake_case + 'type' veld).
+      const meta = activeDoc.meta;
+      const projectInfo = {
+        type: "OpenGeoProject",
+        title: meta.title,
+        client: meta.client,
+        location: meta.location,
+        project_number: meta.project_number,
+        author: meta.author,
+        // ifcgis verwacht NaiveDate (YYYY-MM-DD); meta.date is al ISO.
+        date: meta.date.slice(0, 10),
+      };
+      // CPTs uit de project-document map; .values() geeft een Iterable
+      // dus we converteren via Array.from. Rust verwacht een array.
+      const cpts = Array.from(activeDoc.cpts.values());
+      // Tekening + title-block uit de singleton (gevuld door
+      // SonderingstekeningView). Beide kunnen null zijn als de
+      // tekening-tab nooit geopend is — dan schrijft Rust gewoon geen
+      // `tekening` / `title_block` sectie.
+      const tekState = getLatestTekening();
+      const tekening = tekState ? tekeningStateToIfcgis(tekState) : null;
+      const titleBlock = tekState
+        ? titleBlockToIfcgis(tekState.titleBlock)
+        : null;
+      const payload = {
+        header: {
+          schema: "ifcgis-0.2",
+          originating_system: "Open Geotechniek Studio",
+          timestamp: new Date().toISOString(),
+        },
+        project: projectInfo,
+        cpts,
+        // bores: TODO — bores zijn nog losse Bore-documents in de
+        // store, niet aan een project gekoppeld. Voor v1 schrijven we
+        // ze niet mee. Een toekomstige project.bores Map kan dit
+        // analoog aan project.cpts oppakken.
+        bores: [],
+        crs: { epsg: 28992, name: "Amersfoort / RD New" },
+        ...(tekening ? { tekening } : {}),
+        ...(titleBlock ? { title_block: titleBlock } : {}),
+      };
+      await invoke("save_project_ifcgis_full", {
+        payload,
         path: dst,
       });
       onClose();
     } catch (err) {
-      console.error("save_project_ifcgis failed", err);
+      console.error("save_project_ifcgis_full failed", err);
       alert(`Opslaan mislukt: ${err}`);
     }
   }, [activeDoc, onClose]);

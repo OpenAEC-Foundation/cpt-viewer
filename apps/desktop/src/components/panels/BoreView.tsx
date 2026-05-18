@@ -1,6 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Bore } from "../../types/bore";
-import { soilColour } from "../../types/bore";
+import {
+  mainWidthFraction,
+  parseSoilMix,
+  soilPattern,
+} from "../../types/bore";
 import "./BoreView.css";
 
 /** Min/max zoom multipliers — 1× = 360 px base height, 0.5× compact, 6× hyper-zoom. */
@@ -40,13 +44,26 @@ export default function BoreView({ bore }: { bore: Bore }) {
   const zoomOut = () => setZoom((z) => Math.max(ZOOM_MIN, +(z / ZOOM_STEP).toFixed(2)));
   const zoomReset = () => setZoom(1);
 
-  // Ctrl + wheel → zoom; plain wheel scrolls the page as normal.
-  const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (!e.ctrlKey && !e.metaKey) return;
-    e.preventDefault();
-    if (e.deltaY < 0) zoomIn();
-    else zoomOut();
-  };
+  // Ctrl + wheel → zoom. React's synthetic `onWheel` is passive in
+  // React 18+, so `e.preventDefault()` is a no-op there and the page
+  // would scroll/zoom anyway. We attach a native wheel listener with
+  // `{ passive: false }` so we can actually intercept.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      if (e.deltaY < 0) {
+        setZoom((z) => Math.min(ZOOM_MAX, +(z * ZOOM_STEP).toFixed(2)));
+      } else {
+        setZoom((z) => Math.max(ZOOM_MIN, +(z / ZOOM_STEP).toFixed(2)));
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   // Depth axis: pick a "nice" 1-m step until we'd have >25 ticks, then
   // step up to 2/5/10 so the strip stays readable for deep borings.
@@ -154,7 +171,7 @@ export default function BoreView({ bore }: { bore: Bore }) {
       )}
 
       {/* ── Strip log ──────────────────────────────────────────── */}
-      <div className="bore-body" onWheel={onWheel}>
+      <div className="bore-body" ref={bodyRef}>
         {bore.layers.length === 0 ? (
           <div className="bore-empty">
             <p>Geen lagen aangetroffen in deze boring.</p>
@@ -165,7 +182,14 @@ export default function BoreView({ bore }: { bore: Bore }) {
         ) : (
           <div
             className="bore-strip-wrap"
-            style={{ minHeight: `${wrapHeightPx}px` }}
+            style={{
+              minHeight: `${wrapHeightPx}px`,
+              // Scale the strip column horizontally too — zoom is meant
+              // to magnify the whole boorprofiel, not just stretch
+              // vertically. We expose the multiplier as a CSS var so
+              // .bore-strip-wrap's grid template can pick it up.
+              ["--bore-zoom" as unknown as string]: String(zoom),
+            }}
           >
             {/* Depth axis */}
             <div className="bore-axis">
@@ -191,11 +215,18 @@ export default function BoreView({ bore }: { bore: Bore }) {
               </div>
             </div>
 
-            {/* Coloured layer column */}
+            {/* Coloured layer column. Each layer is split into a wide
+                main-soil column + (optional) thinner admixture column,
+                following the NL boorprofiel-cartografie convention
+                where a composite name like `zwakSiltigeKlei` paints
+                the klei pattern + a small silt stripe. The width ratio
+                comes from the strength prefix (zwak/matig/sterk). */}
             <div className="bore-strip">
               {bore.layers.map((l, i) => {
                 const top = (l.top_depth / totalDepth) * 100;
                 const h = ((l.base_depth - l.top_depth) / totalDepth) * 100;
+                const mix = parseSoilMix(l.soil_name);
+                const mainPct = mainWidthFraction(mix) * 100;
                 return (
                   <div
                     key={i}
@@ -203,10 +234,25 @@ export default function BoreView({ bore }: { bore: Bore }) {
                     style={{
                       top: `${top}%`,
                       height: `${h}%`,
-                      background: soilColour(l.soil_name),
                     }}
                     title={`${l.top_depth.toFixed(2)}–${l.base_depth.toFixed(2)} m: ${l.soil_name}${l.description ? ` (${l.description})` : ""}`}
                   >
+                    <div
+                      className="bore-layer-half bore-layer-main"
+                      style={{
+                        width: `${mainPct}%`,
+                        background: soilPattern(mix.main),
+                      }}
+                    />
+                    {mix.admixture && (
+                      <div
+                        className="bore-layer-half bore-layer-mix"
+                        style={{
+                          width: `${100 - mainPct}%`,
+                          background: soilPattern(mix.admixture),
+                        }}
+                      />
+                    )}
                     <span className="bore-layer-label">{l.soil_name}</span>
                   </div>
                 );
@@ -218,14 +264,22 @@ export default function BoreView({ bore }: { bore: Bore }) {
                 their neighbours. The strip+axis columns stretch to
                 match the descriptions' total height via the grid row. */}
             <ul className="bore-descriptions">
-              {bore.layers.map((l, i) => (
+              {bore.layers.map((l, i) => {
+                const mix = parseSoilMix(l.soil_name);
+                const swatchMain = soilPattern(mix.main);
+                const swatchMix = mix.admixture ? soilPattern(mix.admixture) : null;
+                return (
                 <li
                   key={i}
                   className="bore-description-row"
                 >
                   <span
                     className="bore-description-swatch"
-                    style={{ background: soilColour(l.soil_name) }}
+                    style={
+                      swatchMix
+                        ? { background: `linear-gradient(to right, ${swatchMain} 0 65%, ${swatchMix} 65% 100%)` }
+                        : { background: swatchMain }
+                    }
                     aria-hidden
                   />
                   <div className="bore-description-text">
@@ -251,7 +305,8 @@ export default function BoreView({ bore }: { bore: Bore }) {
                     )}
                   </div>
                 </li>
-              ))}
+              );
+              })}
             </ul>
           </div>
         )}

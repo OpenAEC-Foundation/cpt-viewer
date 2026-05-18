@@ -19,6 +19,7 @@ import SonderingstekeningView from "./components/panels/SonderingstekeningView";
 import LeftPanel from "./components/panels/LeftPanel";
 import GisLayerPanel from "./components/panels/GisLayerPanel";
 import RightPanel from "./components/panels/RightPanel";
+import TekeningProperties from "./components/panels/TekeningProperties";
 import { getDetachedParams, useWindowManager } from "./hooks/useWindowManager";
 import { getSetting, setSetting } from "./store";
 import { openPathByExtension } from "./store/useCptStore";
@@ -154,6 +155,19 @@ function App() {
     window.addEventListener("ogs:open-project-settings", onOpen);
     return () => window.removeEventListener("ogs:open-project-settings", onOpen);
   }, []);
+
+  // Publish the currently active view both as a DOM attribute (so panels
+  // can read it synchronously) and as a custom event. GisLayerPanel uses
+  // these to keep its checkbox state per-view, and MapView / Sondering-
+  // stekeningView filter incoming layer events on `detail.view` so a
+  // toggle on one tab doesn't bleed into the other.
+  useEffect(() => {
+    const v = activeView === "tekening" ? "tekening" : "map";
+    document.body.dataset.activeView = v;
+    window.dispatchEvent(new CustomEvent("ogs:active-view-changed", {
+      detail: { view: v },
+    }));
+  }, [activeView]);
 
   // ── Open-with handler ────────────────────────────────────────────
   // Tauri emits `ogs:open-file` for every CLI-passed file path on
@@ -347,7 +361,9 @@ function App() {
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2.5A1.5 1.5 0 013.5 1h9A1.5 1.5 0 0114 2.5v11a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 13.5v-11zM3.5 2a.5.5 0 00-.5.5v11a.5.5 0 00.5.5H9V2H3.5zM10 2v12h2.5a.5.5 0 00.5-.5v-11a.5.5 0 00-.5-.5H10z" /></svg>
                   </button>
                 </div>
-                <RightPanel />
+                {activeView === "tekening"
+                  ? <TekeningProperties />
+                  : <RightPanel />}
               </>
             ) : (
               <button className="right-panel-collapsed-tab" onClick={() => setRightPanelOpen(true)} title={t("properties")}>

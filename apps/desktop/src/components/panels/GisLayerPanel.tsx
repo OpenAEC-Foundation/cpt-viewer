@@ -22,10 +22,12 @@ export type LayerId =
   | "luchtfoto-2018"
   | "luchtfoto-2017"
   | "luchtfoto-2016"
+  | "adressen"
   | "ahn"
   | "kadaster"
   | "bag"
   | "bgt"
+  | "bestemmingsplan"
   | "bro-sonderingen"
   | "bro-boringen"
   | "project-sonderingen";
@@ -56,6 +58,11 @@ const LAYER_DEFS: LayerDef[] = [
   { id: "luchtfoto-2017", label: "Luchtfoto 2017", group: "base", defaultOn: false },
   { id: "luchtfoto-2016", label: "Luchtfoto 2016", group: "base", defaultOn: false },
 
+  // BAG huisnummers + straatnamen — WMS-tile overlay van het PDOK BAG
+  // huisnummerposities + nummeraanduiding. Toont straatnamen + nummers
+  // bij hogere zoomniveaus.
+  { id: "adressen", label: "Adressen + straten", group: "overlay", defaultOn: false },
+
   // AHN — Actueel Hoogtebestand Nederland (DTM 0.5 m). Overlay-style
   // hillshade ramp from blue (low) to red (high). Off by default — too
   // visually loud to combine with the base layer without consent.
@@ -66,6 +73,9 @@ const LAYER_DEFS: LayerDef[] = [
   { id: "kadaster", label: "Kadastrale grenzen", group: "overlay", defaultOn: false },
   { id: "bag", label: "BAG (gebouwen)", group: "overlay", defaultOn: false },
   { id: "bgt", label: "BGT topografie", group: "overlay", defaultOn: false },
+  // PDOK "Ruimtelijkeplannen" — gemeentelijke bestemmingsplannen via
+  // WMS. Toont gekleurde zonering (Wonen, Bedrijf, Groen, Verkeer, …).
+  { id: "bestemmingsplan", label: "Bestemmingsplan", group: "overlay", defaultOn: false },
 
   // BRO data layers — sonderingen on by default so the map shows public CPTs
   // immediately when the user opens the Kaart tab.
@@ -93,17 +103,36 @@ const AHN_LEGEND: { color: string; label: string }[] = [
 /**
  * Initial state — must be a *function* so the defaults are computed once,
  * not regenerated on every render.
+ *
+ * The Sonderingstekening tab needs different defaults than the Kaart tab:
+ * a tekening visually leans on a luchtfoto (50% to keep contrast) plus
+ * BAG buildings and kadaster lines so the reader sees the parcel + the
+ * surrounding buildings at a glance. Kaart keeps its lichter BRT-only
+ * default so the user can search/inspect freely without overlays getting
+ * in the way.
  */
-function defaultState(): Record<LayerId, boolean> {
+function defaultState(view: ViewId = "map"): Record<LayerId, boolean> {
   const out = {} as Record<LayerId, boolean>;
   for (const d of LAYER_DEFS) out[d.id] = d.defaultOn;
+  if (view === "tekening") {
+    // BRT stays as a fallback under the luchtfoto so any tiles that fail
+    // to load still show a base. Luchtfoto-actueel sits on top at 50%.
+    out["luchtfoto-actueel"] = true;
+    out["kadaster"] = true;
+    out["bag"] = true;
+  }
   return out;
 }
 
-/** Initial opacity state — every layer at 100% by default. */
-function defaultOpacityState(): Record<LayerId, number> {
+/** Initial opacity state. Sonderingstekening starts the luchtfoto at 50%
+ *  so the cadaster + BAG outlines, sonderingen and dimensions stay
+ *  readable on top — the Kaart tab keeps everything at 100%. */
+function defaultOpacityState(view: ViewId = "map"): Record<LayerId, number> {
   const out = {} as Record<LayerId, number>;
   for (const d of LAYER_DEFS) out[d.id] = 1;
+  if (view === "tekening") {
+    out["luchtfoto-actueel"] = 0.5;
+  }
   return out;
 }
 
@@ -121,23 +150,78 @@ function defaultOpacityState(): Record<LayerId, number> {
  * archive-area load, so we can show "X sonderingen / Y boringen geladen"
  * right under the data-layer toggles.
  */
+/**
+ * Per-view layer state. The Kaart and Sonderingstekening tabs each
+ * keep their own checkbox + opacity values, otherwise toggling on
+ * one would also fire on the other (both panels subscribe to the
+ * same `ogs:layer-toggle` event). We dispatch `{ view, id, enabled }`
+ * so the receiving views can filter on their own viewId.
+ */
+type ViewId = "map" | "tekening";
+
+const mapState = {
+  enabled: defaultState("map"),
+  opacity: defaultOpacityState("map"),
+};
+const tekState = {
+  enabled: defaultState("tekening"),
+  opacity: defaultOpacityState("tekening"),
+};
+function statesFor(view: ViewId) {
+  return view === "tekening" ? tekState : mapState;
+}
+
 export default function GisLayerPanel() {
   const { t } = useTranslation();
-  const [enabled, setEnabled] = useState<Record<LayerId, boolean>>(defaultState);
-  const [opacity, setOpacity] = useState<Record<LayerId, number>>(defaultOpacityState);
+  // Active view drives which set of layer toggles is shown + edited.
+  // We don't have a Zustand slot for activeView, so we use a DOM-attribute
+  // fallback: <body data-active-view="...">. App.tsx sets this whenever
+  // the active tab changes (see ApplicationShell), and also dispatches
+  // `ogs:active-view-changed` so we can re-sync on swap.
+  const view: ViewId =
+    typeof document !== "undefined" &&
+    document.body.dataset.activeView === "tekening"
+      ? "tekening"
+      : "map";
+
+  const [enabled, setEnabled] = useState<Record<LayerId, boolean>>(
+    () => ({ ...statesFor(view).enabled }),
+  );
+  const [opacity, setOpacity] = useState<Record<LayerId, number>>(
+    () => ({ ...statesFor(view).opacity }),
+  );
   const [counts, setCounts] = useState<{ cpt: number; bore: number }>({ cpt: 0, bore: 0 });
 
-  // Broadcast initial state on mount so MapView can sync up.
-  // We defer with a microtask so MapView's effect (which attaches the
-  // listener) has a chance to run first — both components mount in the
-  // same render pass, and React commits effects in DOM order, which
-  // means the left-panel sibling fires its effects before the main view.
+  // When the active view changes (tab switch), swap the displayed state
+  // to that view's snapshot. Triggered by listening to body class change.
+  useEffect(() => {
+    const onViewChange = () => {
+      const v: ViewId =
+        document.body.dataset.activeView === "tekening" ? "tekening" : "map";
+      setEnabled({ ...statesFor(v).enabled });
+      setOpacity({ ...statesFor(v).opacity });
+    };
+    window.addEventListener("ogs:active-view-changed", onViewChange);
+    return () =>
+      window.removeEventListener("ogs:active-view-changed", onViewChange);
+  }, []);
+
+  // Broadcast initial state on mount so the current view can sync up.
+  // We emit both the toggle state and the opacity for every layer — the
+  // tekening view starts with luchtfoto-actueel at 50%, so without an
+  // opacity broadcast the tile would attach at the (default) full
+  // opacity instead of the value the panel claims to show.
   useEffect(() => {
     const broadcast = () => {
       for (const d of LAYER_DEFS) {
         window.dispatchEvent(
           new CustomEvent("ogs:layer-toggle", {
-            detail: { id: d.id, enabled: enabled[d.id] },
+            detail: { view, id: d.id, enabled: enabled[d.id] },
+          }),
+        );
+        window.dispatchEvent(
+          new CustomEvent("ogs:layer-opacity", {
+            detail: { view, id: d.id, opacity: opacity[d.id] },
           }),
         );
       }
@@ -145,7 +229,7 @@ export default function GisLayerPanel() {
     const id = setTimeout(broadcast, 0);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [view]);
 
   // Subscribe to BRO count notifications from MapView.
   useEffect(() => {
@@ -160,9 +244,12 @@ export default function GisLayerPanel() {
   const toggle = (id: LayerId) => {
     setEnabled((prev) => {
       const next = { ...prev, [id]: !prev[id] };
+      // Mirror into the cross-component store so a future tab-switch
+      // restores the same checkbox state.
+      statesFor(view).enabled = next;
       window.dispatchEvent(
         new CustomEvent("ogs:layer-toggle", {
-          detail: { id, enabled: next[id] },
+          detail: { view, id, enabled: next[id] },
         }),
       );
       return next;
@@ -172,9 +259,11 @@ export default function GisLayerPanel() {
   const changeOpacity = (id: LayerId, value: number) => {
     setOpacity((prev) => {
       const next = { ...prev, [id]: value };
+      // Mirror into the per-view store so a tab-switch restores it later.
+      statesFor(view).opacity = next;
       window.dispatchEvent(
         new CustomEvent("ogs:layer-opacity", {
-          detail: { id, opacity: value },
+          detail: { view, id, opacity: value },
         }),
       );
       return next;

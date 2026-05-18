@@ -1,0 +1,65 @@
+/* ─────────────────────────────────────────────────────────────────────
+   Adres-label divIcons rendered by AdressenLayer (utils/adressenLayer.ts).
+
+   Two flavours:
+   - `.adres-label-street` — street names from BAG `openbareruimte` at
+     polygon centroid. Slightly larger, weighted text, subtle white halo
+     so it stays readable on every basemap (luchtfoto, BRT, AHN).
+   - `.adres-label-number` — single huisnummer at the BAG
+     `nummeraanduiding` point. Smaller, monospace, same halo.
+
+   Leaflet wraps each divIcon in `.leaflet-marker-icon`. Our overrides
+   strip the default background + border so the text floats free.
+   ───────────────────────────────────────────────────────────────────── */
+
+.leaflet-marker-icon.adres-label {
+  background: transparent;
+  border: none;
+  width: auto !important;
+  height: auto !important;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+.adres-label > span {
+  display: inline-block;
+  /* Rotation eerst toepassen (CSS lees-volgorde van rechts naar links:
+     translate centreert het span over het ankerpunt, daarna draait
+     rotate rond datzelfde gecentreerde punt). `--rot` wordt per-label
+     ingesteld via een inline style="--rot:NNdeg" in adressenLayer.ts. */
+  transform: rotate(var(--rot, 0deg)) translate(-50%, -50%);
+  transform-origin: 0 0;
+  padding: 1px 4px;
+  border-radius: 2px;
+  color: #1f2937;
+  /* White halo via stacked text-shadow — works on every background
+     without needing a solid pill that would hide the underlying tiles. */
+  text-shadow:
+    -1px -1px 0 #fff,
+     1px -1px 0 #fff,
+    -1px  1px 0 #fff,
+     1px  1px 0 #fff,
+     0   -1px 0 #fff,
+     0    1px 0 #fff,
+    -1px  0   0 #fff,
+     1px  0   0 #fff;
+}
+
+.adres-label-street > span {
+  /* Straatnaam altijd in HOOFDLETTERS (de tekst is in TS al ge-upper'd
+     maar de transform staat hier ook als vangnet voor dynamic data). */
+  font: 700 11px 'Inter', system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #111827;
+}
+
+.adres-label-number > span {
+  /* "Normale" letters voor huisnummers — proportionele Inter
+     (geen monospace), gewicht 500 voor leesbaarheid op luchtfoto. */
+  font: 500 10px 'Inter', system-ui, sans-serif;
+  color: #1f2937;
+  text-transform: none;
+  letter-spacing: 0;
+}

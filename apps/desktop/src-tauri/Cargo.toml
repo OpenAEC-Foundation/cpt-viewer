@@ -1,6 +1,6 @@
 [package]
 name = "open-geo-studio"
-version = "0.2.1"
+version = "0.2.4"
 description = "Open Geotechniek Studio — desktop CPT viewer and report generator"
 authors = ["Open AEC Foundation"]
 edition = "2021"
@@ -21,6 +21,10 @@ tauri-plugin-store = "2.4.2"
 tauri-plugin-os = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+# Single-instance — when a second invocation happens (e.g. double-clicking
+# a .gef file while the app is already running), forward the CLI args to
+# the running instance instead of spawning a second window.
+tauri-plugin-single-instance = "2"
 pdf-writer = "0.13"
 ttf-parser = "0.25"
 lopdf = "0.34"

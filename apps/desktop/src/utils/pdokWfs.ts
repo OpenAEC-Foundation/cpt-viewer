@@ -102,3 +102,42 @@ export function fetchKadasterPercelen(bbox: WfsBBox, signal?: AbortSignal) {
     signal,
   });
 }
+
+/**
+ * Convenience: Kadastrale kaart `OpenbareRuimteNaam` — straat- en
+ * pleinnaam-labels met expliciete positie + rotatie.
+ *
+ * Komt uit dezelfde PDOK Kadastrale kaart WFS-service als de
+ * Perceel-grenzen. Properties:
+ *   - `tekst` — de straatnaam
+ *   - `hoek`  — rotatie in graden
+ * Geometry: altijd Point (het plaatsingspunt van het label).
+ *
+ * Verkozen boven BGT omdat de Kadastrale kaart een NL-brede dekking
+ * heeft (de BGT-WFS heeft soms slechtere of geen response in landelijk
+ * gebied), én omdat we toch al andere lagen uit dezelfde service halen.
+ */
+export function fetchKadasterStraatLabel(bbox: WfsBBox, signal?: AbortSignal) {
+  return fetchWfsFeatures(bbox, {
+    baseUrl: "https://service.pdok.nl/kadaster/kadastralekaart/wfs/v5_0",
+    typeName: "kadastralekaart:OpenbareRuimteNaam",
+    maxFeatures: 1000,
+    signal,
+  });
+}
+
+/**
+ * Convenience: Kadastrale kaart `Nummeraanduidingreeks` — huisnummer-
+ * label-reeksen. Eén feature per reeks (bijv. "1 t/m 7"), niet per
+ * individueel huisnummer, dus relatief lichte fetch. Properties:
+ *   - `tekst` — de huisnummerreeks of enkel nummer
+ *   - `hoek`  — rotatie in graden
+ */
+export function fetchKadasterHuisnummerLabel(bbox: WfsBBox, signal?: AbortSignal) {
+  return fetchWfsFeatures(bbox, {
+    baseUrl: "https://service.pdok.nl/kadaster/kadastralekaart/wfs/v5_0",
+    typeName: "kadastralekaart:Nummeraanduidingreeks",
+    maxFeatures: 1500,
+    signal,
+  });
+}

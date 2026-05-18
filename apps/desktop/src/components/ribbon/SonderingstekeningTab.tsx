@@ -38,20 +38,44 @@ const tagIcon =
   `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ` +
   `d="M7 7h.01M7 3h5a2 2 0 011.414.586l8 8a2 2 0 010 2.828l-8 8a2 2 0 01-2.828 0l-8-8A2 2 0 013 12V7a4 4 0 014-4z"/></svg>`;
 
+// ── Bewerken-icons (select / move / copy / delete) ────────────────
+// Heroicons-style strokes that match the rest of the ribbon. The Bewerken
+// group is back — Open PDF Studio / Open 2D Studio convention is to have
+// these four edit acties (selecteren, verplaatsen, kopiëren, verwijderen)
+// always one klik away regardless of which sub-tool the user picked.
+const moveIcon =
+  `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
+  `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ` +
+  `d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>`;
+
 const copyIcon =
   `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
   `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ` +
-  `d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>`;
+  `d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-2M8 5a2 2 0 002 2h6a2 2 0 002-2M8 5a2 2 0 012-2h6a2 2 0 012 2m0 0h2a2 2 0 012 2v3a2 2 0 01-2 2h-2"/></svg>`;
 
 const deleteIcon =
   `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
   `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ` +
   `d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V3a2 2 0 012-2h2a2 2 0 012 2v4"/></svg>`;
 
-const moveIcon =
+// Select / cursor — arrow icon for the default pick tool.
+const selectIcon =
+  `<svg fill="currentColor" viewBox="0 0 24 24">` +
+  `<path d="M3 2 L3 18 L8 14 L11 21 L13.5 20 L10.5 13 L17 13 Z" />` +
+  `</svg>`;
+
+// Vrije lijn — simpel slash van linksonder naar rechtsboven.
+const lineIcon =
   `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
-  `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ` +
-  `d="M4 12h16m-8-8v16m-4-4l-4-4 4-4m8 8l4-4-4-4"/></svg>`;
+  `<path stroke-linecap="round" stroke-width="2" d="M4 20L20 4"/></svg>`;
+
+// Maatlijn — horizontale lijn met uiteinde-tikken (┤───┤).
+const dimensionIcon =
+  `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
+  `<path stroke-linecap="round" stroke-width="2" d="M3 12h18M5 8v8M19 8v8"/></svg>`;
+
+// Freeze viewport heeft geen ribbon-knop meer — alleen het vinkje in
+// TekeningProperties (rechter eigenschappen-paneel) bedient hem nu.
 
 const dispatch = (name: string, detail?: unknown) =>
   window.dispatchEvent(new CustomEvent(name, { detail }));
@@ -62,6 +86,44 @@ export default function SonderingstekeningTab() {
   return (
     <div className="ribbon-content">
       <div className="ribbon-groups">
+        <RibbonGroup label={t("tekening.selectGroup", "Selecteer")}>
+          <RibbonButton
+            icon={selectIcon}
+            label={t("tekening.selectMode", "Selecteren")}
+            size="large"
+            onClick={() => dispatch("ogs:tekening-select-mode")}
+          />
+        </RibbonGroup>
+
+        <RibbonGroup label={t("tekening.editGroup", "Bewerken")}>
+          <RibbonButton
+            icon={moveIcon}
+            label={t("tekening.moveSelection", "Verplaatsen")}
+            size="small"
+            title={t(
+              "tekening.moveHint",
+              "Pijltjestoetsen verplaatsen 1 m (Shift = 5 m)",
+            )}
+            onClick={() =>
+              dispatch("ogs:tekening-move", { dx: 1, dy: 0 })
+            }
+          />
+          <RibbonButton
+            icon={copyIcon}
+            label={t("tekening.copySelection", "Kopiëren")}
+            size="small"
+            title={t("tekening.copyHint", "Dupliceer naast het geselecteerde object (Ctrl+D)")}
+            onClick={() => dispatch("ogs:tekening-copy")}
+          />
+          <RibbonButton
+            icon={deleteIcon}
+            label={t("tekening.deleteSelection", "Verwijderen")}
+            size="small"
+            title={t("tekening.deleteHint", "Verwijder het geselecteerde object (Delete)")}
+            onClick={() => dispatch("ogs:tekening-delete")}
+          />
+        </RibbonGroup>
+
         <RibbonGroup label={t("tekening.placeGroup", "Plaatsen")}>
           <RibbonButton
             icon={placeIcon}
@@ -70,64 +132,55 @@ export default function SonderingstekeningTab() {
             onClick={() => dispatch("ogs:tekening-toggle-place")}
           />
           <RibbonButton
+            icon={placeIcon}
+            label={t("tekening.placeBore", "Boring")}
+            size="large"
+            onClick={() => dispatch("ogs:tekening-toggle-place-bore")}
+          />
+          <RibbonButton
             icon={rasterIcon}
-            label={t("tekening.placeRaster", "Raster")}
+            label={t("tekening.placeRaster", "Sonderingsraster")}
             size="large"
             onClick={() => dispatch("ogs:tekening-place-raster")}
           />
           <RibbonButton
+            icon={lineIcon}
+            label={t("tekening.drawLine", "Lijn")}
+            size="large"
+            onClick={() => dispatch("ogs:tekening-draw-line")}
+          />
+          <RibbonButton
+            icon={dimensionIcon}
+            label={t("tekening.drawDim", "Maatlijn")}
+            size="large"
+            onClick={() => dispatch("ogs:tekening-draw-dimension")}
+          />
+          <RibbonButton
             icon={tagIcon}
-            label={t("tekening.coordTag", "RD-tag")}
+            label={t("tekening.coordTag", "RD-coördinaat")}
             size="large"
             onClick={() => dispatch("ogs:tekening-coord-tag")}
-          />
-        </RibbonGroup>
-
-        <RibbonGroup label={t("tekening.editGroup", "Bewerken")}>
-          <RibbonButton
-            icon={copyIcon}
-            label={t("tekening.copy", "Kopiëren")}
-            size="large"
-            onClick={() => dispatch("ogs:tekening-copy")}
-          />
-          <RibbonButton
-            icon={moveIcon}
-            label={t("tekening.moveLeft", "← 10m")}
-            size="small"
-            onClick={() => dispatch("ogs:tekening-move", { dx: -10, dy: 0 })}
-          />
-          <RibbonButton
-            icon={moveIcon}
-            label={t("tekening.moveRight", "10m →")}
-            size="small"
-            onClick={() => dispatch("ogs:tekening-move", { dx: 10, dy: 0 })}
-          />
-          <RibbonButton
-            icon={moveIcon}
-            label={t("tekening.moveUp", "↑ 10m")}
-            size="small"
-            onClick={() => dispatch("ogs:tekening-move", { dx: 0, dy: 10 })}
-          />
-          <RibbonButton
-            icon={moveIcon}
-            label={t("tekening.moveDown", "10m ↓")}
-            size="small"
-            onClick={() => dispatch("ogs:tekening-move", { dx: 0, dy: -10 })}
-          />
-          <RibbonButton
-            icon={deleteIcon}
-            label={t("tekening.delete", "Verwijder")}
-            size="large"
-            onClick={() => dispatch("ogs:tekening-delete")}
           />
         </RibbonGroup>
 
         <RibbonGroup label={t("tekening.overlayGroup", "Overlay")}>
           <RibbonButton
             icon={overlayIcon}
-            label={t("tekening.addOverlay", "Toevoegen")}
+            label={t("tekening.addOverlay", "Image/PDF import")}
             size="large"
             onClick={() => dispatch("ogs:tekening-add-overlay")}
+          />
+          <RibbonButton
+            icon={overlayIcon}
+            label={t("tekening.loadFrame", "Kader (SVG)")}
+            size="large"
+            onClick={() => dispatch("ogs:tekening-load-frame")}
+          />
+          <RibbonButton
+            icon={deleteIcon}
+            label={t("tekening.clearAll", "Wis alles")}
+            size="small"
+            onClick={() => dispatch("ogs:tekening-clear-all")}
           />
         </RibbonGroup>
 

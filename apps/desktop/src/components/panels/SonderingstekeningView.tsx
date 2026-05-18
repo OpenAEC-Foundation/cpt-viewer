@@ -4,7 +4,15 @@ import "leaflet/dist/leaflet.css";
 import { invoke } from "@tauri-apps/api/core";
 import proj4 from "proj4";
 import { useCptStore } from "../../store/useCptStore";
+import {
+  consumePendingTekeningRestore,
+  setLatestTekening,
+  type TekeningFullState,
+} from "../../store/tekeningState";
 import { fetchBagPanden, fetchKadasterPercelen } from "../../utils/pdokWfs";
+import { AdressenLayer } from "../../utils/adressenLayer";
+import ImageCropDialog from "./ImageCropDialog";
+import PdfCropDialog from "./PdfCropDialog";
 import "./SonderingstekeningView.css";
 
 /**
@@ -36,24 +44,38 @@ const WGS84_TO_RD = proj4("WGS84", "EPSG:28992");
 // ── Paper geometry ───────────────────────────────────────────────
 // All dimensions in millimetres. ISO A-series landscape.
 type PaperSize = "A2" | "A3";
-type Scale = 500 | 1000 | 2000 | 5000;
+/** Print scale 1:N — was a fixed union (500/1000/2000/5000) but we
+ *  now allow any positive integer so the user can type a custom value
+ *  in the titleblock (e.g. 1:850). The dropdown in TekeningProperties
+ *  still offers the four standard presets. */
+type Scale = number;
 
 const PAPER_MM: Record<PaperSize, { wMm: number; hMm: number }> = {
   A2: { wMm: 594, hMm: 420 },
   A3: { wMm: 420, hMm: 297 },
 };
 
-const SCALES: Scale[] = [500, 1000, 2000, 5000];
-const PAPER_SIZES: PaperSize[] = ["A2", "A3"];
+// SCALES + PAPER_SIZES arrays inline in TekeningProperties now.
 const GRID_SPACINGS = [15, 20, 25] as const;
 const DEFAULT_RASTER_ROWS = 3;
 const DEFAULT_RASTER_COLS = 3;
 const DEFAULT_RASTER_SPACING = 20; // metres
 
 interface PlacedSondering {
-  id: string;       // S01, S02, ...
+  id: string;       // S01 / B01 — letter is afhankelijk van kind
   lat: number;
   lon: number;
+  /** Object-type — "sondering" tekent het standaard driehoek-symbool,
+   *  "bore" tekent het open-ring boringssymbool (zelfde icon-conventie
+   *  als de BRO-laag op de Kaart-tab). */
+  kind?: "sondering" | "bore";
+  /**
+   * Optional flag — when true the marker renders an extra horizontal
+   * line under the triangle apex, indicating that the sondering has
+   * "kleefmeting" (sleeve-friction) data. Toggled per marker in the
+   * Eigenschappen panel.
+   */
+  kleefmeting?: boolean;
 }
 
 /**
@@ -83,6 +105,7 @@ interface PlacedRaster {
 type Selection =
   | { kind: "marker"; id: string }
   | { kind: "raster"; id: string }
+  | { kind: "overlay"; id: string }
   | null;
 
 interface OverlayDrop {
@@ -116,6 +139,16 @@ interface CoordTag {
 
 interface TitleBlockData {
   project: string;
+  /** Projectnummer — los van de tekening-nr zodat in een multi-tekening
+   *  project elk blad het gedeelde nummer kan dragen (e.g. "P25-0421")
+   *  én een eigen tekeningnummer (e.g. "S-01"). */
+  projectNumber: string;
+  /** Adresregel onder de projectnaam (Straatnaam, huisnummer,
+   *  projectplaats). Vroeger gevuld met `project.title` als fallback —
+   *  dat gaf "Nieuw project" dubbel onder de projectnaam. Nu een
+   *  zelfstandig veld, ingevuld via het Eigenschappen-paneel of
+   *  inline in het titleblock. */
+  address: string;
   drawingNumber: string;
   scale: string;
   date: string;
@@ -129,6 +162,21 @@ interface FrameSvg {
   src: string;      // data URL
 }
 
+/**
+ * Free-line annotation drawn on the paper. Two latlng endpoints.
+ * `kind = "dimension"` adds end-tick marks + a metre-distance label
+ * at the midpoint (Dutch maatlijn style); `kind = "line"` is a plain
+ * polyline (a/b dashed for guides if the user wants in v2).
+ */
+interface DrawnLine {
+  id: string;
+  kind: "line" | "dimension";
+  lat1: number;
+  lon1: number;
+  lat2: number;
+  lon2: number;
+}
+
 interface BroFeature {
   id: string;
   lat: number;
@@ -139,9 +187,13 @@ interface BroFeature {
   extra: Record<string, string>;
 }
 
-// Convert a paper dimension (mm) at the chosen scale to map metres.
-// e.g. 100 mm on paper at scale 1:1000 -> 100 metres in reality.
-const paperMmToMeters = (mm: number, scale: Scale) => (mm / 1000) * scale;
+// `paperMmToMeters` helper verwijderd — de schaal-effect berekent nu
+// rechtstreeks targetMPerPx en zet de zoom via `setView` ipv via een
+// bbox + fitBounds.
+
+// Per-print-scale segment table verwijderd — schaalbar werkt nu
+// volledig op `mPerPx` uit de live Leaflet-projectie. Zie ScaleBar
+// component onderaan dit bestand.
 
 /**
  * Derive every sondering position for a raster, in WGS84 lat/lon.
@@ -232,8 +284,16 @@ function rasterEdgeMidpointsLatLng(r: PlacedRaster): L.LatLng[] {
 
 export default function SonderingstekeningView() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
+  // Available area for the paper (inner size of `.tek-canvas`). Tracked
+  // via ResizeObserver so the paper's pixel size can be recomputed to
+  // always fit the whole sheet inside the visible canvas, while still
+  // respecting the physical A2 / A3 ratio and proportional sizing.
+  const [canvasSize, setCanvasSize] = useState<{ w: number; h: number }>(
+    { w: 0, h: 0 },
+  );
   const baseLayerRef = useRef<L.TileLayer | null>(null);
   /** BGT stays as a tile layer (WMTS) — it's a rasterised composite
    *  visualization rather than a vector dataset we want to restyle. */
@@ -252,7 +312,11 @@ export default function SonderingstekeningView() {
   const overlayLayerRef = useRef<L.ImageOverlay | null>(null);
   const broLayerRef = useRef<L.LayerGroup | null>(null);
   const projectLayerRef = useRef<L.LayerGroup | null>(null);
-  const placeModeRef = useRef(false);
+  // Place-mode is een driewaardig flag: null = uit, "sondering" of
+  // "bore" voor het objecttype dat de volgende kaartklik moet plaatsen.
+  // Ref + state om zowel in de map-click handler als in de UI te
+  // kunnen lezen.
+  const placeModeRef = useRef<null | "sondering" | "bore">(null);
   // Whether the next map click should drop an RD-coordinate tag (vs.
   // place a sondering or just deselect). Ref so the bound map handler
   // always sees the latest value without re-binding.
@@ -271,12 +335,25 @@ export default function SonderingstekeningView() {
   const [paperSize, setPaperSize] = useState<PaperSize>("A2");
   const [scale, setScale] = useState<Scale>(1000);
   const [showBro, setShowBro] = useState(true);
-  const [placeMode, setPlaceMode] = useState(false);
-  const [gridSpacing, setGridSpacing] = useState<typeof GRID_SPACINGS[number]>(20);
+  const [placeMode, setPlaceMode] = useState<null | "sondering" | "bore">(null);
+  // gridSpacing remains as a constant default — the in-view dropdown is
+  // gone, future ribbon control could re-introduce a setter if needed.
+  const [gridSpacing] = useState<typeof GRID_SPACINGS[number]>(20);
   const [placed, setPlaced] = useState<PlacedSondering[]>([]);
   const [rasters, setRasters] = useState<PlacedRaster[]>([]);
   const [coordTags, setCoordTags] = useState<CoordTag[]>([]);
   const [coordMode, setCoordMode] = useState(false);
+  /**
+   * Currently-active drawing tool. When non-null, the next map click
+   * starts a new line segment; the click after completes it. Set via
+   * the ribbon's Lijn / Maatlijn buttons. `"line"` = plain polyline,
+   * `"dimension"` = polyline + end-tick marks + metre-distance label.
+   */
+  const [drawMode, setDrawMode] = useState<"line" | "dimension" | null>(null);
+  const drawModeRef = useRef<"line" | "dimension" | null>(null);
+  const drawStartRef = useRef<{ lat: number; lon: number } | null>(null);
+  const [drawnLines, setDrawnLines] = useState<DrawnLine[]>([]);
+  const drawnLayerRef = useRef<L.LayerGroup | null>(null);
   /**
    * Bump-counter used to force the handle-render effect to run again
    * after a drag ends — the actual raster state may already be at the
@@ -297,10 +374,44 @@ export default function SonderingstekeningView() {
     bgt: false,
   });
   const [overlay, setOverlay] = useState<OverlayDrop | null>(null);
+  // Pending crop — when the user picks a raster image we first open the
+  // ImageCropDialog so they can trim borders before the overlay lands on
+  // the paper. `src` is an object URL we own and must revoke on close.
+  const [cropPending, setCropPending] = useState<
+    { src: string; name: string } | null
+  >(null);
+  // Same idea, but for PDF input: we hand the object URL to
+  // PdfCropDialog which renders the page picker, then the crop stage.
+  const [pdfCropPending, setPdfCropPending] = useState<
+    { src: string; name: string } | null
+  >(null);
   const [frame, setFrame] = useState<FrameSvg | null>(null);
-  const [titleBlockOpen, setTitleBlockOpen] = useState(false);
+  // Live "meters per CSS pixel" for the visible map — keeps the scale
+  // bar correct even when the Leaflet view doesn't exactly match the
+  // requested print scale (e.g. Web Mercator distortion at NL
+  // latitude, or aspect-ratio mismatch between paper-map and bbox).
+  const [mPerPx, setMPerPx] = useState(0);
+  // Live centre + zoom van de Leaflet kaart. Wordt bijgewerkt op
+  // moveend / zoomend; uitsluitend gebruikt door de save-snapshot
+  // zodat een opgeslagen .ifcgis op exact dezelfde viewport opent.
+  const [mapView, setMapView] = useState<{
+    lat: number;
+    lon: number;
+    zoom: number;
+  }>({ lat: 52.0, lon: 5.0, zoom: 8 });
+  // Freeze viewport — when true the Leaflet map cannot be panned or
+  // zoomed (drag / scroll-wheel / pinch / double-click / box / keyboard
+  // are all disabled). The ribbon's freeze toggle dispatches
+  // `ogs:tekening-toggle-freeze`; we mirror the flag back via
+  // `ogs:tekening-freeze-changed` so the ribbon button can show its
+  // active state.
+  const [frozen, setFrozen] = useState(false);
+  // titleBlockOpen state removed — title block is edited via the
+  // right-side TekeningProperties panel now, no in-view modal needed.
   const [titleBlock, setTitleBlock] = useState<TitleBlockData>({
     project: "",
+    projectNumber: "",
+    address: "",
     drawingNumber: "",
     scale: `1:${1000}`,
     date: new Date().toISOString().slice(0, 10),
@@ -365,6 +476,73 @@ export default function SonderingstekeningView() {
   useEffect(() => {
     coordModeRef.current = coordMode;
   }, [coordMode]);
+
+  useEffect(() => {
+    drawModeRef.current = drawMode;
+    // Reset the in-flight start point whenever the tool toggles off.
+    if (!drawMode) drawStartRef.current = null;
+  }, [drawMode]);
+
+  // ── Render freehand lines + dimensions ──────────────────────
+  useEffect(() => {
+    const layer = drawnLayerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    for (const ln of drawnLines) {
+      const line = L.polyline(
+        [[ln.lat1, ln.lon1], [ln.lat2, ln.lon2]],
+        {
+          color: ln.kind === "dimension" ? "#d97706" : "#36363e",
+          weight: 2,
+          opacity: 0.9,
+          interactive: true,
+        },
+      );
+      line.on("click", (ev) => {
+        L.DomEvent.stopPropagation(ev);
+        // Click-to-delete for now — dedicated selection mode could
+        // follow in a later pass.
+        setDrawnLines((prev) => prev.filter((x) => x.id !== ln.id));
+      });
+      layer.addLayer(line);
+      if (ln.kind === "dimension") {
+        // Compute great-circle distance in metres + render a small
+        // amber label at the midpoint.
+        const mapInst = mapRef.current;
+        if (mapInst) {
+          const dist = mapInst.distance([ln.lat1, ln.lon1], [ln.lat2, ln.lon2]);
+          const mid = L.latLng((ln.lat1 + ln.lat2) / 2, (ln.lon1 + ln.lon2) / 2);
+          const distLbl = dist < 1
+            ? `${(dist * 100).toFixed(0)} cm`
+            : dist < 1000
+              ? `${dist.toFixed(2)} m`
+              : `${(dist / 1000).toFixed(2)} km`;
+          const label = L.marker(mid, {
+            icon: L.divIcon({
+              className: "tek-dim-label",
+              html: `<span>${distLbl}</span>`,
+              iconSize: [80, 18],
+              iconAnchor: [40, 9],
+            }),
+            interactive: false,
+          });
+          layer.addLayer(label);
+          // Add small tick marks at each end perpendicular to the line.
+          const tick = (lat: number, lon: number) =>
+            L.circleMarker([lat, lon], {
+              radius: 4,
+              color: "#d97706",
+              weight: 2,
+              fillColor: "#fff",
+              fillOpacity: 1,
+              interactive: false,
+            });
+          layer.addLayer(tick(ln.lat1, ln.lon1));
+          layer.addLayer(tick(ln.lat2, ln.lon2));
+        }
+      }
+    }
+  }, [drawnLines]);
 
   // ── PDOK overlays ────────────────────────────────────────────
   // BGT is a rasterised WMTS tile layer (lazy single instance, reused
@@ -495,28 +673,49 @@ export default function SonderingstekeningView() {
   // any older code still reads it.
 
   // ── Render RD-coordinate tags ─────────────────────────────────
+  // Callout-style layout: een markerpunt op de exacte lat/lon, dan
+  // een schuine leader-lijn naar een tekstkader rechtsboven met de
+  // RD-coördinaten. iconAnchor zit op het puntje van de leader zodat
+  // de tag visueel op de juiste plek "hangt", ook bij zoomwisselingen.
   useEffect(() => {
     const layer = coordLayerRef.current;
     if (!layer) return;
     layer.clearLayers();
+    // Layout-constanten — handgekozen zodat het kader naast het punt
+    // staat zonder erop te overlappen, en de leader een natuurlijke
+    // 30-45° hoek krijgt.
+    const W = 150;
+    const H = 56;
+    const dotX = 4;
+    const dotY = H - 4;
+    const leaderEndX = 34;
+    const leaderEndY = 14;
+    const boxX = leaderEndX;
+    const boxY = 2;
+    const boxW = W - boxX - 2;
     for (const t of coordTags) {
       const [x, y] = WGS84_TO_RD.forward([t.lon, t.lat]);
-      const html = `<div class="tek-coord-tag">
-        <svg viewBox="0 0 12 12" width="10" height="10">
-          <circle cx="6" cy="6" r="4" fill="#d97706" stroke="#7c2d12" stroke-width="1" />
-        </svg>
-        <div class="tek-coord-text">
-          <strong>x:</strong> ${x.toFixed(1)}<br>
-          <strong>y:</strong> ${y.toFixed(1)}
-          ${t.label ? `<br><em>${t.label}</em>` : ""}
-        </div>
-      </div>`;
+      const html =
+        `<div class="tek-coord-tag" style="width:${W}px;height:${H}px;position:relative;">
+          <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="position:absolute;inset:0;pointer-events:none;">
+            <line x1="${dotX}" y1="${dotY}" x2="${leaderEndX}" y2="${leaderEndY}"
+                  stroke="#7c2d12" stroke-width="1.3" />
+            <circle cx="${dotX}" cy="${dotY}" r="3.2"
+                    fill="#d97706" stroke="#7c2d12" stroke-width="1.2" />
+          </svg>
+          <div class="tek-coord-text" style="position:absolute;left:${boxX}px;top:${boxY}px;width:${boxW}px;">
+            <strong>x:</strong> ${x.toFixed(1)}<br>
+            <strong>y:</strong> ${y.toFixed(1)}
+            ${t.label ? `<br><em>${t.label}</em>` : ""}
+          </div>
+        </div>`;
       const m = L.marker([t.lat, t.lon], {
         icon: L.divIcon({
           className: "tek-coord-icon",
           html,
-          iconSize: [110, 36],
-          iconAnchor: [10, 36],
+          iconSize: [W, H],
+          // Anchor on the dot so the tag stays on the actual point.
+          iconAnchor: [dotX, dotY],
         }),
       });
       m.on("click", (ev) => {
@@ -561,15 +760,29 @@ export default function SonderingstekeningView() {
         L.latLng(swLL[1], swLL[0]),
         L.latLng(neLL[1], neLL[0]),
       );
+      const isSelected =
+        selection?.kind === "overlay" && selection.id === overlay.id;
       const ov = L.imageOverlay(overlay.src!, bounds, {
         opacity: 0.92,
-        interactive: false,
+        interactive: true,
+        className: isSelected ? "tek-overlay-img selected" : "tek-overlay-img",
+      });
+      ov.on("click", (e) => {
+        // While the user is in a draw / place / coord mode, the click
+        // is meant for the map (start/end point of a line, place a new
+        // sondering, drop an RD-tag). Let it bubble through to the
+        // map.on("click") handler instead of selecting the overlay.
+        if (drawModeRef.current || placeModeRef.current || coordModeRef.current) {
+          return;
+        }
+        L.DomEvent.stopPropagation(e);
+        setSelection({ kind: "overlay", id: overlay.id });
       });
       ov.addTo(map);
       overlayLayerRef.current = ov;
     };
     img.src = overlay.src;
-  }, [overlay]);
+  }, [overlay, selection]);
 
   // ── Init Leaflet map inside the paper rect ─────────────────────
   useEffect(() => {
@@ -586,6 +799,15 @@ export default function SonderingstekeningView() {
       zoomControl: false,
       attributionControl: false,
       preferCanvas: true,
+      // Vloeiende muiswiel-zoom: `zoomSnap: 0` zet de snap-stepping uit
+      // zodat fractionele zoom-niveaus worden bewaard. `wheelDebounceTime`
+      // accumuleert wheel-events kort zodat een trackpad-zwiep één
+      // animatie wordt; `wheelPxPerZoomLevel` (px voor één hele
+      // zoom-eenheid) bepaalt hoe gevoelig de wheel reageert.
+      zoomSnap: 0,
+      zoomDelta: 0.25,
+      wheelDebounceTime: 40,
+      wheelPxPerZoomLevel: 80,
     }).setView([startLat, startLon], startZoom);
 
     // ── Tile layer registry (mirrors MapView's set) ──────────────
@@ -633,8 +855,27 @@ export default function SonderingstekeningView() {
           { attribution: "AHN © Rijkswaterstaat | PDOK", maxZoom: 19, opacity: 0.7 },
         );
       }
+      if (id === "bestemmingsplan") {
+        // PDOK Ruimtelijkeplannen — gemeentelijke bestemmingsplannen
+        // via WMS-as-tile. Transparant zodat ondergrond leesbaar blijft.
+        return L.tileLayer.wms(
+          "https://service.pdok.nl/kadaster/plu/wms/v2_0",
+          {
+            layers: "bestemmingsplangebied",
+            format: "image/png",
+            transparent: true,
+            attribution: "Ruimtelijkeplannen © Kadaster | PDOK",
+            maxZoom: 20,
+            opacity: 0.7,
+          },
+        );
+      }
+      // Adressen is intentionally NOT returned here — it's a vector
+      // WFS overlay handled by the AdressenLayer instance and routed
+      // separately in the toggle/opacity handlers below.
       return null;
     };
+    let adressenLayer: AdressenLayer | null = null;
     const tileRegistry: Record<string, L.TileLayer> = {};
     const layerOpacity: Record<string, number> = {};
     const ensureTileLayer = (id: string): L.TileLayer | null => {
@@ -660,6 +901,7 @@ export default function SonderingstekeningView() {
     handlesLayerRef.current = L.layerGroup().addTo(map);
     bagLayerRef.current = L.layerGroup();        // attached on toggle
     kadasterLayerRef.current = L.layerGroup();   // attached on toggle
+    drawnLayerRef.current = L.layerGroup().addTo(map);  // freehand lines / dimensions
 
     // ── GisLayerPanel event bridge ─────────────────────────────
     // The same panel that drives the Kaart view drives this map too
@@ -667,8 +909,37 @@ export default function SonderingstekeningView() {
     // views). We listen for its `ogs:layer-toggle` / `ogs:layer-opacity`
     // / `ogs:topotijdreis-year` events and apply them to our own map.
     const onLayerToggle = (e: Event) => {
-      const ce = e as CustomEvent<{ id: string; enabled: boolean }>;
+      const ce = e as CustomEvent<{ view?: string; id: string; enabled: boolean }>;
+      // GisLayerPanel keeps a separate set of toggles for the Kaart
+      // ("map") and Sonderingstekening ("tekening") views. Only react
+      // when the event is for this view; otherwise toggling on the
+      // other tab would also affect this Leaflet instance. Older callers
+      // that omit `view` are treated as tekening-targeted (the legacy
+      // default for this view was "events are mine").
+      if (ce.detail.view && ce.detail.view !== "tekening") return;
       const { id, enabled } = ce.detail;
+
+      // Adressen — vector WFS overlay routed through AdressenLayer.
+      // Lazily constructed so the WFS fetching only spins up if the
+      // user actually enables the layer.
+      if (id === "adressen") {
+        if (enabled) {
+          if (!adressenLayer) adressenLayer = new AdressenLayer();
+          if (!map.hasLayer(adressenLayer.group)) {
+            adressenLayer.group.addTo(map);
+          }
+          adressenLayer.attach(map);
+          if (typeof layerOpacity[id] === "number") {
+            adressenLayer.setOpacity(layerOpacity[id]);
+          }
+        } else if (adressenLayer) {
+          adressenLayer.detach();
+          if (map.hasLayer(adressenLayer.group)) {
+            map.removeLayer(adressenLayer.group);
+          }
+        }
+        return;
+      }
 
       // Tile layers (BRT, luchtfoto, AHN).
       const tile = ensureTileLayer(id);
@@ -702,10 +973,16 @@ export default function SonderingstekeningView() {
       }
     };
     const onLayerOpacity = (e: Event) => {
-      const ce = e as CustomEvent<{ id: string; opacity: number }>;
+      const ce = e as CustomEvent<{ view?: string; id: string; opacity: number }>;
+      // Per-view filter — see onLayerToggle comment above.
+      if (ce.detail.view && ce.detail.view !== "tekening") return;
       const { id, opacity } = ce.detail;
       const clamped = Math.max(0, Math.min(1, opacity));
       layerOpacity[id] = clamped;
+      if (id === "adressen") {
+        adressenLayer?.setOpacity(clamped);
+        return;
+      }
       const tile = tileRegistry[id];
       if (tile) tile.setOpacity(clamped);
     };
@@ -729,11 +1006,35 @@ export default function SonderingstekeningView() {
     window.addEventListener("ogs:layer-opacity", onLayerOpacity as EventListener);
     window.addEventListener("ogs:topotijdreis-year", onTopoYear as EventListener);
 
-    // Click handler — three modes, in priority order:
-    //   1. coordMode → drop an RD-coordinate tag at the click point
-    //   2. placeMode → drop a free sondering marker
-    //   3. otherwise → deselect anything that was selected
+    // Click handler — modes in priority order:
+    //   1. drawMode (line/dimension) → collect two endpoints
+    //   2. coordMode → drop an RD-coordinate tag
+    //   3. placeMode → drop a free sondering marker
+    //   4. otherwise → deselect anything that was selected
     map.on("click", (e: L.LeafletMouseEvent) => {
+      if (drawModeRef.current) {
+        if (!drawStartRef.current) {
+          drawStartRef.current = { lat: e.latlng.lat, lon: e.latlng.lng };
+          return;
+        }
+        const start = drawStartRef.current;
+        const kind = drawModeRef.current;
+        drawStartRef.current = null;
+        setDrawMode(null);
+        drawModeRef.current = null;
+        setDrawnLines((prev) => [
+          ...prev,
+          {
+            id: `${kind === "dimension" ? "D" : "L"}${String(prev.length + 1).padStart(2, "0")}`,
+            kind,
+            lat1: start.lat,
+            lon1: start.lon,
+            lat2: e.latlng.lat,
+            lon2: e.latlng.lng,
+          },
+        ]);
+        return;
+      }
       if (coordModeRef.current) {
         setCoordTags((prev) => [
           ...prev,
@@ -743,16 +1044,24 @@ export default function SonderingstekeningView() {
             lon: e.latlng.lng,
           },
         ]);
-        // One-shot: leave coord mode after a single tag so the user
-        // doesn't accidentally pepper the map.
         coordModeRef.current = false;
         setCoordMode(false);
         return;
       }
       if (placeModeRef.current) {
+        const kind = placeModeRef.current;
+        const prefix = kind === "bore" ? "B" : "S";
         setPlaced((prev) => {
-          const nextId = `S${String(prev.length + 1).padStart(2, "0")}`;
-          return [...prev, { id: nextId, lat: e.latlng.lat, lon: e.latlng.lng }];
+          // Tel alleen objects van hetzelfde kind voor de auto-id zodat
+          // S- en B-nummers onafhankelijk doorlopen.
+          const sameKindCount = prev.filter(
+            (p) => (p.kind ?? "sondering") === kind,
+          ).length;
+          const nextId = `${prefix}${String(sameKindCount + 1).padStart(2, "0")}`;
+          return [
+            ...prev,
+            { id: nextId, lat: e.latlng.lat, lon: e.latlng.lng, kind },
+          ];
         });
         return;
       }
@@ -786,6 +1095,8 @@ export default function SonderingstekeningView() {
       window.removeEventListener("ogs:layer-toggle", onLayerToggle as EventListener);
       window.removeEventListener("ogs:layer-opacity", onLayerOpacity as EventListener);
       window.removeEventListener("ogs:topotijdreis-year", onTopoYear as EventListener);
+      adressenLayer?.detach();
+      adressenLayer = null;
       map.remove();
       mapRef.current = null;
     };
@@ -795,6 +1106,12 @@ export default function SonderingstekeningView() {
   // ── Sync map zoom to the chosen scale ──────────────────────────
   // We compute the field-width represented by the paper, then call
   // map.fitBounds() so 1 paper-mm corresponds to `scale` field-mm.
+  //
+  // Re-runs on canvasSize changes too — when the user resizes the
+  // window the paper element gets new pixel dimensions, and Leaflet
+  // needs an `invalidateSize` + refit so the tile layer covers the
+  // new viewport area instead of staying at its initial size (which
+  // is what made the map look mostly empty after a resize).
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -806,22 +1123,61 @@ export default function SonderingstekeningView() {
     } catch {
       return;
     }
-    const { wMm, hMm } = PAPER_MM[paperSize];
-    const widthMeters = paperMmToMeters(wMm, scale);
-    const heightMeters = paperMmToMeters(hMm, scale);
+    // Bereken het target zoom-niveau via Leaflet's eigen CRS-math
+    // (`getScaleZoom`) zodat de gevraagde 1:N exact wordt benaderd.
+    // De oudere Web-Mercator-formule met EARTH_C raakte er enkele
+    // promille naast omdat Leaflet's `map.distance` (waarop liveScale
+    // is gebaseerd) een net andere aardradius gebruikt (haversine R
+    // 6371008 vs Mercator R_eq 6378137). Door rechtstreeks de Leaflet
+    // scale-functie te gebruiken werkt 1:500 ook echt 1:500.
+    //
+    // Belangrijk: gebruik EXACT dezelfde paperPxW als waarmee de paper
+    // div gerenderd wordt (wMm × 96/25.4). Anders berekent dit effect
+    // een andere targetMPerPx dan wat de schaalbar en de title-block
+    // live-scale uitrekenen, en blijft er een paar promille verschil
+    // staan. Inline (niet via paperLayout) omdat dit effect eerder in
+    // het component-lichaam staat dan de paperLayout useMemo.
+    const MM_TO_PX = 96 / 25.4;
+    const { wMm } = PAPER_MM[paperSize];
+    const paperPxW = wMm * MM_TO_PX;
+    if (paperPxW <= 0) return;
+    // Doel-mPerPx: 1 paper-mm = scale × 1 real-mm, en paperPxW px =
+    // paperMmW mm op papier, dus mPerPx = (wMm × scale / 1000) / paperPxW.
+    const targetMPerPx = (wMm * scale) / 1000 / paperPxW;
+    if (!Number.isFinite(targetMPerPx) || targetMPerPx <= 0) return;
     const centre = map.getCenter();
-    // Convert centre lat/lon to RD, then back to lat/lon for the corners.
-    const [cxRd, cyRd] = WGS84_TO_RD.forward([centre.lng, centre.lat]);
-    const halfW = widthMeters / 2;
-    const halfH = heightMeters / 2;
-    const swRd = [cxRd - halfW, cyRd - halfH];
-    const neRd = [cxRd + halfW, cyRd + halfH];
-    const swLL = WGS84_TO_RD.inverse(swRd);
-    const neLL = WGS84_TO_RD.inverse(neRd);
-    map.fitBounds(
-      L.latLngBounds(L.latLng(swLL[1], swLL[0]), L.latLng(neLL[1], neLL[0])),
-      { animate: false },
-    );
+
+    // Meet de actuele mPerPx van de map via dezelfde methode als de
+    // liveScale read-out (map.distance over 100 container-pixels).
+    // Daarmee zit de unit-conversion-mismatch in beide richtingen
+    // gelijk en wordt de scale exact.
+    const measureMPerPx = (): number | null => {
+      try {
+        const p1 = map.latLngToContainerPoint(centre);
+        const p2 = L.point(p1.x + 100, p1.y);
+        const ll2 = map.containerPointToLatLng(p2);
+        const dist = map.distance(centre, ll2);
+        return Number.isFinite(dist) && dist > 0 ? dist / 100 : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const cur = measureMPerPx();
+    if (cur === null) return;
+    // Leaflet's eigen scale-math: `getScaleZoom(scale, fromZoom)`
+    // levert het zoom-niveau waarbij `cur` × `scale` = `target` is.
+    const ratio = cur / targetMPerPx;
+    const fromZoom = map.getZoom();
+    const newZoom = map.getScaleZoom(ratio, fromZoom);
+    if (!Number.isFinite(newZoom)) return;
+    const clamped = Math.max(2, Math.min(22, newZoom));
+    map.setView(centre, clamped, { animate: false });
+    // canvasSize.w/h staat NIET in de deps — paperPxW hangt alleen
+    // van paperSize af (vaste mm × dpi). Window-resizes veranderen
+    // de visuele weergave via CSS transform, maar de DOM-pixelmaat
+    // van de paper div blijft gelijk; we hoeven dan niet opnieuw te
+    // zoomen.
   }, [paperSize, scale]);
 
   // ── Render project sondering markers ───────────────────────────
@@ -860,18 +1216,43 @@ export default function SonderingstekeningView() {
     for (const p of placed) {
       const isSelected =
         selection?.kind === "marker" && selection.id === p.id;
-      const fill = isSelected ? "#f59e0b" : "#2563eb";
-      const stroke = isSelected ? "#92400e" : "#1e3a8a";
+      const isBore = (p.kind ?? "sondering") === "bore";
+      const fill = isSelected
+        ? "rgba(245,158,11,0.45)"
+        : isBore
+          ? "#FECACA"
+          : "none";
+      const stroke = isSelected ? "#92400e" : isBore ? "#7F1D1D" : "#1e3a8a";
+      const strokeWidth = isSelected ? 1.6 : 1.2;
+      // Boring = open cirkel met midden-dot (zelfde conventie als de
+      // BRO-laag op de Kaart). Sondering = driehoek (Dutch CPT symbol).
+      const symbolSvg = isBore
+        ? `<svg viewBox="0 0 14 14" overflow="visible">
+             <circle cx="7" cy="7" r="5.5" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" />
+             <circle cx="7" cy="7" r="1.3" fill="${stroke}" />
+           </svg>`
+        : `<svg viewBox="0 0 12 14" overflow="visible">
+             <polygon points="1,1 11,1 6,11"
+               fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" />
+             ${
+               p.kleefmeting
+                 ? `<line x1="2.5" y1="12" x2="9.5" y2="12" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" />`
+                 : ""
+             }
+           </svg>`;
+      const iconSize: [number, number] = isBore ? [14, 14] : [12, 14];
+      const iconAnchor: [number, number] = isBore
+        ? [7, 7]
+        : [6, p.kleefmeting ? 12 : 11];
       const m = L.marker([p.lat, p.lon], {
         icon: L.divIcon({
-          className: "tek-placed-marker",
-          html: `<div class="tek-marker tek-marker-placed${isSelected ? " selected" : ""}">
-                   <svg viewBox="0 0 12 12"><polygon points="1,1 11,1 6,11"
-                     fill="${fill}" stroke="${stroke}" stroke-width="${isSelected ? 1.6 : 1}" /></svg>
+          className: isBore ? "tek-placed-bore-marker" : "tek-placed-marker",
+          html: `<div class="tek-marker ${isBore ? "tek-marker-bore" : "tek-marker-placed"}${isSelected ? " selected" : ""}">
+                   ${symbolSvg}
                    <span class="tek-marker-label">${p.id}</span>
                  </div>`,
-          iconSize: [12, 12],
-          iconAnchor: [6, 11],
+          iconSize,
+          iconAnchor,
         }),
       });
       m.on("click", (ev) => {
@@ -1175,13 +1556,19 @@ export default function SonderingstekeningView() {
   const handleFile = useCallback(async (file: File) => {
     const ext = file.name.toLowerCase().split(".").pop() ?? "";
     if (ext === "pdf") {
-      // For v1 just hold the raw blob URL — pdf.js render would be a
-      // separate step. We embed via <iframe> as a basic preview.
+      // PDFs go through PdfCropDialog: a page picker (thumbnails)
+      // followed by the same crop UI as raster images. The result is
+      // a PNG data URL, so the overlay ends up as a normal `image`
+      // overlay — Leaflet renders it the same way and the user can
+      // export it through the existing PDF print pipeline.
       const src = URL.createObjectURL(file);
-      setOverlay({ id: `o-${Date.now()}`, kind: "pdf", name: file.name, src });
+      setPdfCropPending({ src, name: file.name });
     } else if (["jpg", "jpeg", "png", "webp"].includes(ext)) {
+      // Raster images get a crop step first. The dialog returns a
+      // PNG data URL of the cropped region; we drop the original object
+      // URL once the user has confirmed or cancelled to avoid leaks.
       const src = URL.createObjectURL(file);
-      setOverlay({ id: `o-${Date.now()}`, kind: "image", name: file.name, src });
+      setCropPending({ src, name: file.name });
     } else if (ext === "svg") {
       const txt = await file.text();
       const src = `data:image/svg+xml;utf8,${encodeURIComponent(txt)}`;
@@ -1242,7 +1629,7 @@ export default function SonderingstekeningView() {
     setSelection(null);
   }, []);
 
-  /** Delete whatever is currently selected (raster or single marker). */
+  /** Delete whatever is currently selected (raster / marker / overlay). */
   const deleteSelection = useCallback(() => {
     setSelection((sel) => {
       if (!sel) return null;
@@ -1250,6 +1637,8 @@ export default function SonderingstekeningView() {
         setPlaced((prev) => prev.filter((p) => p.id !== sel.id));
       } else if (sel.kind === "raster") {
         setRasters((prev) => prev.filter((r) => r.id !== sel.id));
+      } else if (sel.kind === "overlay") {
+        setOverlay(null);
       }
       return null;
     });
@@ -1325,28 +1714,64 @@ export default function SonderingstekeningView() {
     [selection],
   );
 
-  // ── Delete key removes whatever is currently selected ──────────
+  // ── Keyboard shortcuts on a selected object ─────────────────────
+  // Matches Open PDF Studio / Open 2D Studio conventions:
+  //   Delete / Backspace → verwijderen
+  //   Ctrl+D             → kopiëren (duplicate naast huidige object)
+  //   Pijltjestoetsen    → verplaatsen met 1 m (Shift = 5 m)
+  // Each shortcut is suppressed inside form inputs so the title-block
+  // fields keep their normal text-editing behaviour.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.key === "Delete" || e.key === "Backspace") && selection) {
-        // Don't intercept Backspace inside form inputs (title-block fields).
-        const tgt = e.target as HTMLElement | null;
-        const tag = tgt?.tagName ?? "";
-        if (tag === "INPUT" || tag === "TEXTAREA" || tgt?.isContentEditable) {
-          return;
-        }
+      const tgt = e.target as HTMLElement | null;
+      const tag = tgt?.tagName ?? "";
+      const inForm =
+        tag === "INPUT" || tag === "TEXTAREA" || tgt?.isContentEditable;
+      if (inForm) return;
+
+      // Escape — universele "stop" voor de tekening: actieve tool reset,
+      // selectie weg. Werkt ook als er niks geselecteerd is.
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSelection(null);
+        setDrawMode(null); drawModeRef.current = null; drawStartRef.current = null;
+        setPlaceMode(null); placeModeRef.current = null;
+        setCoordMode(false); coordModeRef.current = false;
+        return;
+      }
+
+      if (!selection) return;
+      if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
         deleteSelection();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === "d" || e.key === "D")) {
+        e.preventDefault();
+        copySelection();
+        return;
+      }
+      const step = e.shiftKey ? 5 : 1;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        moveSelection(-step, 0);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        moveSelection(step, 0);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        moveSelection(0, step);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        moveSelection(0, -step);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selection, deleteSelection]);
+  }, [selection, deleteSelection, copySelection, moveSelection]);
 
-  // ── Print to PDF (browser print restricted to the paper) ──────
-  const printPdf = useCallback(() => {
-    window.print();
-  }, []);
+  // Print-to-PDF stays wired via the ribbon's ogs:tekening-print
+  // event (defined below). No standalone button needed anymore.
 
   // ── Drag-drop overlay over the paper ──────────────────────────
   const [dragOver, setDragOver] = useState(false);
@@ -1369,9 +1794,93 @@ export default function SonderingstekeningView() {
   // Ribbon-button bridge — listen for the global events dispatched by
   // SonderingstekeningTab so the user can click them from either place.
   useEffect(() => {
-    const onTogglePlace = () => setPlaceMode((m) => !m);
+    const onTogglePlace = () =>
+      setPlaceMode((m) => (m === "sondering" ? null : "sondering"));
+    const onTogglePlaceBore = () =>
+      setPlaceMode((m) => (m === "bore" ? null : "bore"));
     const onAddOverlay = () => overlayInputRef.current?.click();
-    const onPrint = () => window.print();
+    // Print-to-PDF — wat WebView2 nodig heeft:
+    //   1. Set de paper FYSIEK op A2/A3 mm-grootte vóór de print-dialog
+    //      opent (anders zien tiles + Leaflet-handlers de oude grootte
+    //      en laden ze niets bij voor het uitgebreide oppervlak).
+    //   2. Forceer Leaflet om opnieuw de tile-grid te berekenen, en
+    //      wacht een tick tot de tiles binnen zijn.
+    //   3. Open de print-dialog met een @page-regel die exact aan A2/A3
+    //      landscape voldoet, plus visibility-hiding voor alles buiten
+    //      `.tek-paper`.
+    //   4. Restore de oude paper-grootte nadat de dialog gesloten is.
+    const onPrint = () => {
+      const isA2 = paperSize === "A2";
+      const pageW = isA2 ? "594mm" : "420mm";
+      const pageH = isA2 ? "420mm" : "297mm";
+      // Inline screen-styles die ervoor zorgen dat het papier OOK op
+      // het scherm naar de A2/A3 grootte gaat — alleen ZICHTBAAR
+      // tijdens print (verstopt achter `display:none` containers),
+      // maar Leaflet ziet de echte pixelgrootte en herrendert.
+      const css =
+        // Page rule met expliciete mm-dimensies zodat WebView2 geen
+        // 'A2'-naam hoeft te kennen.
+        `@page { size: ${pageW} ${pageH}; margin: 0; }\n` +
+        // Op-class zodat we de juiste paper ook BUITEN @media print
+        // alvast op de juiste mm-grootte kunnen zetten en daarna
+        // map.invalidateSize() kunnen aanroepen.
+        `body.tek-printing .tek-paper {\n` +
+        `  position: fixed !important;\n` +
+        `  left: 0 !important; top: 0 !important;\n` +
+        `  width: ${pageW} !important;\n` +
+        `  height: ${pageH} !important;\n` +
+        `  max-width: none !important; max-height: none !important;\n` +
+        `  margin: 0 !important;\n` +
+        `  box-shadow: none !important;\n` +
+        `  border: none !important;\n` +
+        `  transform: none !important;\n` +
+        `  z-index: 99999 !important;\n` +
+        `}\n` +
+        // Tijdens print: verberg ALLES behalve het papier en zijn
+        // descendants. visibility houdt het DOM-layout intact zodat
+        // Leaflet niets opnieuw hoeft te berekenen.
+        `@media print {\n` +
+        `  html, body { background: white !important; margin: 0 !important; padding: 0 !important; }\n` +
+        `  body * { visibility: hidden !important; }\n` +
+        `  .tek-paper, .tek-paper * { visibility: visible !important; }\n` +
+        `  /* Zorg dat oude box-shadow van de leaflet tiles niet roeit. */\n` +
+        `  .leaflet-tile { box-shadow: none !important; }\n` +
+        `}\n`;
+      const styleEl = document.createElement("style");
+      styleEl.id = "tek-print-style";
+      styleEl.textContent = css;
+      document.head.appendChild(styleEl);
+
+      // Stap 1: paper naar A2/A3 mm-grootte op het scherm (verborgen
+      // achter andere elementen door de z-index, maar wel pixel-
+      // correct voor Leaflet).
+      document.body.classList.add("tek-printing");
+
+      // Stap 2: forceer Leaflet om de nieuwe container-grootte te zien
+      // en de tile-grid opnieuw te bouwen. invalidateSize triggert
+      // ook een moveend zodat WMS-overlays herfetchen.
+      requestAnimationFrame(() => {
+        try { mapRef.current?.invalidateSize(); } catch { /* noop */ }
+        // Stap 3: wacht een halve seconde tot tiles binnen zijn,
+        // dan de print-dialog. Een korte delay is hier essentieel —
+        // zonder dit print je een halflege kaart met grijze tegels.
+        window.setTimeout(() => {
+          window.print();
+          // Stap 4: cleanup nadat de gebruiker de dialog gesloten heeft.
+          // `afterprint` event is betrouwbaarder dan een timer.
+          const cleanup = () => {
+            document.body.classList.remove("tek-printing");
+            const el = document.getElementById("tek-print-style");
+            el?.parentNode?.removeChild(el);
+            try { mapRef.current?.invalidateSize(); } catch { /* noop */ }
+            window.removeEventListener("afterprint", cleanup);
+          };
+          window.addEventListener("afterprint", cleanup);
+          // Fallback voor browsers die geen afterprint vuren.
+          window.setTimeout(cleanup, 8000);
+        }, 600);
+      });
+    };
     const onPlaceRaster = () => placeRaster();
     const onCoordTag = () => {
       coordModeRef.current = true;
@@ -1383,7 +1892,84 @@ export default function SonderingstekeningView() {
       const ce = e as CustomEvent<{ dx: number; dy: number }>;
       moveSelection(ce.detail.dx, ce.detail.dy);
     };
+    // Properties-panel ↔ view bridge.
+    const onSetTitleBlock = (e: Event) => {
+      const ce = e as CustomEvent<{ field: keyof TitleBlockData; value: string }>;
+      setTitleBlock((tb) => ({ ...tb, [ce.detail.field]: ce.detail.value }));
+    };
+    const onUpdateSelectedRaster = (e: Event) => {
+      const ce = e as CustomEvent<{ patch: Partial<Omit<PlacedRaster, "id">> }>;
+      updateSelectedRaster(ce.detail.patch);
+    };
+    const onRequestSnapshot = () => publishSnapshotRef.current?.();
+    const onLoadFrame = () => frameInputRef.current?.click();
+    const onClearAll = () => { clearPlaced(); setDrawnLines([]); setCoordTags([]); };
+    const onDrawLine = () => { setDrawMode("line"); drawModeRef.current = "line"; drawStartRef.current = null; };
+    const onDrawDim = () => { setDrawMode("dimension"); drawModeRef.current = "dimension"; drawStartRef.current = null; };
+    // Select-tool: cancel any active draw/place/coord mode so the
+    // cursor reverts to plain pick-and-edit.
+    const onSelectMode = () => {
+      setDrawMode(null); drawModeRef.current = null; drawStartRef.current = null;
+      setPlaceMode(null); placeModeRef.current = null;
+      setCoordMode(false); coordModeRef.current = false;
+    };
+    // Freeze toggle from the ribbon. We flip the state here; a separate
+    // effect (below) handles enabling/disabling the actual Leaflet
+    // interaction handlers and emits `ogs:tekening-freeze-changed` so
+    // the ribbon button stays in sync.
+    const onToggleFreeze = () => setFrozen((f) => !f);
+    // Properties-panel emits this when the user resizes the selected
+    // image overlay via the width-input. Patch the overlay state — the
+    // imageOverlay effect re-runs on `overlay` change and rebuilds the
+    // bounds at the new width.
+    const onUpdateOverlay = (e: Event) => {
+      const ce = e as CustomEvent<{ widthMeters: number }>;
+      const w = Number(ce.detail.widthMeters);
+      if (!Number.isFinite(w) || w <= 0) return;
+      setOverlay((ov) => (ov ? { ...ov, widthMeters: w } : ov));
+    };
+    // Toggle kleefmeting flag for the selected placed marker.
+    const onSetKleefmeting = (e: Event) => {
+      const ce = e as CustomEvent<{ id: string; kleefmeting: boolean }>;
+      setPlaced((prev) =>
+        prev.map((p) =>
+          p.id === ce.detail.id ? { ...p, kleefmeting: ce.detail.kleefmeting } : p,
+        ),
+      );
+    };
+    const onSetPaperSize = (e: Event) => {
+      const ce = e as CustomEvent<{ paperSize: PaperSize }>;
+      setPaperSize(ce.detail.paperSize);
+    };
+    const onSetScale = (e: Event) => {
+      const ce = e as CustomEvent<{ scale: Scale }>;
+      setScale(ce.detail.scale);
+    };
+    const onSetPlacedId = (e: Event) => {
+      const ce = e as CustomEvent<{ oldId: string; newId: string }>;
+      setPlaced((prev) =>
+        prev.map((p) => (p.id === ce.detail.oldId ? { ...p, id: ce.detail.newId } : p)),
+      );
+      // Also update selection so the Properties panel shows the new id.
+      setSelection((sel) =>
+        sel?.kind === "marker" && sel.id === ce.detail.oldId
+          ? { kind: "marker", id: ce.detail.newId }
+          : sel,
+      );
+    };
+    window.addEventListener("ogs:tekening-load-frame", onLoadFrame);
+    window.addEventListener("ogs:tekening-clear-all", onClearAll);
+    window.addEventListener("ogs:tekening-set-papersize", onSetPaperSize as EventListener);
+    window.addEventListener("ogs:tekening-set-scale", onSetScale as EventListener);
+    window.addEventListener("ogs:tekening-set-placed-id", onSetPlacedId as EventListener);
+    window.addEventListener("ogs:tekening-draw-line", onDrawLine);
+    window.addEventListener("ogs:tekening-draw-dimension", onDrawDim);
+    window.addEventListener("ogs:tekening-select-mode", onSelectMode);
+    window.addEventListener("ogs:tekening-set-kleefmeting", onSetKleefmeting as EventListener);
+    window.addEventListener("ogs:tekening-toggle-freeze", onToggleFreeze);
+    window.addEventListener("ogs:tekening-update-selected-overlay", onUpdateOverlay as EventListener);
     window.addEventListener("ogs:tekening-toggle-place", onTogglePlace);
+    window.addEventListener("ogs:tekening-toggle-place-bore", onTogglePlaceBore);
     window.addEventListener("ogs:tekening-add-overlay", onAddOverlay);
     window.addEventListener("ogs:tekening-print", onPrint);
     window.addEventListener("ogs:tekening-place-raster", onPlaceRaster);
@@ -1391,8 +1977,15 @@ export default function SonderingstekeningView() {
     window.addEventListener("ogs:tekening-copy", onCopy);
     window.addEventListener("ogs:tekening-delete", onDelete);
     window.addEventListener("ogs:tekening-move", onMove as EventListener);
+    window.addEventListener("ogs:tekening-set-titleblock", onSetTitleBlock as EventListener);
+    window.addEventListener(
+      "ogs:tekening-update-selected-raster",
+      onUpdateSelectedRaster as EventListener,
+    );
+    window.addEventListener("ogs:tekening-request-snapshot", onRequestSnapshot);
     return () => {
       window.removeEventListener("ogs:tekening-toggle-place", onTogglePlace);
+      window.removeEventListener("ogs:tekening-toggle-place-bore", onTogglePlaceBore);
       window.removeEventListener("ogs:tekening-add-overlay", onAddOverlay);
       window.removeEventListener("ogs:tekening-print", onPrint);
       window.removeEventListener("ogs:tekening-place-raster", onPlaceRaster);
@@ -1400,79 +1993,397 @@ export default function SonderingstekeningView() {
       window.removeEventListener("ogs:tekening-copy", onCopy);
       window.removeEventListener("ogs:tekening-delete", onDelete);
       window.removeEventListener("ogs:tekening-move", onMove as EventListener);
+      window.removeEventListener("ogs:tekening-set-titleblock", onSetTitleBlock as EventListener);
+      window.removeEventListener(
+        "ogs:tekening-update-selected-raster",
+        onUpdateSelectedRaster as EventListener,
+      );
+      window.removeEventListener("ogs:tekening-request-snapshot", onRequestSnapshot);
+      window.removeEventListener("ogs:tekening-load-frame", onLoadFrame);
+      window.removeEventListener("ogs:tekening-clear-all", onClearAll);
+      window.removeEventListener("ogs:tekening-set-papersize", onSetPaperSize as EventListener);
+      window.removeEventListener("ogs:tekening-set-scale", onSetScale as EventListener);
+      window.removeEventListener("ogs:tekening-set-placed-id", onSetPlacedId as EventListener);
+      window.removeEventListener("ogs:tekening-draw-line", onDrawLine);
+      window.removeEventListener("ogs:tekening-draw-dimension", onDrawDim);
+      window.removeEventListener("ogs:tekening-select-mode", onSelectMode);
+      window.removeEventListener("ogs:tekening-set-kleefmeting", onSetKleefmeting as EventListener);
+      window.removeEventListener("ogs:tekening-toggle-freeze", onToggleFreeze);
+      window.removeEventListener("ogs:tekening-update-selected-overlay", onUpdateOverlay as EventListener);
     };
-  }, [placeRaster, copySelection, deleteSelection, moveSelection]);
+  }, [placeRaster, copySelection, deleteSelection, moveSelection, updateSelectedRaster, clearPlaced]);
 
-  // ── Paper render — actual on-screen px from the chosen mm. ────
-  // We pin paper width to 72% of the view; height follows the aspect
-  // ratio. This keeps the paper looking like a paper even when the
-  // window is small. (Real-scale rendering is enforced via map.fitBounds.)
-  const paperStyle = useMemo(() => {
+  // Publish state snapshots whenever titleBlock / selection / rasters
+  // change, so the right-side TekeningProperties panel mirrors the
+  // current state. Wrapped in a ref so the static listener above can
+  // also trigger an on-demand re-publish (used by the panel on mount).
+  const publishSnapshotRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    const selectedRaster =
+      selection?.kind === "raster"
+        ? rasters.find((r) => r.id === selection.id) ?? null
+        : null;
+    const selectedMarker =
+      selection?.kind === "marker"
+        ? placed.find((p) => p.id === selection.id) ?? null
+        : null;
+    const selectedOverlay =
+      selection?.kind === "overlay" && overlay && overlay.id === selection.id
+        ? overlay
+        : null;
+    // Live print-scale derived from the actual Leaflet zoom + paper.
+    // 1 paper-mm = (paperPxW / paperMmW) px, which represents
+    // (paperPxW / paperMmW) × mPerPx meters → so scale = 1000 × that.
+    // We compute paperPxW inline as `paperMmW × MM_TO_PX` (mirroring
+    // the paperLayout useMemo below) zodat de snapshot exact dezelfde
+    // pixel-grootte gebruikt als het schaal-setting effect. Anders
+    // verschijnt 1:500 als 1:502 in de title-block read-out.
+    const MM_TO_PX = 96 / 25.4;
+    const snapMmW = PAPER_MM[paperSize].wMm;
+    const snapPxW = snapMmW * MM_TO_PX;
+    const liveScale =
+      mPerPx > 0 && snapPxW > 0
+        ? Math.round((snapPxW / snapMmW) * mPerPx * 1000)
+        : scale;
+    const snapshot = {
+      titleBlock,
+      paperSize,
+      scale,
+      liveScale,
+      frozen,
+      selectionKind: selection?.kind ?? null,
+      selectionId: selection?.id ?? null,
+      selectedMarker: selectedMarker
+        ? { id: selectedMarker.id, kleefmeting: !!selectedMarker.kleefmeting }
+        : null,
+      selectedRaster: selectedRaster
+        ? {
+            id: selectedRaster.id,
+            rows: selectedRaster.rows,
+            cols: selectedRaster.cols,
+            spacingX: selectedRaster.spacingX,
+            spacingY: selectedRaster.spacingY,
+            rotation: selectedRaster.rotation,
+          }
+        : null,
+      selectedOverlay: selectedOverlay
+        ? {
+            id: selectedOverlay.id,
+            name: selectedOverlay.name,
+            widthMeters: selectedOverlay.widthMeters ?? 100,
+          }
+        : null,
+    };
+    publishSnapshotRef.current = () => {
+      window.dispatchEvent(
+        new CustomEvent("ogs:tekening-state-snapshot", { detail: snapshot }),
+      );
+    };
+    publishSnapshotRef.current();
+  }, [titleBlock, selection, rasters, placed, paperSize, scale, frozen, overlay, mPerPx]);
+
+  // ── Mirror complete tekening-state naar de module-level singleton ─
+  // Aparte effect (los van het snapshot event boven) zodat we ALLE
+  // arrays en de mapView meegeven — die zitten niet in het snapshot
+  // event omdat TekeningProperties die niet hoeft te zien. Backstage's
+  // saveProject leest uit deze singleton om het .ifcgis te bouwen.
+  useEffect(() => {
+    const full: TekeningFullState = {
+      paperSize,
+      scale,
+      center: mapView,
+      markers: placed.map((p) => ({
+        id: p.id,
+        kind: p.kind === "bore" ? "bore" : "sondering",
+        lat: p.lat,
+        lon: p.lon,
+        kleefmeting: !!p.kleefmeting,
+      })),
+      rasters: rasters.map((r) => ({
+        id: r.id,
+        centerLat: r.centerLat,
+        centerLon: r.centerLon,
+        rows: r.rows,
+        cols: r.cols,
+        spacingX: r.spacingX,
+        spacingY: r.spacingY,
+        rotation: r.rotation,
+      })),
+      lines: drawnLines.map((l) => ({
+        id: l.id,
+        kind: l.kind,
+        lat1: l.lat1,
+        lon1: l.lon1,
+        lat2: l.lat2,
+        lon2: l.lon2,
+      })),
+      coordTags: coordTags.map((c) => ({
+        id: c.id,
+        lat: c.lat,
+        lon: c.lon,
+        label: c.label,
+      })),
+      overlay: overlay
+        ? {
+            id: overlay.id,
+            name: overlay.name,
+            kind: overlay.kind,
+            src: overlay.src,
+            widthMeters: overlay.widthMeters ?? 100,
+            centerLat: overlay.centerLat,
+            centerLon: overlay.centerLon,
+          }
+        : null,
+      titleBlock,
+    };
+    setLatestTekening(full);
+  }, [
+    paperSize,
+    scale,
+    mapView,
+    placed,
+    rasters,
+    drawnLines,
+    coordTags,
+    overlay,
+    titleBlock,
+  ]);
+
+  // ── Restore pending tekening state op mount ────────────────────
+  // Bij het openen van een .ifcgis met `tekening`-sectie zet
+  // openProjectIfcgisFull een pending payload klaar. Wij consumeren
+  // die hier zodra de view mount — de Leaflet-init effect leest
+  // het mapView-center via useEffect-volgorde NIET, dus we doen
+  // het via een setView na een korte tick zodra de map bestaat.
+  useEffect(() => {
+    const pending = consumePendingTekeningRestore();
+    if (!pending) return;
+    setPaperSize(pending.paperSize);
+    setScale(pending.scale);
+    setTitleBlock(pending.titleBlock);
+    setPlaced(
+      pending.markers.map((m) => ({
+        id: m.id,
+        kind: m.kind,
+        lat: m.lat,
+        lon: m.lon,
+        kleefmeting: !!m.kleefmeting,
+      })),
+    );
+    setRasters(
+      pending.rasters.map((r) => ({
+        id: r.id,
+        centerLat: r.centerLat,
+        centerLon: r.centerLon,
+        rows: r.rows,
+        cols: r.cols,
+        spacingX: r.spacingX,
+        spacingY: r.spacingY,
+        rotation: r.rotation,
+      })),
+    );
+    setDrawnLines(
+      pending.lines.map((l) => ({
+        id: l.id,
+        kind: l.kind,
+        lat1: l.lat1,
+        lon1: l.lon1,
+        lat2: l.lat2,
+        lon2: l.lon2,
+      })),
+    );
+    setCoordTags(
+      pending.coordTags.map((c) => ({
+        id: c.id,
+        lat: c.lat,
+        lon: c.lon,
+        label: c.label,
+      })),
+    );
+    if (pending.overlay) {
+      setOverlay({
+        id: pending.overlay.id,
+        name: pending.overlay.name,
+        kind: pending.overlay.kind,
+        src: pending.overlay.src,
+        widthMeters: pending.overlay.widthMeters,
+        centerLat: pending.overlay.centerLat,
+        centerLon: pending.overlay.centerLon,
+      });
+    } else {
+      setOverlay(null);
+    }
+    setMapView(pending.center);
+    // Zet de Leaflet-map ook naar het opgeslagen center + zoom; wacht
+    // een tick zodat de map-init effect zeker geweest is.
+    const id = window.setTimeout(() => {
+      const map = mapRef.current;
+      if (!map) return;
+      try {
+        map.setView([pending.center.lat, pending.center.lon], pending.center.zoom, {
+          animate: false,
+        });
+      } catch {
+        /* map nog niet klaar — accepteer dat */
+      }
+    }, 50);
+    return () => window.clearTimeout(id);
+    // Bewust eenmalig op mount — als er later opnieuw een project
+    // wordt geopend, remount React de view normaal gesproken niet
+    // (zelfde tab) dus de openProjectIfcgisFull-flow moet zelf een
+    // event dispatchen om dit opnieuw te triggeren. v2-werk.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Track canvas size (for fit-to-view paper) ──────────────────
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setCanvasSize({ w: r.width, h: r.height });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // ── Freeze viewport — disable / enable Leaflet interaction ─────
+  // When `frozen` is true the user can no longer pan, zoom, or use
+  // double-click / pinch / keyboard to move the map. This is the
+  // "lock the drawing in place" affordance from the ribbon. We also
+  // broadcast the new state so the ribbon button can flip its icon /
+  // active styling, and add a CSS class to the paper so the cursor
+  // hint changes too.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map) {
+      const handlers = [
+        map.dragging,
+        map.scrollWheelZoom,
+        map.touchZoom,
+        map.doubleClickZoom,
+        map.boxZoom,
+        map.keyboard,
+      ];
+      for (const h of handlers) {
+        if (!h) continue;
+        if (frozen) h.disable();
+        else h.enable();
+      }
+    }
+    window.dispatchEvent(
+      new CustomEvent("ogs:tekening-freeze-changed", { detail: { frozen } }),
+    );
+  }, [frozen]);
+
+  // ── Track meters-per-pixel for the scale bar ──────────────────
+  // Sampled at the map centre by measuring the great-circle distance
+  // between two pixels exactly 100 px apart. Re-runs on moveend +
+  // zoomend so the schaalbar always reflects the *actual* rendered
+  // scale, not the requested print scale (which can differ due to
+  // Web Mercator distortion + container aspect-ratio fitBounds).
+  //
+  // Tweede taak: bewaar de centrum-lat/lon + zoom in `mapView`-state
+  // zodat de tekening-state-snapshot (voor save naar .ifcgis) altijd
+  // het actuele viewport bevat — anders zou je een project opslaan
+  // dat naar het verkeerde gebied terug-laadt.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const update = () => {
+      const internal = map as unknown as { _panes?: { mapPane?: HTMLElement } };
+      if (!internal._panes?.mapPane) return;
+      try {
+        const center = map.getCenter();
+        const p1 = map.latLngToContainerPoint(center);
+        const p2 = L.point(p1.x + 100, p1.y);
+        const ll2 = map.containerPointToLatLng(p2);
+        const dist = map.distance(center, ll2);
+        if (Number.isFinite(dist) && dist > 0) setMPerPx(dist / 100);
+        setMapView({ lat: center.lat, lon: center.lng, zoom: map.getZoom() });
+      } catch {
+        /* map torn down mid-frame — ignore */
+      }
+    };
+    update();
+    map.on("moveend", update);
+    map.on("zoomend", update);
+    return () => {
+      map.off("moveend", update);
+      map.off("zoomend", update);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Paper render — vaste mm-grootte + CSS-transform voor de view ─
+  // Het papier rendert ALTIJD op zijn werkelijke A2/A3 px-grootte
+  // (594mm × 96/25.4 ≈ 2245 px voor A2). Op het scherm wordt het via
+  // `transform: scale(viewScale)` verkleind zodat het hele kader in
+  // de canvas past. Zo werkt een tekenprogramma (CAD): het papier
+  // heeft een fysiek formaat, de viewport is een 'kijkglas' dat zoomt.
+  // Title-block, schaalbar en kaartmarges staan in vaste paper-px op
+  // het papier — die schalen automatisch mee met de view, blijven
+  // dus visueel proportioneel hetzelfde t.o.v. het papier.
+  //
+  // Belangrijk: gebruik de exacte MM_TO_PX float (geen Math.round)
+  // zodat de schaal-berekening pixel-perfect uitkomt. Anders schiet
+  // bv. 1:500 naar 1:502.
+  const paperLayout = useMemo(() => {
+    const MM_TO_PX = 96 / 25.4;
     const { wMm, hMm } = PAPER_MM[paperSize];
-    const aspect = wMm / hMm;
-    return {
-      aspectRatio: `${aspect}`,
-    } as React.CSSProperties;
-  }, [paperSize]);
+    const pxW = wMm * MM_TO_PX;
+    const pxH = hMm * MM_TO_PX;
+    const pad = 32;
+    const availW = Math.max(120, canvasSize.w - pad);
+    const availH = Math.max(120, canvasSize.h - pad);
+    // viewScale clamp op 1 zodat grote vensters het papier niet
+    // verder vergroten dan zijn natuurlijke mm-grootte (anders worden
+    // pixels onnodig vergroot).
+    const viewScale = Math.min(availW / pxW, availH / pxH, 1);
+    return { pxW, pxH, mmW: wMm, mmH: hMm, viewScale };
+  }, [paperSize, canvasSize.w, canvasSize.h]);
+
+  // Paper-zelf: vaste mm-px-grootte. Transform: scale verkleint het
+  // visueel. transform-origin: 0 0 zodat het bij de linkerbovenhoek
+  // van de stage uitlijnt — anders zit het halverwege buiten beeld.
+  const paperStyle = useMemo<React.CSSProperties>(
+    () => ({
+      width: `${paperLayout.pxW}px`,
+      height: `${paperLayout.pxH}px`,
+      transform: `scale(${paperLayout.viewScale})`,
+      transformOrigin: "0 0",
+      position: "absolute",
+      left: 0,
+      top: 0,
+    }),
+    [paperLayout.pxW, paperLayout.pxH, paperLayout.viewScale],
+  );
+  // Stage-wrapper: heeft de zichtbare (gescaled) afmetingen, zodat de
+  // canvas-flex-layout de paper netjes kan centreren. Zonder deze
+  // wrapper kent CSS de echte gescaled-grootte niet (transform raakt
+  // alleen rendering, niet de layout-box).
+  const paperStageStyle = useMemo<React.CSSProperties>(
+    () => ({
+      position: "relative",
+      width: `${paperLayout.pxW * paperLayout.viewScale}px`,
+      height: `${paperLayout.pxH * paperLayout.viewScale}px`,
+      flex: "0 0 auto",
+    }),
+    [paperLayout.pxW, paperLayout.pxH, paperLayout.viewScale],
+  );
 
   return (
     <div className="tek-view" ref={containerRef}>
-      <div className="tek-topbar">
-        <div className="tek-topbar-group">
-          <label className="tek-label">{`Papier`}</label>
-          <select
-            className="tek-select"
-            value={paperSize}
-            onChange={(e) => setPaperSize(e.target.value as PaperSize)}
-          >
-            {PAPER_SIZES.map((p) => (
-              <option key={p} value={p}>{`${p} liggend`}</option>
-            ))}
-          </select>
-        </div>
-        <div className="tek-topbar-group">
-          <label className="tek-label">{`Schaal`}</label>
-          <select
-            className="tek-select"
-            value={scale}
-            onChange={(e) => setScale(Number(e.target.value) as Scale)}
-          >
-            {SCALES.map((s) => (
-              <option key={s} value={s}>{`1:${s}`}</option>
-            ))}
-          </select>
-        </div>
-        {/* Layer toggles live in the GisLayerPanel on the left now —
-            no more topbar checkboxes. The image-overlay width input
-            (next group) stays inline because it's view-specific. */}
-        {overlay && (overlay.kind === "image" || overlay.kind === "svg") && (
-          <div className="tek-topbar-group">
-            <label className="tek-label">{`Image breedte (m)`}</label>
-            <input
-              type="number"
-              className="tek-select"
-              style={{ width: 80 }}
-              min={1}
-              max={5000}
-              step={1}
-              value={overlay.widthMeters ?? 100}
-              onChange={(e) =>
-                setOverlay((o) =>
-                  o ? { ...o, widthMeters: Math.max(1, Number(e.target.value) || 100) } : o,
-                )
-              }
-            />
-          </div>
-        )}
-        <div className="tek-topbar-spacer" />
-        <button className="tek-btn tek-btn-primary" onClick={printPdf}>
-          Exporteer als PDF
-        </button>
-      </div>
-
-      <div className="tek-canvas">
+      {/* Topbar verwijderd — papier + schaal worden gestuurd vanuit
+          de TekeningProperties paneel rechts. Export PDF is uit het
+          topbar gehaald (gebruik Bestand → Print of de ribbon-PDF
+          knop). */}
+      <div className="tek-canvas" ref={canvasRef}>
+        <div className="tek-paper-stage" style={paperStageStyle}>
         <div
-          className={`tek-paper tek-paper-${paperSize}${dragOver ? " tek-paper-dragover" : ""}`}
+          className={`tek-paper tek-paper-${paperSize}${dragOver ? " tek-paper-dragover" : ""}${frozen ? " tek-paper-frozen" : ""}`}
           style={paperStyle}
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
@@ -1503,6 +2414,12 @@ export default function SonderingstekeningView() {
               </div>
             </div>
           )}
+          {/* Schaalstok — bovenop de kaart-viewport, linksonder net
+              boven het titleblock. Bar-lengte wordt afgeleid uit de
+              ACTUELE Leaflet meters-per-pixel (mPerPx), zodat hij
+              zowel het print-scale als de extra zoom van de gebruiker
+              correct weergeeft. */}
+          <ScaleBar mPerPx={mPerPx} paperPxW={paperLayout.pxW} />
           {/* Title block (Detailblad layout — mirrors page 2 of
               OpenAEC-style-book/preview-titleblock.html). A bottom-strip
               title bar with a project header row + 2×3 cell grid + logo
@@ -1511,8 +2428,8 @@ export default function SonderingstekeningView() {
             {/* Project bar — full width */}
             <div className="tek-db-project-bar">
               <span className="tek-dbp-title">{titleBlock.project || "Projectnaam"}</span>
-              <span className="tek-dbp-address">{project?.title || "Straatnaam, huisnummer, projectplaats"}</span>
-              <span className="tek-dbp-type">Sonderingstekening</span>
+              <span className="tek-dbp-address">{titleBlock.address || "Straatnaam, huisnummer, projectplaats"}</span>
+              <span className="tek-dbp-type">Situatietekening</span>
             </div>
             {/* Body grid: logo | metadata cells | format corner */}
             <div className="tek-db-body">
@@ -1538,7 +2455,15 @@ export default function SonderingstekeningView() {
                 </div>
                 <div className="tek-db-cell">
                   <div className="tek-db-cell-label">Schaal</div>
-                  <div className="tek-db-cell-val mono">{titleBlock.scale}</div>
+                  <ScaleCellEditor
+                    liveScale={
+                      mPerPx > 0
+                        ? Math.round(
+                            ((paperLayout.pxW / paperLayout.mmW) * mPerPx) * 1000,
+                          )
+                        : scale
+                    }
+                  />
                 </div>
                 <div className="tek-db-cell">
                   <div className="tek-db-cell-label">Formaat</div>
@@ -1546,7 +2471,7 @@ export default function SonderingstekeningView() {
                 </div>
                 <div className="tek-db-cell">
                   <div className="tek-db-cell-label">Projectnr</div>
-                  <div className="tek-db-cell-val mono amber">{titleBlock.drawingNumber || "—"}</div>
+                  <div className="tek-db-cell-val mono amber">{titleBlock.projectNumber || "—"}</div>
                 </div>
                 <div className="tek-db-cell">
                   <div className="tek-db-cell-label">Auteur</div>
@@ -1568,225 +2493,247 @@ export default function SonderingstekeningView() {
             </div>
           </div>
         </div>
+        </div>
 
-        <aside className="tek-toolbox">
-          <h4 className="tek-toolbox-title">Gereedschap</h4>
-
-          <div className="tek-tool-group">
-            <button
-              className="tek-tool-btn"
-              onClick={() => overlayInputRef.current?.click()}
-            >
-              Tekening toevoegen
-            </button>
-            <input
-              ref={overlayInputRef}
-              type="file"
-              hidden
-              accept=".pdf,.jpg,.jpeg,.png,.webp,.svg,.dwg,.dxf"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void handleFile(f);
-                e.target.value = "";
-              }}
-            />
-            <p className="tek-tool-hint">Of sleep een PDF/JPG/SVG op het papier</p>
-          </div>
-
-          <div className="tek-tool-group">
-            <label className="tek-tool-sub">Raster sonderingen</label>
-            <div className="tek-tool-row">
-              <select
-                className="tek-select tek-select-sm"
-                value={gridSpacing}
-                onChange={(e) =>
-                  setGridSpacing(Number(e.target.value) as typeof GRID_SPACINGS[number])
-                }
-              >
-                {GRID_SPACINGS.map((g) => (
-                  <option key={g} value={g}>{`${g} m`}</option>
-                ))}
-              </select>
-              <button className="tek-tool-btn tek-tool-btn-sm" onClick={placeRaster}>
-                Plaats raster
-              </button>
-            </div>
-            <p className="tek-tool-hint">
-              {`Standaard ${DEFAULT_RASTER_ROWS}×${DEFAULT_RASTER_COLS} — sleep de hoeken om op te rekken, de bovenste handle om te roteren`}
-            </p>
-          </div>
-
-          {/* Inline edit panel — only when a raster is selected ───── */}
-          {selection?.kind === "raster" && (() => {
-            const r = rasters.find((x) => x.id === selection.id);
-            if (!r) return null;
-            return (
-              <div className="tek-tool-group tek-tool-group-edit">
-                <label className="tek-tool-sub">{`Geselecteerd: ${r.id}`}</label>
-                <div className="tek-tool-row">
-                  <label className="tek-numfield">
-                    <span>Rijen</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={50}
-                      value={r.rows}
-                      onChange={(e) =>
-                        updateSelectedRaster({
-                          rows: Math.max(1, Math.min(50, Number(e.target.value) || 1)),
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="tek-numfield">
-                    <span>Kolommen</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={50}
-                      value={r.cols}
-                      onChange={(e) =>
-                        updateSelectedRaster({
-                          cols: Math.max(1, Math.min(50, Number(e.target.value) || 1)),
-                        })
-                      }
-                    />
-                  </label>
-                </div>
-                <div className="tek-tool-row">
-                  <label className="tek-numfield">
-                    <span>H.o.h. X</span>
-                    <input
-                      type="number"
-                      min={0.5}
-                      max={500}
-                      step={0.5}
-                      value={Number(r.spacingX.toFixed(2))}
-                      onChange={(e) =>
-                        updateSelectedRaster({
-                          spacingX: Math.max(0.5, Number(e.target.value) || 0.5),
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="tek-numfield">
-                    <span>H.o.h. Y</span>
-                    <input
-                      type="number"
-                      min={0.5}
-                      max={500}
-                      step={0.5}
-                      value={Number(r.spacingY.toFixed(2))}
-                      onChange={(e) =>
-                        updateSelectedRaster({
-                          spacingY: Math.max(0.5, Number(e.target.value) || 0.5),
-                        })
-                      }
-                    />
-                  </label>
-                </div>
-                <label className="tek-numfield tek-numfield-wide">
-                  <span>{`Rotatie (°)`}</span>
-                  <input
-                    type="range"
-                    min={-180}
-                    max={180}
-                    step={1}
-                    value={Math.round(r.rotation)}
-                    onChange={(e) =>
-                      updateSelectedRaster({ rotation: Number(e.target.value) })
-                    }
-                  />
-                  <span className="tek-num-val">{`${Math.round(r.rotation)}°`}</span>
-                </label>
-                <button
-                  className="tek-tool-btn tek-tool-btn-ghost"
-                  onClick={deleteSelection}
-                >
-                  Verwijder raster
-                </button>
-              </div>
-            );
-          })()}
-
-          {selection?.kind === "marker" && (
-            <div className="tek-tool-group tek-tool-group-edit">
-              <label className="tek-tool-sub">{`Geselecteerd: ${selection.id}`}</label>
-              <button
-                className="tek-tool-btn tek-tool-btn-ghost"
-                onClick={deleteSelection}
-              >
-                Verwijder sondering
-              </button>
-            </div>
-          )}
-
-          <div className="tek-tool-group">
-            <label className="tek-tool-sub">Plaatsen</label>
-            <button
-              className={`tek-tool-btn${placeMode ? " tek-tool-btn-active" : ""}`}
-              onClick={() => setPlaceMode((m) => !m)}
-            >
-              {placeMode ? "Stop plaatsen" : "Sondering plaatsen"}
-            </button>
-            {(placed.length > 0 || rasters.length > 0) && (
-              <button className="tek-tool-btn tek-tool-btn-ghost" onClick={clearPlaced}>
-                {`Wis alles (${placed.length} markers, ${rasters.length} rasters)`}
-              </button>
-            )}
-          </div>
-
-          <div className="tek-tool-group">
-            <button
-              className="tek-tool-btn"
-              onClick={() => setTitleBlockOpen((v) => !v)}
-            >
-              {titleBlockOpen ? "Sluit Title block" : "Title block"}
-            </button>
-            {titleBlockOpen && (
-              <div className="tek-tb-form">
-                {(["project", "drawingNumber", "date", "drawnBy", "checkedBy", "version"] as const).map((k) => (
-                  <label key={k} className="tek-tb-field">
-                    <span>{k}</span>
-                    <input
-                      type="text"
-                      value={titleBlock[k]}
-                      onChange={(e) =>
-                        setTitleBlock((tb) => ({ ...tb, [k]: e.target.value }))
-                      }
-                    />
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="tek-tool-group">
-            <button
-              className="tek-tool-btn"
-              onClick={() => frameInputRef.current?.click()}
-            >
-              Tekeningkader laden
-            </button>
-            <input
-              ref={frameInputRef}
-              type="file"
-              hidden
-              accept=".svg"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void handleFrameFile(f);
-                e.target.value = "";
-              }}
-            />
-            {frame && (
-              <p className="tek-tool-hint">{`Geladen: ${frame.name}`}</p>
-            )}
-          </div>
-        </aside>
+        {/* Toolbox aside is gone — all visible buttons moved to the
+            ribbon (SonderingstekeningTab) and the right-side Properties
+            panel (TekeningProperties). Only the hidden file inputs
+            survive here so the ribbon's "Tekening toevoegen" / "Kader
+            laden" buttons can trigger them. */}
+        <div style={{ display: "none" }} aria-hidden>
+          <input
+            ref={overlayInputRef}
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.svg,.dwg,.dxf"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void handleFile(f);
+              e.target.value = "";
+            }}
+          />
+          <input
+            ref={frameInputRef}
+            type="file"
+            accept=".svg"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void handleFrameFile(f);
+              e.target.value = "";
+            }}
+          />
+        </div>
       </div>
 
       {toast && <div className="tek-toast">{toast}</div>}
+
+      {/* Crop step for raster-image overlays. Shown after the user
+          picks a jpg/png/webp via the ribbon or drag-drop, before the
+          image lands on the paper. Confirm → setOverlay with the
+          cropped PNG; cancel → drop the object URL and forget. */}
+      {cropPending && (
+        <ImageCropDialog
+          imageSrc={cropPending.src}
+          fileName={cropPending.name}
+          onCancel={() => {
+            URL.revokeObjectURL(cropPending.src);
+            setCropPending(null);
+          }}
+          onConfirm={(croppedDataUrl) => {
+            URL.revokeObjectURL(cropPending.src);
+            setOverlay({
+              id: `o-${Date.now()}`,
+              kind: "image",
+              name: cropPending.name,
+              src: croppedDataUrl,
+            });
+            setCropPending(null);
+          }}
+        />
+      )}
+
+      {/* Two-phase PDF importer: page picker → crop stage. On confirm
+          the cropped PNG becomes a normal image overlay so the rest
+          of the pipeline (Leaflet imageOverlay, PDF export, etc.)
+          doesn't need to know it came from a PDF. */}
+      {pdfCropPending && (
+        <PdfCropDialog
+          pdfSrc={pdfCropPending.src}
+          fileName={pdfCropPending.name}
+          onCancel={() => {
+            URL.revokeObjectURL(pdfCropPending.src);
+            setPdfCropPending(null);
+          }}
+          onConfirm={(croppedDataUrl) => {
+            URL.revokeObjectURL(pdfCropPending.src);
+            setOverlay({
+              id: `o-${Date.now()}`,
+              kind: "image",
+              name: pdfCropPending.name,
+              src: croppedDataUrl,
+            });
+            setPdfCropPending(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Schaalbar / scale-bar — een papier-print-stijl meetlat in de hoek
+ * van de tekening. Werkt op basis van de ACTUELE meters-per-pixel
+ * van Leaflet (mPerPx), niet de print-schaal: zo blijft hij correct
+ * wanneer de gebruiker met de muiswiel in/uit zoomt, en wanneer
+ * Leaflet's Web Mercator-projectie + container-aspect zorgen dat de
+ * echte schaal afwijkt van het 1:N getal in de TekeningProperties.
+ *
+ * De bar streeft naar ≈ 25% van de paper-breedte; daarbinnen wordt
+ * een 'nette' rond meter-aantal uit een ladder gekozen, en de bar
+ * krijgt 4 (10/20/40/...) of 5 (50/100/500/...) segmenten zodat de
+ * onderschriften altijd hele meters zijn.
+ */
+const SCALE_BAR_LADDER = [
+  1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000,
+];
+function pickNiceScaleMeters(maxM: number): number {
+  let best = SCALE_BAR_LADDER[0];
+  for (const v of SCALE_BAR_LADDER) {
+    if (v <= maxM) best = v;
+    else break;
+  }
+  return best;
+}
+/**
+ * Inline-editable Schaal-cel voor het titleblock. Toont de live-
+ * berekende schaal als "1:N"; klikken/focussen schakelt naar bewerken,
+ * Enter of blur stuurt `ogs:tekening-set-scale` met de getypte waarde
+ * (accepteert "1:850", "850", "1 : 850" en wat-niet) — dat reset de
+ * Leaflet fitBounds zodat de tekening exact die schaal aanneemt.
+ */
+function ScaleCellEditor({ liveScale }: { liveScale: number }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? `1:${liveScale}`;
+  const commit = () => {
+    if (draft === null) return;
+    // Pak het laatste hele getal uit de string — pakt "850", "1:850",
+    // "1 : 850" en "schaal 1:850" allemaal correct.
+    const m = draft.match(/(\d+)\s*$/);
+    const n = m ? parseInt(m[1], 10) : NaN;
+    if (Number.isFinite(n) && n >= 50 && n <= 100000) {
+      window.dispatchEvent(
+        new CustomEvent("ogs:tekening-set-scale", { detail: { scale: n } }),
+      );
+    }
+    setDraft(null);
+  };
+  return (
+    <input
+      type="text"
+      className="tek-db-cell-val mono tek-db-cell-input"
+      value={value}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={(e) => {
+        if (draft === null) setDraft(value);
+        e.currentTarget.select();
+      }}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.currentTarget.blur();
+        } else if (e.key === "Escape") {
+          setDraft(null);
+          e.currentTarget.blur();
+        }
+      }}
+      title="Klik om de schaal aan te passen (bv. 1:850)"
+    />
+  );
+}
+
+function ScaleBar({
+  mPerPx,
+  paperPxW,
+}: {
+  mPerPx: number;
+  paperPxW: number;
+}) {
+  // Tot Leaflet klaar is met initialiseren is mPerPx 0 — nog niets
+  // te tonen, anders division-by-zero.
+  if (!mPerPx || !Number.isFinite(mPerPx) || mPerPx <= 0) return null;
+
+  // Streefbreedte voor de bar — ongeveer een kwart van de paper.
+  const targetPx = Math.max(80, paperPxW * 0.25);
+  const targetM = targetPx * mPerPx;
+  const totalM = pickNiceScaleMeters(targetM);
+  // Aantal segmenten: 5 voor ronde 5-veelvouden (geeft labels 0,1,2,3,4,5
+  // van segM), 4 voor de rest (0,1,2,3,4).
+  const firstDigit = parseInt(String(totalM).charAt(0), 10);
+  const count = firstDigit === 5 || firstDigit === 1 ? 5 : 4;
+  const segM = totalM / count;
+  const barPx = totalM / mPerPx;
+  const segPx = barPx / count;
+
+  // Tick-onderschriften.
+  const ticks: number[] = [];
+  for (let i = 0; i <= count; i++) ticks.push(+(i * segM).toFixed(2));
+
+  const padding = 6;
+  const svgW = Math.round(barPx + padding * 2 + 16);
+  const svgH = 24;
+  const barY = 2;
+  const barH = 6;
+
+  return (
+    <div className="tek-scale-bar">
+      <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`}>
+        {/* Bar buitenkader */}
+        <rect
+          x={padding}
+          y={barY}
+          width={barPx}
+          height={barH}
+          fill="none"
+          stroke="#111"
+          strokeWidth="0.8"
+        />
+        {/* Alternerende zwart/wit segmenten */}
+        {Array.from({ length: count }).map((_, i) => (
+          <rect
+            key={i}
+            x={padding + i * segPx}
+            y={barY}
+            width={segPx}
+            height={barH}
+            fill={i % 2 === 0 ? "#111" : "#fff"}
+            stroke="#111"
+            strokeWidth="0.5"
+          />
+        ))}
+        {/* Tick-labels onder de bar */}
+        {ticks.map((t, i) => (
+          <text
+            key={i}
+            x={padding + i * segPx}
+            y={barY + barH + 9}
+            fontFamily="Inter, system-ui, sans-serif"
+            fontSize="7"
+            textAnchor="middle"
+            fill="#111"
+          >
+            {Number.isInteger(t) ? t : t.toFixed(1)}
+          </text>
+        ))}
+        {/* "m" eenheid achter de laatste tick */}
+        <text
+          x={padding + barPx + 4}
+          y={barY + barH + 9}
+          fontFamily="Inter, system-ui, sans-serif"
+          fontSize="7"
+          fill="#111"
+        >
+          m
+        </text>
+      </svg>
     </div>
   );
 }

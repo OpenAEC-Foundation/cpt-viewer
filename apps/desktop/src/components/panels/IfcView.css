@@ -1,24 +1,76 @@
 /* ─────────────────────────────────────────────────────────────────────
-   IfcView — two horizontal panes (IFC4x3 on top, IFCX on the bottom).
-   Each pane has its own header (format badge + actions) and a scrollable
-   body. The split is 50/50 by default and each side scrolls independently.
+   IfcView — tabbed layout: Parsed data | IFC4x3 | IFCX
+   Eén pane vult de tab-body; tab-bar zit erboven.
    ───────────────────────────────────────────────────────────────────── */
 
 .ifc-view-twopane {
+  /* Legacy class — voor de oude horizontale 2-pane indeling. Niet meer
+     in gebruik, maar laat staan voor mocht een 3rd-party stylesheet
+     erop hangen. */
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  background: var(--theme-bg);
+  color: var(--theme-text);
+  gap: 1px;
+  background-color: var(--theme-border-subtle, #e7e5e4);
+}
+
+.ifc-view-tabbed {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
   background: var(--theme-bg);
   color: var(--theme-text);
-  gap: 1px; /* hairline divider between panes */
-  background-color: var(--theme-border-subtle, #e7e5e4);
+}
+
+.ifc-tabbar {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px 0;
+  background: var(--theme-bg);
+  border-bottom: 1px solid var(--theme-border-subtle);
+  flex-shrink: 0;
+}
+
+.ifc-tab {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  padding: 5px 14px;
+  font: 600 12px 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.ifc-tab:hover {
+  color: var(--theme-text);
+}
+.ifc-tab.active {
+  background: var(--theme-bg-lighter, #f5f5f4);
+  border-color: var(--theme-border-subtle);
+  border-bottom-color: var(--theme-bg-lighter, #f5f5f4);
+  color: var(--theme-text, #36363e);
+}
+
+.ifc-tab-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.ifc-tab-body > .ifc-pane {
+  flex: 1;
 }
 
 .ifc-pane {
   display: flex;
   flex-direction: column;
   flex: 1 1 50%;
+  min-width: 0;
   min-height: 0;
   background: var(--theme-bg);
 }
@@ -61,6 +113,11 @@
   color: #2563eb;
   border-color: rgba(37, 99, 235, 0.5);
   background: rgba(37, 99, 235, 0.08);
+}
+.ifc-pane-badge-parsed {
+  color: #16a34a;
+  border-color: rgba(22, 163, 74, 0.5);
+  background: rgba(22, 163, 74, 0.08);
 }
 
 .ifc-pane-filename {
@@ -157,4 +214,74 @@
 }
 .ifc-pane-generate-btn:hover {
   background: var(--signal-orange, #ea580c);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Syntax highlighting
+   ─────────────────────────────────────────────────────────────────────
+   Token classes emitted by the highlighter in IfcView.tsx. Colours
+   borrow from the VS Code "Dark+ / Light+" defaults so users coming
+   from an editor recognise the scheme immediately. Each variant uses
+   `currentColor`-friendly hues that work against both light and dark
+   theme backgrounds.
+   ─────────────────────────────────────────────────────────────────── */
+
+.ifc-syntax .ifc-tok-kw {
+  color: #af00db; /* purple — keywords / section markers */
+  font-weight: 700;
+}
+.ifc-syntax .ifc-tok-entity {
+  color: #d97706; /* amber — IFC entity types (IFCPROJECT, IFCCARTESIAN...) */
+  font-weight: 600;
+}
+.ifc-syntax .ifc-tok-ref {
+  color: #0070c1; /* blue — #123 references */
+  font-weight: 500;
+}
+.ifc-syntax .ifc-tok-str {
+  color: #16803c; /* green — string literals */
+}
+.ifc-syntax .ifc-tok-num {
+  color: #b45309; /* dark amber — numeric literals */
+}
+.ifc-syntax .ifc-tok-nil {
+  color: #94a3b8; /* slate — wildcards / unset / null / bool */
+  font-style: italic;
+}
+.ifc-syntax .ifc-tok-ident {
+  color: var(--theme-text);
+}
+.ifc-syntax .ifc-tok-key {
+  color: #0070c1; /* JSON property name */
+  font-weight: 500;
+}
+.ifc-syntax .ifc-tok-punct {
+  color: #94a3b8;
+}
+
+/* Slightly brighter palette for dark themes — same hues, lifted
+ * lightness so they don't disappear into the background. */
+:root[data-theme="dark"] .ifc-syntax .ifc-tok-kw,
+[data-theme="dark"] .ifc-syntax .ifc-tok-kw {
+  color: #c586c0;
+}
+:root[data-theme="dark"] .ifc-syntax .ifc-tok-entity,
+[data-theme="dark"] .ifc-syntax .ifc-tok-entity {
+  color: #f5b041;
+}
+:root[data-theme="dark"] .ifc-syntax .ifc-tok-ref,
+[data-theme="dark"] .ifc-syntax .ifc-tok-ref {
+  color: #4fc1ff;
+}
+:root[data-theme="dark"] .ifc-syntax .ifc-tok-str,
+[data-theme="dark"] .ifc-syntax .ifc-tok-str {
+  color: #ce9178;
+}
+:root[data-theme="dark"] .ifc-syntax .ifc-tok-num,
+[data-theme="dark"] .ifc-syntax .ifc-tok-num {
+  color: #b5cea8;
+}
+:root[data-theme="dark"] .ifc-syntax .ifc-tok-key,
+[data-theme="dark"] .ifc-syntax .ifc-tok-key {
+  color: #9cdcfe;
 }

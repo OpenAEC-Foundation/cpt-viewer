@@ -3,15 +3,15 @@
   "kaartTab": "Kaart",
   "ifcTab": "IFC",
   "rapportTab": "Rapport",
-  "tekeningTab": "Sonderingstekening",
+  "tekeningTab": "Situatietekening",
   "tekening": {
     "info": "Tekening",
-    "titleHint": "Sonderingstekening",
+    "titleHint": "Situatietekening",
     "subHint": "Configureer papier en schaal in de werkbalk hieronder. Sleep PDF/JPG/SVG op het papier voor een overlay.",
     "placeGroup": "Plaatsen",
     "placeMode": "Sondering",
     "overlayGroup": "Overlay",
-    "addOverlay": "Toevoegen",
+    "addOverlay": "Image/PDF import",
     "exportGroup": "Export",
     "exportPdf": "PDF"
   },

@@ -128,7 +128,7 @@ pub async fn fetch_bro_object_metadata(
 fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(HTTP_TIMEOUT)
-        .user_agent("OpenGeoStudio/0.1 (+https://github.com/Impertio/cpt-viewer)")
+        .user_agent("OpenGeoStudio/0.1 (+https://github.com/OpenAEC-Foundation/open-geotechniek-studio)")
         .build()
         .map_err(|e| e.to_string())
 }

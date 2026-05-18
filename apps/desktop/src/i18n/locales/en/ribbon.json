@@ -3,10 +3,10 @@
   "kaartTab": "Map",
   "ifcTab": "IFC",
   "rapportTab": "Report",
-  "tekeningTab": "Drawing",
+  "tekeningTab": "Site plan",
   "tekening": {
     "info": "Drawing",
-    "titleHint": "CPT drawing",
+    "titleHint": "Site plan",
     "subHint": "Configure paper and scale in the toolbar below. Drop PDF/JPG/SVG on the sheet for an overlay.",
     "placeGroup": "Place",
     "placeMode": "CPT marker",

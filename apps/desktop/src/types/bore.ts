@@ -42,10 +42,25 @@ export interface Bore {
   layers: BoreLayer[];
   metadata: {
     project_name?: string;
+    project_number?: string;
     description_date?: string;
+    /** Datum waarop de boring in het veld is uitgevoerd (BRO
+     *  `boringStartDate` of `objectIdAccountableParty` afgeleid). */
+    start_date?: string;
+    end_date?: string;
     quality_regime?: string;
+    description_procedure?: string;
+    /** "boormethode" of "boringProcedure" — type boring (handboring,
+     *  pulsboor, ...). */
+    bore_method?: string;
+    /** Bronhouder / accountable party — wie heeft de boring gemeld. */
+    accountable_party?: string;
     delivered_via?: string;
     source_file: string;
+    /** Vrije sleutel-waarde paren afkomstig uit het BHR-document.
+     *  Voor verbatim-zicht in het Verkenner-paneel (analoog aan
+     *  `Cpt.metadata.extra`). */
+    extra?: Record<string, string>;
   };
 }
 
@@ -259,12 +274,54 @@ export function parseBhrgtXml(xml: string, sourceFile: string): Bore {
   // Sort by top depth — XML order is usually correct, but be defensive.
   layers.sort((a, b) => a.top_depth - b.top_depth);
 
+  // Verbatim extra metadata — same idea as Cpt's `metadata.extra`. We
+  // walk every leaf element with a primitive text value and collect a
+  // flat key→value map. The structured fields above stay top-level so
+  // the standard UI rows don't double-render them.
+  const EXTRA_SKIP = new Set([
+    "geometry",
+    "pos",
+    "envelope",
+    "lowercorner",
+    "uppercorner",
+    "fielddatum",
+  ]);
+  const extra: Record<string, string> = {};
+  const collectExtra = (n: Element) => {
+    for (const child of Array.from(n.children)) {
+      const local = (child.localName ?? "").toLowerCase();
+      if (EXTRA_SKIP.has(local)) continue;
+      // Element met alleen tekst-content → top-level metadata.
+      if (
+        child.children.length === 0 &&
+        child.textContent &&
+        child.textContent.trim().length > 0 &&
+        child.textContent.trim().length < 200
+      ) {
+        const key = child.localName ?? local;
+        const value = child.textContent.trim();
+        if (!(key in extra)) extra[key] = value;
+      } else if (child.children.length > 0) {
+        collectExtra(child);
+      }
+    }
+  };
+  const root = dom.documentElement;
+  if (root) collectExtra(root);
+
   const metadata = {
-    project_name: firstText(dom, ["projectName"]),
+    project_name: firstText(dom, ["projectName", "researchProject"]),
+    project_number: firstText(dom, ["projectNumber", "objectReference"]),
     description_date: firstText(dom, ["descriptionReportDate", "researchReportDate"]),
+    start_date: firstText(dom, ["boringStartDate", "researchStartDate"]),
+    end_date: firstText(dom, ["boringEndDate", "researchEndDate"]),
     quality_regime: firstText(dom, ["qualityRegime"]),
+    description_procedure: firstText(dom, ["descriptionProcedure"]),
+    bore_method: firstText(dom, ["boringProcedure", "boringMethod"]),
+    accountable_party: firstText(dom, ["objectIdAccountableParty"]),
     delivered_via: firstText(dom, ["deliveryContext"]),
     source_file: sourceFile,
+    extra,
   };
 
   return { id, position, final_depth, layers, metadata };
@@ -296,6 +353,169 @@ export function soilColour(soilName: string | undefined): string {
   if (lc.includes("water")) return "#60A5FA";
   return "#D4D4D8";
 }
+
+/**
+ * Soil mixture parser — splits Dutch composite names like
+ * `zwakSiltigeKlei`, `matigZandigeKlei`, `sterkSiltigZand` into:
+ *   - `main`: dominant noun (e.g. "klei", "zand")
+ *   - `admixture`: bijmenging noun (e.g. "silt", "zand")
+ *   - `strength`: "zwak" | "matig" | "sterk" — drives the visual width
+ *     ratio between main and bijmenging on the strip log.
+ *
+ * Single-soil names ("puin", "veen") yield only `main`. Unknown shapes
+ * fall back to treating the whole string as main.
+ */
+export interface SoilMix {
+  main: string;
+  admixture?: string;
+  strength?: "zwak" | "matig" | "sterk";
+}
+export function parseSoilMix(name: string | undefined): SoilMix {
+  if (!name) return { main: "" };
+  const lower = name.toLowerCase();
+
+  // Names without a recognisable strength prefix → single soil. Catches
+  // "puin", "veen", "klei", "zand", "grind", as well as English forms.
+  for (const pre of ["zwak", "matig", "sterk"] as const) {
+    if (lower.startsWith(pre)) {
+      const body = name.slice(pre.length);
+      // Split the body on the second capital letter — first segment is
+      // the adjective (Siltige / Zandige / Siltig / Zandig / Humeus),
+      // the rest is the main noun. Falls back to body-as-main when no
+      // adjective boundary exists.
+      const ups: number[] = [];
+      for (let i = 0; i < body.length; i++) {
+        const c = body[i];
+        if (c >= "A" && c <= "Z") ups.push(i);
+      }
+      if (ups.length >= 2) {
+        const adj = body.slice(ups[0], ups[1]).toLowerCase();
+        const main = body.slice(ups[1]).toLowerCase();
+        const admixture = mapAdjectiveToSoil(adj);
+        return { main, admixture, strength: pre };
+      }
+      return { main: body.toLowerCase(), strength: pre };
+    }
+  }
+  return { main: lower };
+}
+
+/** Map a Dutch adjective ("Siltige", "Zandig", "Humeus") to the base
+ *  soil noun used by `soilColour` / `soilPattern`. */
+function mapAdjectiveToSoil(adj: string): string {
+  if (adj.startsWith("silt")) return "silt";
+  if (adj.startsWith("zand")) return "zand";
+  if (adj.startsWith("klei")) return "klei";
+  if (adj.startsWith("veen") || adj.startsWith("organisch")) return "veen";
+  if (adj.startsWith("grind")) return "grind";
+  if (adj.startsWith("humeus") || adj.startsWith("humus")) return "humeus";
+  return adj;
+}
+
+/** Width-fraction of the main soil band given the mixture strength.
+ *  Higher strength = bigger admixture column. Returns 1.0 if there is
+ *  no admixture so the renderer can skip the split. */
+export function mainWidthFraction(mix: SoilMix): number {
+  if (!mix.admixture) return 1;
+  switch (mix.strength) {
+    case "zwak":  return 0.78;
+    case "matig": return 0.62;
+    case "sterk": return 0.48;
+    default:      return 0.7;
+  }
+}
+
+/**
+ * SVG-pattern fill for a soil noun — used inside the strip log to
+ * render layers in the standard NL boorprofiel cartografie (groene
+ * arcering voor klei, gele puntjes voor zand, grijze puntjes voor
+ * silt, donkerbruine balken voor veen, blauwe vlakke kleur voor
+ * puin, amberkleurige cirkeltjes voor grind).
+ *
+ * Returns a CSS `background` value (a `url(data:image/svg+xml;...)`).
+ * Falls back to the solid `soilColour` swatch for unknown nouns.
+ */
+export function soilPattern(soilName: string | undefined): string {
+  const lc = (soilName ?? "").toLowerCase();
+  if (!lc) return soilColour(soilName);
+  if (lc.includes("veen") || lc.includes("peat")) return PATTERN_VEEN;
+  if (lc.includes("klei") || lc.includes("clay")) return PATTERN_KLEI;
+  if (lc.includes("zand") || lc.includes("sand")) return PATTERN_ZAND;
+  if (lc.includes("grind") || lc.includes("gravel")) return PATTERN_GRIND;
+  if (lc.includes("leem") || lc.includes("loam") || lc.includes("silt"))
+    return PATTERN_SILT;
+  if (lc.includes("puin") || lc.includes("steen") || lc.includes("baksteen"))
+    return PATTERN_PUIN;
+  if (lc.includes("humeus") || lc.includes("humus")) return PATTERN_HUMUS;
+  if (lc.includes("water")) return "#60A5FA";
+  return soilColour(soilName);
+}
+
+// Tile-able SVG patterns. Encoded once at module load and re-used as
+// CSS `background` values. The colors mirror `soilColour` so the
+// solid-fallback swatches in legends still match.
+function svgUrl(svg: string): string {
+  // Percent-encode the bits CSS-data-URLs care about. Quotes inside the
+  // SVG are intentionally double-encoded so the outer url("...") parse
+  // doesn't choke.
+  const enc = encodeURIComponent(svg)
+    .replace(/'/g, "%27")
+    .replace(/"/g, "%22");
+  return `url("data:image/svg+xml;utf8,${enc}")`;
+}
+// Klei — diagonale donkergroene arcering op groene basis.
+const PATTERN_KLEI = svgUrl(
+  `<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14'>` +
+  `<rect width='14' height='14' fill='#4CAF50'/>` +
+  `<path d='M-2 16 L16 -2 M-2 8 L8 -2 M6 16 L16 6' stroke='#1F5D1F' stroke-width='1.4' fill='none'/>` +
+  `</svg>`,
+);
+// Zand — gele basis met donker-amber puntjes.
+const PATTERN_ZAND = svgUrl(
+  `<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12'>` +
+  `<rect width='12' height='12' fill='#FACC15'/>` +
+  `<circle cx='2' cy='3' r='1' fill='#92400E'/>` +
+  `<circle cx='8' cy='5' r='1' fill='#92400E'/>` +
+  `<circle cx='5' cy='9' r='1' fill='#92400E'/>` +
+  `<circle cx='10' cy='10' r='1' fill='#92400E'/>` +
+  `</svg>`,
+);
+// Silt — lichtgrijs/groen met fijne puntjes.
+const PATTERN_SILT = svgUrl(
+  `<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'>` +
+  `<rect width='10' height='10' fill='#D4D4D8'/>` +
+  `<circle cx='2' cy='2' r='0.6' fill='#52525B'/>` +
+  `<circle cx='5' cy='4' r='0.6' fill='#52525B'/>` +
+  `<circle cx='8' cy='3' r='0.6' fill='#52525B'/>` +
+  `<circle cx='3' cy='7' r='0.6' fill='#52525B'/>` +
+  `<circle cx='7' cy='8' r='0.6' fill='#52525B'/>` +
+  `</svg>`,
+);
+// Veen — donkerbruine basis met horizontale "vezel"-streepjes.
+const PATTERN_VEEN = svgUrl(
+  `<svg xmlns='http://www.w3.org/2000/svg' width='14' height='10'>` +
+  `<rect width='14' height='10' fill='#7C2D12'/>` +
+  `<path d='M0 3 H14 M0 7 H14' stroke='#451A03' stroke-width='1.1'/>` +
+  `</svg>`,
+);
+// Grind — amber basis met grotere cirkels.
+const PATTERN_GRIND = svgUrl(
+  `<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'>` +
+  `<rect width='16' height='16' fill='#D97706'/>` +
+  `<circle cx='4' cy='4' r='2' fill='none' stroke='#7C2D12' stroke-width='1.2'/>` +
+  `<circle cx='11' cy='8' r='2' fill='none' stroke='#7C2D12' stroke-width='1.2'/>` +
+  `<circle cx='6' cy='12' r='2' fill='none' stroke='#7C2D12' stroke-width='1.2'/>` +
+  `</svg>`,
+);
+// Puin — vlak licht-blauw (zoals in de screenshot voor "puin").
+const PATTERN_PUIN = "#2563EB";
+// Humus — donkerbruin met geel-groene tinten.
+const PATTERN_HUMUS = svgUrl(
+  `<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12'>` +
+  `<rect width='12' height='12' fill='#65A30D'/>` +
+  `<path d='M0 4 L12 4 M0 9 L12 9' stroke='#365314' stroke-width='1'/>` +
+  `</svg>`,
+);
 
 /**
  * Quick sniff to decide whether a piece of XML is a BHR-O / BHR-G-O /

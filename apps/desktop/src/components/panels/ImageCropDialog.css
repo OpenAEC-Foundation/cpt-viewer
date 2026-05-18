@@ -1,0 +1,162 @@
+/* ─────────────────────────────────────────────────────────────────────
+   ImageCropDialog — modal voor het bijsnijden van een achtergrond-image
+   voordat die als overlay op de sonderingstekening landt.
+   ───────────────────────────────────────────────────────────────────── */
+
+.icrop-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.icrop-dialog {
+  background: var(--theme-bg, #ffffff);
+  color: var(--theme-text, #0f172a);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
+}
+
+.icrop-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.icrop-title {
+  font: 600 14px 'Inter', system-ui, sans-serif;
+}
+
+.icrop-filename {
+  font: 500 12px var(--font-code, "JetBrains Mono"), monospace;
+  color: var(--theme-text-secondary, #64748b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.icrop-stage {
+  position: relative;
+  align-self: center;
+  background: #0f172a; /* dark backdrop to make the dim mask visible */
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+  cursor: default;
+}
+
+.icrop-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+.icrop-mask {
+  position: absolute;
+  background: rgba(15, 23, 42, 0.55);
+  pointer-events: none;
+}
+
+.icrop-rect {
+  position: absolute;
+  border: 1.5px solid #f59e0b;
+  cursor: move;
+  box-sizing: border-box;
+}
+
+/* Rule-of-thirds guide lines inside the crop rectangle.
+   Subtle so they help framing without dominating the preview. */
+.icrop-grid {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+.icrop-grid-v {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+.icrop-grid-h {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+.icrop-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #ffffff;
+  border: 1.5px solid #f59e0b;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.icrop-h-nw { left: -7px; top: -7px;  cursor: nwse-resize; }
+.icrop-h-n  { left: 50%;  top: -7px;  cursor: ns-resize;   transform: translateX(-50%); }
+.icrop-h-ne { right: -7px; top: -7px; cursor: nesw-resize; }
+.icrop-h-e  { right: -7px; top: 50%;  cursor: ew-resize;   transform: translateY(-50%); }
+.icrop-h-se { right: -7px; bottom: -7px; cursor: nwse-resize; }
+.icrop-h-s  { left: 50%;  bottom: -7px; cursor: ns-resize;   transform: translateX(-50%); }
+.icrop-h-sw { left: -7px; bottom: -7px; cursor: nesw-resize; }
+.icrop-h-w  { left: -7px; top: 50%;  cursor: ew-resize;   transform: translateY(-50%); }
+
+.icrop-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.icrop-info {
+  font: 500 12px var(--font-code, "JetBrains Mono"), monospace;
+  color: var(--theme-text-secondary, #64748b);
+}
+
+.icrop-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.icrop-btn {
+  appearance: none;
+  background: var(--theme-bg, #ffffff);
+  color: var(--theme-text, #0f172a);
+  border: 1px solid var(--theme-border, #cbd5e1);
+  border-radius: 4px;
+  font: 500 13px 'Inter', system-ui, sans-serif;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.icrop-btn:hover {
+  background: var(--theme-bg-lighter, #f1f5f9);
+  border-color: var(--amber, #d97706);
+  color: var(--amber, #d97706);
+}
+.icrop-btn-primary {
+  background: var(--amber, #d97706);
+  color: #ffffff;
+  border-color: var(--amber, #d97706);
+}
+.icrop-btn-primary:hover {
+  background: var(--signal-orange, #ea580c);
+  border-color: var(--signal-orange, #ea580c);
+  color: #ffffff;
+}

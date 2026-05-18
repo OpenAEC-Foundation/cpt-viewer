@@ -29,17 +29,20 @@
   SetOutPath "$INSTDIR"
   File "/oname=WebView2Loader.dll" "..\..\WebView2Loader.dll"
 
-  ; ── GEF sondering files ────────────────────────────────────────
+  ; ── Per-extension icons ────────────────────────────────────────
+  ; Tauri's NSIS template puts our bundle-resource icons at
+  ; $INSTDIR\icons\file-associations\*.ico (note: NOT under
+  ; resources\). The template's `APP_ASSOCIATE` macro registers a
+  ; DefaultIcon pointing at the main .exe, so we overwrite each
+  ; ProgID's DefaultIcon to point at the per-type .ico instead.
   WriteRegStr SHCTX "Software\Classes\GEFSondering\DefaultIcon" "" \
-    "$INSTDIR\resources\icons\file-associations\gef.ico,0"
+    "$INSTDIR\icons\file-associations\gef.ico,0"
 
-  ; ── .ifcgis Open Geotechniek Studio projects ───────────────────
   WriteRegStr SHCTX "Software\Classes\OpenGeoStudioProject\DefaultIcon" "" \
-    "$INSTDIR\resources\icons\file-associations\ifcgis.ico,0"
+    "$INSTDIR\icons\file-associations\ifcgis.ico,0"
 
-  ; ── .ifcgeo single-CPT IFCX exchange files ─────────────────────
   WriteRegStr SHCTX "Software\Classes\GeotechniekObject\DefaultIcon" "" \
-    "$INSTDIR\resources\icons\file-associations\ifcgeo.ico,0"
+    "$INSTDIR\icons\file-associations\ifcgeo.ico,0"
 
   ; Refresh the Explorer icon cache so the new icons appear without
   ; a logout/login cycle.

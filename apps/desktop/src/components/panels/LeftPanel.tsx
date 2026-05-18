@@ -4,7 +4,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { useCptStore, addCptToActiveProject } from "../../store/useCptStore";
+import type { BoreDocument } from "../../store/useCptStore";
 import type { Cpt, Layer } from "../../types/cpt";
+import type { Bore } from "../../types/bore";
 
 /**
  * Document-aware left panel.
@@ -36,50 +38,160 @@ export default function LeftPanel() {
     return <ProjectBrowser />;
   }
   if (activeDoc.kind === "bore") {
-    // Borings have their own viewer in the main pane (BoreView). The
-    // left-panel sidebar shows a minimal summary so the user still has
-    // somewhere to scan id / depth / RD without crowding the strip log.
-    const b = activeDoc.bore;
-    return (
-      <div className="left-panel-body">
-        <div className="project-header">
-          <div className="project-header-text">
-            <div className="project-header-title">{b.id || activeDoc.title}</div>
-            <div className="project-header-sub">Boring (BHR-GT)</div>
-          </div>
-        </div>
-        <div className="panel-section">
-          <div className="panel-section-body">
-            <dl className="cpt-meta-list">
-              {b.position && (
-                <>
-                  <dt>RD x/y</dt>
-                  <dd>
-                    {b.position.x_rd.toFixed(1)}, {b.position.y_rd.toFixed(1)}
-                  </dd>
-                </>
-              )}
-              {typeof b.position?.z_nap === "number" && (
-                <>
-                  <dt>NAP</dt>
-                  <dd>{b.position.z_nap.toFixed(2)} m</dd>
-                </>
-              )}
-              {typeof b.final_depth === "number" && (
-                <>
-                  <dt>Diepte</dt>
-                  <dd>{b.final_depth.toFixed(2)} m</dd>
-                </>
-              )}
-              <dt>Lagen</dt>
-              <dd>{b.layers.length}</dd>
-            </dl>
-          </div>
-        </div>
-      </div>
-    );
+    return <BoreDetails doc={activeDoc} />;
   }
   return <CptDetails cpt={activeDoc.cpt} />;
+}
+
+// ──────────────────────────────────────────────────────────────
+// Standalone Boring (active doc = BoreDocument)
+// ──────────────────────────────────────────────────────────────
+
+function BoreDetails({ doc }: { doc: BoreDocument }) {
+  const b = doc.bore;
+  return (
+    <div className="left-panel-body">
+      <div className="project-header">
+        <div className="project-header-icon"><FileIcon /></div>
+        <div className="project-header-text">
+          <div className="project-header-title">{b.id || doc.title}</div>
+          <div className="project-header-sub">{b.metadata.source_file}</div>
+        </div>
+      </div>
+
+      <PanelSection title="Boringsgegevens" defaultOpen>
+        <BoreMetadataList bore={b} />
+      </PanelSection>
+      <PanelSection title="Bestandsmetadata">
+        <BoreExtraList bore={b} />
+      </PanelSection>
+      <PanelSection title="Lagen" defaultOpen>
+        <BoreLayersList bore={b} />
+      </PanelSection>
+      <PanelSection title="Ruwe data (XML)">
+        <BoreRawXml xml={doc.rawXml} />
+      </PanelSection>
+    </div>
+  );
+}
+
+function BoreMetadataList({ bore }: { bore: Bore }) {
+  const m = bore.metadata;
+  return (
+    <dl className="metadata-list">
+      <dt>Boring-ID</dt><dd>{bore.id || "—"}</dd>
+      <dt>Project</dt><dd>{m.project_name ?? "—"}</dd>
+      <dt>Projectnr</dt><dd>{m.project_number ?? "—"}</dd>
+      <dt>Bronhouder</dt><dd>{m.accountable_party ?? "—"}</dd>
+      <dt>Startdatum</dt><dd>{m.start_date ?? "—"}</dd>
+      <dt>Einddatum</dt><dd>{m.end_date ?? "—"}</dd>
+      <dt>Beschrijfdatum</dt><dd>{m.description_date ?? "—"}</dd>
+      <dt>Kwaliteitsregime</dt><dd>{m.quality_regime ?? "—"}</dd>
+      <dt>Beschrijfprocedure</dt><dd>{m.description_procedure ?? "—"}</dd>
+      <dt>Boormethode</dt><dd>{m.bore_method ?? "—"}</dd>
+      <dt>Levering</dt><dd>{m.delivered_via ?? "—"}</dd>
+      <dt>RD x/y</dt>
+      <dd>
+        {bore.position
+          ? `${bore.position.x_rd.toFixed(1)}, ${bore.position.y_rd.toFixed(1)}`
+          : "—"}
+      </dd>
+      <dt>Maaiveld NAP</dt>
+      <dd>
+        {typeof bore.position?.z_nap === "number"
+          ? `${bore.position.z_nap.toFixed(2)} m`
+          : "—"}
+      </dd>
+      <dt>Eindiepte</dt>
+      <dd>
+        {typeof bore.final_depth === "number"
+          ? `${bore.final_depth.toFixed(2)} m`
+          : "—"}
+      </dd>
+      <dt>Aantal lagen</dt><dd>{bore.layers.length}</dd>
+    </dl>
+  );
+}
+
+/** Verbatim BHR-veld → waarde map. Bewust ongefilterd zodat zeldzame
+ *  velden (boordiameter, peilbuis-info, organische-stofklasse) ook
+ *  zichtbaar zijn. */
+function BoreExtraList({ bore }: { bore: Bore }) {
+  const extra = bore.metadata.extra ?? {};
+  const entries = Object.entries(extra);
+  if (entries.length === 0) {
+    return <p className="panel-empty">Geen aanvullende metadata.</p>;
+  }
+  return (
+    <dl className="metadata-list metadata-list-extra">
+      {entries.map(([k, v]) => (
+        <Fragment key={k}>
+          <dt title={k}>{k}</dt>
+          <dd>{v}</dd>
+        </Fragment>
+      ))}
+    </dl>
+  );
+}
+
+/** Beknopte tabel met de geïnterpreteerde lagen. De volledige strip-log
+ *  staat in BoreView; deze tabel is voor snel scannen vanuit de
+ *  verkenner. */
+function BoreLayersList({ bore }: { bore: Bore }) {
+  if (bore.layers.length === 0) {
+    return <p className="panel-empty">Geen lagen.</p>;
+  }
+  return (
+    <table className="layers-table">
+      <thead>
+        <tr>
+          <th>Top</th>
+          <th>Basis</th>
+          <th>Grondsoort</th>
+        </tr>
+      </thead>
+      <tbody>
+        {bore.layers.map((l, i) => (
+          <tr key={i}>
+            <td>{l.top_depth.toFixed(2)}</td>
+            <td>{l.base_depth.toFixed(2)}</td>
+            <td title={l.description}>{l.soil_name}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** Read-only viewer voor het origineel BHR-XML. Geen syntax-highlight
+ *  voor de eenvoud — wel een copy-knop en monospace font zodat de
+ *  inspringing leesbaar blijft. */
+function BoreRawXml({ xml }: { xml?: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!xml) {
+    return <p className="panel-empty">Geen ruwe XML beschikbaar.</p>;
+  }
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(xml);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard refused — silent */
+    }
+  };
+  return (
+    <div className="bore-raw-wrap">
+      <button
+        type="button"
+        className="bore-raw-copy"
+        onClick={() => void onCopy()}
+      >
+        {copied ? "Gekopieerd" : "Kopieer XML"}
+      </button>
+      <pre className="bore-raw-pre">{xml}</pre>
+    </div>
+  );
 }
 
 // ──────────────────────────────────────────────────────────────

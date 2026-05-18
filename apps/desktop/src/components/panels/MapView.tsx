@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as L from "leaflet";
 import { fetchBagPanden, fetchKadasterPercelen } from "../../utils/pdokWfs";
+import { AdressenLayer } from "../../utils/adressenLayer";
 import MapAddressSearch from "./MapAddressSearch";
 import "leaflet/dist/leaflet.css";
 import { invoke } from "@tauri-apps/api/core";
@@ -231,6 +232,10 @@ export default function MapView() {
 
   // Layer refs — built once and reused. `null` until init effect runs.
   const baseLayersRef = useRef<Record<string, L.TileLayer>>({});
+  // Adressen layer is fundamentally a vector overlay (WFS-driven); we
+  // hold a dedicated instance so the toggle / opacity handlers can talk
+  // to its public attach/detach/setOpacity methods.
+  const adressenLayerRef = useRef<AdressenLayer | null>(null);
   const broLayerRef = useRef<L.LayerGroup | null>(null);
   const broBoresLayerRef = useRef<L.LayerGroup | null>(null);
   const cptLayerRef = useRef<L.LayerGroup | null>(null);
@@ -347,6 +352,19 @@ export default function MapView() {
         { attribution: "Luchtfoto © PDOK", maxZoom: 19 },
       );
     }
+    // ── Adressen + straatnamen ──────────────────────────────────
+    // Vector overlay backed by PDOK BAG WFS — no tiles, no CartoDB.
+    // The AdressenLayer fetches `bag:openbareruimte` (street polygons →
+    // centroid labels) and `bag:nummeraanduiding` (house number points)
+    // on each map moveend / zoomend and renders the results as Leaflet
+    // divIcon markers (see utils/adressenLayer.ts). The toggle handler
+    // below calls attach()/detach() on this instance; opacity routes
+    // through its setOpacity() so the labels can be dimmed without
+    // losing their data.
+    adressenLayerRef.current = new AdressenLayer();
+    baseLayers["adressen"] =
+      adressenLayerRef.current.group as unknown as L.TileLayer;
+
     // ── AHN (Actueel Hoogtebestand Nederland) — coloured DTM elevation
     // raster from PDOK. The `dtm_05m` service ships as a paletted PNG
     // overlay where colour ramps from blue (low) → green → yellow → red
@@ -368,6 +386,23 @@ export default function MapView() {
     baseLayers["bgt"] = L.tileLayer(
       "https://service.pdok.nl/lv/bgt/wmts/v1_0/standaardvisualisatie/EPSG:3857/{z}/{x}/{y}.png",
       { attribution: "BGT © Geonovum / Kadaster | PDOK", maxZoom: 20, opacity: 0.85 },
+    );
+    // ── Bestemmingsplan (Ruimtelijkeplannen WMS) ─────────────────
+    // Gemeentelijke zoneringen — wonen / bedrijf / verkeer / groen.
+    // PDOK serveert dit als WMS (geen WMTS-cache beschikbaar), dus we
+    // wrappen het in L.tileLayer.wms zodat Leaflet per tegel een
+    // GetMap-call doet. Transparant zodat de onderliggende BRT/luchtfoto
+    // erdoorheen leesbaar blijft.
+    baseLayers["bestemmingsplan"] = L.tileLayer.wms(
+      "https://service.pdok.nl/kadaster/plu/wms/v2_0",
+      {
+        layers: "bestemmingsplangebied",
+        format: "image/png",
+        transparent: true,
+        attribution: "Ruimtelijkeplannen © Kadaster | PDOK",
+        maxZoom: 20,
+        opacity: 0.7,
+      },
     );
     baseLayersRef.current = baseLayers;
     // Default: BRT on.
@@ -436,21 +471,24 @@ export default function MapView() {
     };
 
     /**
-     * Render one borehole marker. Different shape (circle) so the user
-     * instantly distinguishes it from a sondering even at low zoom.
+     * Render one borehole marker. Uses the standard NL-geotechniek
+     * boring symbol — an open ring with a centerpoint dot — so the
+     * user instantly distinguishes it from a sondering (filled
+     * triangle/pin) at any zoom. divIcon-based, so the marker scales
+     * crisply on Hi-DPI displays.
      */
-    const renderBoreMarker = (f: BroFeature): L.CircleMarker => {
-      const m = L.circleMarker([f.lat, f.lon], {
-        radius: 4,
-        color: "#52525B",
-        weight: 1,
-        fillColor: "#D4D4D8",
-        fillOpacity: 0.85,
+    const renderBoreMarker = (f: BroFeature): L.Marker => {
+      const icon = L.divIcon({
+        className: "bro-bore-symbol",
+        html:
+          `<svg width="16" height="16" viewBox="0 0 16 16">` +
+          `<circle cx="8" cy="8" r="6" fill="#FECACA" fill-opacity="0.85" stroke="#7F1D1D" stroke-width="1.6"/>` +
+          `<circle cx="8" cy="8" r="1.6" fill="#7F1D1D"/>` +
+          `</svg>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
       });
-      // Bores are now loadable — clicking "Open in viewer" fetches the
-      // BHRGT XML and opens a BoreDocument tab. The popup link uses the
-      // dedicated `bro-popup-open-bore` class so the click delegate can
-      // route to fetch_bro_bore instead of fetch_bro_cpt.
+      const m = L.marker([f.lat, f.lon], { icon, riseOnHover: true });
       m.bindPopup(buildPopupHtml(f, /* loadable = */ true, "openOnly"), { minWidth: 240 });
       return m;
     };
@@ -592,7 +630,7 @@ export default function MapView() {
               const op = layerOpacityRef.current["bro-boringen"] ?? 1;
               features.forEach((f) => {
                 const m = renderBoreMarker(f);
-                m.setStyle({ opacity: op, fillOpacity: 0.85 * op });
+                m.setOpacity(op);
                 broBoresLayerRef.current?.addLayer(m);
               });
               boreCount = features.length;
@@ -755,12 +793,35 @@ export default function MapView() {
 
     /** Honor an `ogs:layer-toggle` event by adding/removing the matching
      *  layer object. For data layers we toggle visibility by attaching or
-     *  detaching the `LayerGroup` to the map. */
+     *  detaching the `LayerGroup` to the map.
+     *
+     *  Per-view filter: GisLayerPanel now tags every event with `view`
+     *  ("map" or "tekening"); we only react when the event is for this
+     *  view, so toggling on the Sonderingstekening tab doesn't disturb
+     *  this Leaflet instance. Older callers (no `view` field) are treated
+     *  as map-targeted for backwards compatibility. */
     const onLayerToggle = (e: Event) => {
-      const ce = e as CustomEvent<{ id: string; enabled: boolean }>;
+      const ce = e as CustomEvent<{ view?: string; id: string; enabled: boolean }>;
+      if (ce.detail.view && ce.detail.view !== "map") return;
       const { id, enabled } = ce.detail;
       const wasEnabled = enabledLayersRef.current[id] === true;
       enabledLayersRef.current[id] = enabled;
+
+      // Adressen — vector WFS overlay. Routed through AdressenLayer so
+      // moveend/zoomend listeners are wired up on attach and torn down
+      // on detach (otherwise we'd keep fetching after the user disables
+      // the layer).
+      if (id === "adressen" && adressenLayerRef.current) {
+        const al = adressenLayerRef.current;
+        if (enabled) {
+          if (!map.hasLayer(al.group)) al.group.addTo(map);
+          al.attach(map);
+        } else {
+          al.detach();
+          if (map.hasLayer(al.group)) map.removeLayer(al.group);
+        }
+        return;
+      }
 
       // Base layers — directly add/remove the TileLayer.
       const base = baseLayersRef.current[id];
@@ -973,10 +1034,20 @@ export default function MapView() {
      * the same group (e.g. after a BRO reload) inherit the same opacity.
      */
     const onLayerOpacity = (e: Event) => {
-      const ce = e as CustomEvent<{ id: string; opacity: number }>;
+      const ce = e as CustomEvent<{ view?: string; id: string; opacity: number }>;
+      // Per-view filter — see onLayerToggle comment.
+      if (ce.detail.view && ce.detail.view !== "map") return;
       const { id, opacity } = ce.detail;
       const clamped = Math.max(0, Math.min(1, opacity));
       layerOpacityRef.current[id] = clamped;
+
+      // Adressen — route through the AdressenLayer instance so the
+      // current markers + any markers added later from a fresh WFS
+      // response all pick up the new opacity.
+      if (id === "adressen" && adressenLayerRef.current) {
+        adressenLayerRef.current.setOpacity(clamped);
+        return;
+      }
 
       const base = baseLayersRef.current[id];
       if (base) {
@@ -1036,6 +1107,8 @@ export default function MapView() {
       map.off("click", onMapClick);
       if (panTimer) window.clearTimeout(panTimer);
       pendingAbort?.abort();
+      adressenLayerRef.current?.detach();
+      adressenLayerRef.current = null;
       map.remove();
     };
   }, []);
@@ -1153,19 +1226,34 @@ export default function MapView() {
     //  - Otherwise (same doc, marker added/removed) → only fit when
     //    markers escape the current view, so casual edits don't yank
     //    the user's zoom away.
+    // On a fresh mount (tab-switch into Kaart) the map element may not
+    // have its final pixel size yet — Leaflet's `getBounds()` then
+    // returns a degenerate viewport and `fitBounds` over-zooms onto a
+    // single pixel. Defer the fit to the next animation frame and call
+    // `invalidateSize()` first so the projection is honest.
     const isInitialOrDocChange = fittedDocIdRef.current !== activeDocId;
-    if (positioned.length === 1) {
-      if (isInitialOrDocChange || map.getZoom() < 12) {
-        map.setView([positioned[0].lat, positioned[0].lon], 17);
+    const doFit = () => {
+      const m = mapRef.current;
+      if (!m) return;
+      try { m.invalidateSize(); } catch { /* map torn down */ }
+      if (positioned.length === 1) {
+        if (isInitialOrDocChange || m.getZoom() < 12) {
+          m.setView([positioned[0].lat, positioned[0].lon], 17);
+        }
+      } else {
+        const bounds = L.latLngBounds(
+          positioned.map((p) => [p.lat, p.lon] as [number, number]),
+        );
+        const current = m.getBounds();
+        if (isInitialOrDocChange || !current.contains(bounds)) {
+          m.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
+        }
       }
+    };
+    if (isInitialOrDocChange) {
+      requestAnimationFrame(doFit);
     } else {
-      const bounds = L.latLngBounds(
-        positioned.map((p) => [p.lat, p.lon] as [number, number]),
-      );
-      const current = map.getBounds();
-      if (isInitialOrDocChange || !current.contains(bounds)) {
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
-      }
+      doFit();
     }
     fittedDocIdRef.current = activeDocId;
 

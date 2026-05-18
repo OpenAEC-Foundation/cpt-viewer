@@ -119,7 +119,10 @@
 
 .bore-strip-wrap {
   display: grid;
-  grid-template-columns: 64px 96px 1fr;
+  /* Strip-kolom schaalt mee met `--bore-zoom` (door BoreView ingesteld
+     in style). Standaard 96 px, bij 6× zoom dus 576 px breed. Axis
+     blijft vast, descriptions houden de rest van de breedte. */
+  grid-template-columns: 64px calc(96px * var(--bore-zoom, 1)) 1fr;
   gap: 0;
   position: relative;
   flex: 1;
@@ -179,8 +182,8 @@
   left: 0;
   right: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;       /* main + mix columns stretch full height */
+  justify-content: stretch;
   border-top: 1px solid rgba(0, 0, 0, 0.15);
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
   overflow: hidden;
@@ -189,16 +192,31 @@
 .bore-layer:hover {
   filter: brightness(0.92);
 }
+/* Hoofd + bijmenging segmenten — beide nemen 100% hoogte; de width
+   wordt inline gezet op basis van parseSoilMix() + strength. Pattern-
+   fill via `background` (SVG data-URL) komt ook inline binnen. */
+.bore-layer-half {
+  height: 100%;
+  background-repeat: repeat;
+}
+.bore-layer-mix {
+  border-left: 1px solid rgba(0, 0, 0, 0.18);
+}
 .bore-layer-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   font: 600 0.7rem 'Inter', sans-serif;
   color: #1f2937;
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.78);
   padding: 1px 5px;
   border-radius: 3px;
   white-space: nowrap;
   text-overflow: ellipsis;
-  max-width: 90%;
+  max-width: 88%;
   text-align: center;
+  pointer-events: none;
 }
 
 .bore-descriptions {

@@ -1462,3 +1462,43 @@ body,
   white-space: nowrap;
   user-select: none;
 }
+
+/* ── Boring "Ruwe data (XML)" viewer in LeftPanel ──────────── */
+
+.bore-raw-wrap {
+  position: relative;
+  margin: 0;
+}
+.bore-raw-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  appearance: none;
+  background: var(--theme-bg, #ffffff);
+  color: var(--theme-text, #36363e);
+  border: 1px solid var(--theme-border, #cbd5e1);
+  border-radius: 3px;
+  padding: 2px 8px;
+  font: 500 11px 'Inter', system-ui, sans-serif;
+  cursor: pointer;
+  z-index: 1;
+}
+.bore-raw-copy:hover {
+  background: var(--theme-bg-lighter, #f1f5f9);
+  border-color: var(--amber, #d97706);
+  color: var(--amber, #d97706);
+}
+.bore-raw-pre {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--theme-bg-lighter, #f8fafc);
+  border: 1px solid var(--theme-border-subtle, #e7e5e4);
+  border-radius: 4px;
+  font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--theme-text, #1f2937);
+  white-space: pre;
+  overflow: auto;
+  max-height: 320px;
+}
