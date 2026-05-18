@@ -35,6 +35,50 @@ export default function LeftPanel() {
   if (activeDoc.kind === "project") {
     return <ProjectBrowser />;
   }
+  if (activeDoc.kind === "bore") {
+    // Borings have their own viewer in the main pane (BoreView). The
+    // left-panel sidebar shows a minimal summary so the user still has
+    // somewhere to scan id / depth / RD without crowding the strip log.
+    const b = activeDoc.bore;
+    return (
+      <div className="left-panel-body">
+        <div className="project-header">
+          <div className="project-header-text">
+            <div className="project-header-title">{b.id || activeDoc.title}</div>
+            <div className="project-header-sub">Boring (BHR-GT)</div>
+          </div>
+        </div>
+        <div className="panel-section">
+          <div className="panel-section-body">
+            <dl className="cpt-meta-list">
+              {b.position && (
+                <>
+                  <dt>RD x/y</dt>
+                  <dd>
+                    {b.position.x_rd.toFixed(1)}, {b.position.y_rd.toFixed(1)}
+                  </dd>
+                </>
+              )}
+              {typeof b.position?.z_nap === "number" && (
+                <>
+                  <dt>NAP</dt>
+                  <dd>{b.position.z_nap.toFixed(2)} m</dd>
+                </>
+              )}
+              {typeof b.final_depth === "number" && (
+                <>
+                  <dt>Diepte</dt>
+                  <dd>{b.final_depth.toFixed(2)} m</dd>
+                </>
+              )}
+              <dt>Lagen</dt>
+              <dd>{b.layers.length}</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return <CptDetails cpt={activeDoc.cpt} />;
 }
 

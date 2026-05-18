@@ -14,17 +14,25 @@ import { useCptStore } from "../../store/useCptStore";
  */
 export default function IfcTab() {
   const { t } = useTranslation("ribbon");
-  const { ifc4x3Ready, ifcxReady, hasContent } = useCptStore((s) => {
-    const doc = s.documents.find((d) => d.id === s.activeDocId);
-    if (!doc) return { ifc4x3Ready: false, ifcxReady: false, hasContent: false };
-    const cached = s.ifcCache.get(doc.id);
-    const cptCount = doc.kind === "cpt" ? 1 : doc.cpts.size;
-    return {
-      ifc4x3Ready: Boolean(cached?.ifc4x3),
-      ifcxReady: Boolean(cached?.ifcx),
-      hasContent: cptCount > 0,
-    };
-  });
+  // Subscribe to primitives separately — a single selector returning a
+  // fresh object literal breaks Zustand v5's strict equality check and
+  // produces "Maximum update depth exceeded" the moment the ribbon
+  // shows this tab.
+  const activeDocId = useCptStore((s) => s.activeDocId);
+  const documents = useCptStore((s) => s.documents);
+  const ifcCache = useCptStore((s) => s.ifcCache);
+  const doc = activeDocId ? documents.find((d) => d.id === activeDocId) : undefined;
+  const cached = doc ? ifcCache.get(doc.id) : undefined;
+  const ifc4x3Ready = Boolean(cached?.ifc4x3);
+  const ifcxReady = Boolean(cached?.ifcx);
+  const cptCount = !doc
+    ? 0
+    : doc.kind === "cpt"
+      ? 1
+      : doc.kind === "project"
+        ? doc.cpts.size
+        : 0; // bore docs: IFC export not yet wired
+  const hasContent = cptCount > 0;
 
   let statusLabel: string;
   if (!hasContent) {

@@ -1,8 +1,8 @@
 [package]
 name = "open-geo-studio"
-version = "0.1.0"
-description = "Open Template - A Tauri App"
-authors = ["Impertio"]
+version = "0.2.0"
+description = "Open Geotechniek Studio — desktop CPT viewer and report generator"
+authors = ["Open AEC Foundation"]
 edition = "2021"
 
 [lib]

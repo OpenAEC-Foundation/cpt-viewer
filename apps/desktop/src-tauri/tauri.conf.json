@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Open Geotechniek Studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "foundation.openaec.opengeotechniekstudio",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -32,9 +32,6 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "dmg", "deb", "appimage"],
-    "resources": {
-      "tenants/**/*": "tenants/"
-    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -42,10 +39,38 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "fileAssociations": [
+      {
+        "ext": ["gef"],
+        "name": "GEFSondering",
+        "description": "Sondering (GEF)",
+        "role": "Editor",
+        "mimeType": "application/x-gef"
+      },
+      {
+        "ext": ["ifcgis"],
+        "name": "OpenGeoStudioProject",
+        "description": "Open Geotechniek Studio project",
+        "role": "Editor",
+        "mimeType": "application/x-ifcgis+json"
+      },
+      {
+        "ext": ["ifcgeo"],
+        "name": "GeotechniekObject",
+        "description": "Geotechniek-object (IFCX)",
+        "role": "Editor",
+        "mimeType": "application/x-ifcgeo+json"
+      }
+    ],
+    "resources": {
+      "tenants/**/*": "tenants/",
+      "icons/file-associations/*.ico": "icons/file-associations/"
+    },
     "windows": {
       "nsis": {
         "installMode": "perMachine",
-        "installerIcon": "icons/icon.ico"
+        "installerIcon": "icons/icon.ico",
+        "installerHooks": "nsis/installer-hooks.nsh"
       }
     }
   }

@@ -138,6 +138,23 @@ pub fn run() {
         tenant_manager: TenantManager::new(tenants_dir),
     });
 
+    // Collect any file paths passed on the command line — Windows
+    // Explorer launches the registered .exe with the file path as
+    // argv[1] when the user double-clicks a .gef / .ifcgis / .ifcgeo
+    // file. We stash them here, then emit `ogs:open-file` events to
+    // the frontend after the main window has loaded.
+    let cli_files: Vec<String> = std::env::args()
+        .skip(1)
+        .filter(|a| !a.starts_with("--"))
+        .filter(|a| {
+            let lower = a.to_lowercase();
+            lower.ends_with(".gef")
+                || lower.ends_with(".ifcgis")
+                || lower.ends_with(".ifcgeo")
+                || lower.ends_with(".xml")
+        })
+        .collect();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -146,6 +163,24 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .manage(app_state)
         .manage(CptAppState::default())
+        .setup(move |app| {
+            if !cli_files.is_empty() {
+                use tauri::Emitter;
+                let handle = app.handle().clone();
+                let files = cli_files.clone();
+                // Defer the emit so the frontend's `listen("ogs:open-file")`
+                // call (registered in App.tsx's mount effect) is wired up
+                // before we fire — without the delay the events arrive at
+                // an empty listener set and silently get dropped.
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(800));
+                    for path in files {
+                        let _ = handle.emit("ogs:open-file", path);
+                    }
+                });
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             list_tenants,
@@ -162,6 +197,7 @@ pub fn run() {
             commands::cpt::save_cpt_as,
             commands::bro_api::fetch_bro_area,
             commands::bro_api::fetch_bro_cpt,
+            commands::bro_api::fetch_bro_bore,
             commands::bro_api::fetch_bro_bores,
             commands::bro_api::fetch_bro_object_metadata,
             commands::report::preview_report,

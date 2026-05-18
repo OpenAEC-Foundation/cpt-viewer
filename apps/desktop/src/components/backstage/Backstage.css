@@ -421,3 +421,79 @@
 .backstage-subitem:hover {
   background: var(--theme-bg-hover, rgba(0,0,0,0.04));
 }
+
+/* ── Recent files list (sidebar, directly under "Open") ─────── */
+
+.backstage-recent-list {
+  margin: 4px 8px 12px 36px;
+  padding: 6px 0 6px 10px;
+  border-left: 2px solid var(--theme-border, #e7e5e4);
+}
+.backstage-recent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  padding: 0 4px;
+}
+.backstage-recent-header > span {
+  font: 600 0.65rem 'Inter', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--theme-text-muted, #888);
+}
+.backstage-recent-clear {
+  appearance: none;
+  background: none;
+  border: 0;
+  color: var(--theme-text-muted, #888);
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  border-radius: 3px;
+}
+.backstage-recent-clear:hover {
+  background: var(--theme-bg-hover, rgba(0,0,0,0.04));
+  color: var(--theme-text);
+}
+.backstage-recent-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.backstage-recent-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--theme-text);
+  transition: background 0.12s;
+}
+.backstage-recent-item:hover {
+  background: var(--theme-bg-hover, rgba(0,0,0,0.05));
+}
+.backstage-recent-name {
+  font: 500 0.82rem 'Inter', sans-serif;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.backstage-recent-path {
+  font: 400 0.66rem var(--font-code, 'JetBrains Mono'), monospace;
+  color: var(--theme-text-muted, #888);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}

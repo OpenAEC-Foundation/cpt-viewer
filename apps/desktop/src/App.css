@@ -653,42 +653,48 @@ body,
   z-index: 1000; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
-/* ── Topotijdreis slider (bottom-docked, ~80mm) ── */
+/* ── Topotijdreis slider — lives inside the GisLayerPanel section ── */
 .topotijdreis-slider {
-  position: absolute;
-  left: 12px; right: 12px;
-  bottom: 12px;
-  z-index: 1000;
-  background: var(--theme-bg, white);
-  color: var(--theme-text, #36363E);
-  border: 1px solid var(--theme-border, #E7E5E4);
-  border-radius: 8px;
-  padding: 8px 16px 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-  /* Don't get wider than ~720px or it dominates the viewport. */
-  max-width: 720px;
-  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
   pointer-events: auto;
 }
-.topotijdreis-year-display {
-  text-align: center;
-  margin-bottom: 4px;
+/* Header row — checkbox + label + current-year/Uit indicator. */
+.topotijdreis-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.topotijdreis-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--amber, #D97706);
+  flex-shrink: 0;
+}
+.topotijdreis-toggle-label {
+  font: 600 0.78rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text, #36363E);
+  flex: 1;
 }
 .topotijdreis-year-label {
-  font: 700 2rem var(--font-heading, "Space Grotesk"), 'Inter', sans-serif;
+  font: 700 1rem var(--font-heading, "Space Grotesk"), 'Inter', sans-serif;
   letter-spacing: -0.02em;
   color: var(--amber, #D97706);
   line-height: 1;
 }
 .topotijdreis-year-off {
-  font: 500 0.85rem 'Inter', system-ui, sans-serif;
+  font: 500 0.78rem 'Inter', system-ui, sans-serif;
   color: var(--theme-text-secondary, #A1A1AA);
   line-height: 1;
 }
 .topotijdreis-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
 .topotijdreis-off-btn,
 .topotijdreis-latest-btn {
@@ -697,11 +703,11 @@ body,
   color: var(--theme-text, #36363E);
   border: 1px solid var(--theme-border, #E7E5E4);
   border-radius: 4px;
-  font: 600 0.75rem 'Inter', system-ui, sans-serif;
-  padding: 4px 10px;
+  font: 600 0.7rem 'Inter', system-ui, sans-serif;
+  padding: 3px 6px;
   cursor: pointer;
   flex-shrink: 0;
-  min-width: 48px;
+  min-width: 0;
 }
 .topotijdreis-off-btn:hover:not(:disabled),
 .topotijdreis-latest-btn:hover:not(:disabled) {
@@ -716,6 +722,7 @@ body,
 }
 .topotijdreis-range {
   flex: 1;
+  min-width: 0;
   appearance: none;
   height: 6px;
   border-radius: 9999px;
@@ -725,8 +732,8 @@ body,
 }
 .topotijdreis-range::-webkit-slider-thumb {
   appearance: none;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--amber, #D97706);
   border: 2px solid var(--theme-bg, white);
@@ -734,8 +741,8 @@ body,
   cursor: pointer;
 }
 .topotijdreis-range::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--amber, #D97706);
   border: 2px solid var(--theme-bg, white);
@@ -744,19 +751,72 @@ body,
 }
 .topotijdreis-ticks {
   position: relative;
-  height: 14px;
-  margin-top: 2px;
-  /* Constrain ticks to the slider track area (matches button widths). */
-  margin-left: 58px;
-  margin-right: 58px;
+  height: 12px;
+  /* Only show first/middle/last when space is tight — the slider is
+     narrow now so individual year ticks would overlap. */
+  margin-left: 4px;
+  margin-right: 4px;
 }
 .topotijdreis-tick {
   position: absolute;
   transform: translateX(-50%);
-  font: 500 0.65rem var(--font-code, "JetBrains Mono"), monospace;
+  font: 500 0.6rem var(--font-code, "JetBrains Mono"), monospace;
   color: var(--theme-text-secondary, #A1A1AA);
   white-space: nowrap;
   user-select: none;
+}
+.topotijdreis-opacity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--theme-border, #E7E5E4);
+}
+.topotijdreis-opacity-label {
+  font: 500 0.65rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #A1A1AA);
+  flex-shrink: 0;
+}
+.topotijdreis-opacity input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+  appearance: none;
+  background: var(--theme-border, #E7E5E4);
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+}
+.topotijdreis-opacity input[type="range"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.topotijdreis-opacity input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--amber, #D97706);
+  border: 1.5px solid var(--theme-bg, white);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  cursor: pointer;
+}
+.topotijdreis-opacity input[type="range"]::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--amber, #D97706);
+  border: 1.5px solid var(--theme-bg, white);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  cursor: pointer;
+}
+.topotijdreis-opacity-val {
+  font: 500 0.65rem var(--font-code, "JetBrains Mono"), monospace;
+  color: var(--theme-text-secondary, #A1A1AA);
+  width: 30px;
+  text-align: right;
+  flex-shrink: 0;
 }
 
 /* ── Drag-and-drop overlay (file dropped from OS) ── */
@@ -1048,6 +1108,10 @@ body,
 }
 .gis-layer-list li {
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 0;
 }
 .gis-layer-row {
   display: flex;
@@ -1069,6 +1133,100 @@ body,
   accent-color: var(--amber, #D97706);
   cursor: inherit;
   flex-shrink: 0;
+}
+.gis-layer-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gis-layer-opacity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 27px; /* indent under the checkbox column */
+  margin-top: -2px;
+}
+.gis-layer-opacity input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+  appearance: none;
+  background: var(--theme-border, #E7E5E4);
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+}
+.gis-layer-opacity input[type="range"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.gis-layer-opacity input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--amber, #D97706);
+  border: 1.5px solid var(--theme-bg, white);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  cursor: pointer;
+}
+.gis-layer-opacity input[type="range"]::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--amber, #D97706);
+  border: 1.5px solid var(--theme-bg, white);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  cursor: pointer;
+}
+.gis-layer-opacity-val {
+  font: 500 0.65rem var(--font-code, "JetBrains Mono"), monospace;
+  color: var(--theme-text-secondary, #A1A1AA);
+  width: 30px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ── AHN colour-ramp legend (under the AHN row when enabled) ── */
+.gis-layer-legend {
+  margin: 4px 6px 8px 27px;
+  padding: 6px 8px;
+  background: var(--theme-bg-lighter, #F5F5F4);
+  border: 1px solid var(--theme-border, #E7E5E4);
+  border-radius: 4px;
+}
+.gis-legend-title {
+  font: 600 0.65rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #A1A1AA);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.gis-legend-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gis-legend-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.gis-legend-swatch {
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid rgba(0,0,0,0.15);
+  flex-shrink: 0;
+}
+.gis-legend-label {
+  font: 500 0.7rem var(--font-code, "JetBrains Mono"), monospace;
+  color: var(--theme-text, #36363E);
 }
 
 /* ── GisLayerPanel: BRO load summary footer ── */
@@ -1194,4 +1352,18 @@ body,
 }
 .chart-context-item:hover {
   background: var(--theme-hover, rgba(0, 0, 0, 0.05));
+}
+
+/* ── Soil-layer tooltip (follows the cursor inside the chart) ── */
+.chart-soil-tooltip {
+  z-index: 10000;
+  background: rgba(54, 54, 62, 0.92);
+  color: #FAFAF9;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font: 600 0.72rem 'Inter', system-ui, sans-serif;
+  letter-spacing: 0.01em;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+  user-select: none;
 }

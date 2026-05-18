@@ -155,6 +155,21 @@ function App() {
     return () => window.removeEventListener("ogs:open-project-settings", onOpen);
   }, []);
 
+  // ── Open-with handler ────────────────────────────────────────────
+  // Tauri emits `ogs:open-file` for every CLI-passed file path on
+  // launch (registered .gef / .ifcgis / .ifcgeo file associations).
+  // Route each path through the same loader the drag-drop + Backstage
+  // use, so behaviour is identical regardless of how the user opened it.
+  useEffect(() => {
+    let unsubFn: (() => void) | null = null;
+    void import("@tauri-apps/api/event").then(({ listen }) =>
+      listen<string>("ogs:open-file", (event) => {
+        void openPathByExtension(event.payload);
+      }).then((unsub) => { unsubFn = unsub; }),
+    );
+    return () => { unsubFn?.(); };
+  }, []);
+
   useEffect(() => {
     getSetting("theme", "light").then((saved) => {
       setTheme(saved);
@@ -228,10 +243,11 @@ function App() {
   // so the Robertson legend + LocationMiniMap stay accessible alongside it.
   // The IFC view also goes full-width — its two-pane layout fills the
   // viewport and doesn't need the Explorer / Properties sidebars.
-  // The Sonderingstekening view is also full-width — the paper + toolbox
-  // already take the whole canvas.
+  // Sonderingstekening now also wants the left-side GisLayerPanel so
+  // the user can toggle base + overlay layers without leaving the view.
+  // Only Rapport + IFC stay full-width because they don't deal with maps.
   const isFullWidthView =
-    activeView === "report" || activeView === "ifc" || activeView === "tekening";
+    activeView === "report" || activeView === "ifc";
 
   const renderMainContent = () => {
     switch (activeView) {
@@ -302,7 +318,9 @@ function App() {
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2.5A1.5 1.5 0 013.5 1h9A1.5 1.5 0 0114 2.5v11a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 13.5v-11zM3.5 2a.5.5 0 00-.5.5v11a.5.5 0 00.5.5H6V2H3.5zM7 2v12h5.5a.5.5 0 00.5-.5v-11a.5.5 0 00-.5-.5H7z" /></svg>
                   </button>
                 </div>
-                {activeView === "map" ? <GisLayerPanel /> : <LeftPanel />}
+                {activeView === "map" || activeView === "tekening"
+                  ? <GisLayerPanel />
+                  : <LeftPanel />}
                 <div className="left-panel-resize" onMouseDown={handleLeftResizeMouseDown} />
               </>
             ) : (
@@ -340,7 +358,12 @@ function App() {
         )}
       </div>
       <StatusBar />
-      <Backstage open={backstageOpen} onClose={() => setBackstageOpen(false)} onOpenSettings={() => setSettingsOpen(true)} onOpenFile={(path) => console.log("Open file:", path)} />
+      <Backstage
+        open={backstageOpen}
+        onClose={() => setBackstageOpen(false)}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenFile={(path) => { void openPathByExtension(path); }}
+      />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} theme={theme} onThemeChange={setTheme} />
       <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
       <ProjectSettingsDialog open={projectSettingsOpen} onClose={() => setProjectSettingsOpen(false)} />

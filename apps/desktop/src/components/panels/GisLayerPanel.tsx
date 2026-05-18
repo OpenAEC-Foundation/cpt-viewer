@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import TopotijdreisSlider from "./TopotijdreisSlider";
 
 /**
  * Identifier for a single toggleable map layer.
@@ -21,6 +22,10 @@ export type LayerId =
   | "luchtfoto-2018"
   | "luchtfoto-2017"
   | "luchtfoto-2016"
+  | "ahn"
+  | "kadaster"
+  | "bag"
+  | "bgt"
   | "bro-sonderingen"
   | "bro-boringen"
   | "project-sonderingen";
@@ -30,6 +35,9 @@ interface LayerDef {
   label: string;
   group: "base" | "overlay" | "data";
   defaultOn: boolean;
+  /** Optional legend renderer — shown directly under the layer row when
+   *  the layer is enabled. Only AHN currently provides one. */
+  hasLegend?: boolean;
 }
 
 const LAYER_DEFS: LayerDef[] = [
@@ -48,6 +56,17 @@ const LAYER_DEFS: LayerDef[] = [
   { id: "luchtfoto-2017", label: "Luchtfoto 2017", group: "base", defaultOn: false },
   { id: "luchtfoto-2016", label: "Luchtfoto 2016", group: "base", defaultOn: false },
 
+  // AHN — Actueel Hoogtebestand Nederland (DTM 0.5 m). Overlay-style
+  // hillshade ramp from blue (low) to red (high). Off by default — too
+  // visually loud to combine with the base layer without consent.
+  { id: "ahn", label: "AHN hoogtekaart", group: "overlay", defaultOn: false, hasLegend: true },
+  // PDOK BRO-adjacent overlays — cadastre boundaries, building outlines
+  // (BAG), and the fine-grained BGT topography. All transparent PNG
+  // overlays so they layer cleanly on top of BRT / luchtfoto.
+  { id: "kadaster", label: "Kadastrale grenzen", group: "overlay", defaultOn: false },
+  { id: "bag", label: "BAG (gebouwen)", group: "overlay", defaultOn: false },
+  { id: "bgt", label: "BGT topografie", group: "overlay", defaultOn: false },
+
   // BRO data layers — sonderingen on by default so the map shows public CPTs
   // immediately when the user opens the Kaart tab.
   { id: "bro-sonderingen", label: "BRO Sonderingen", group: "data", defaultOn: true },
@@ -57,6 +76,20 @@ const LAYER_DEFS: LayerDef[] = [
   { id: "project-sonderingen", label: "Project sonderingen", group: "data", defaultOn: true },
 ];
 
+/** AHN colour ramp stops (NAP metres). Mirrors the PDOK ramp closely
+ *  enough that the user can read the map without opening PDOK's own
+ *  legend image. */
+const AHN_LEGEND: { color: string; label: string }[] = [
+  { color: "#08306b", label: "< −5 m" },
+  { color: "#2171b5", label: "−5 — 0 m" },
+  { color: "#6baed6", label: "0 — 2 m" },
+  { color: "#74c476", label: "2 — 5 m" },
+  { color: "#fee391", label: "5 — 10 m" },
+  { color: "#fdae6b", label: "10 — 25 m" },
+  { color: "#e6550d", label: "25 — 50 m" },
+  { color: "#7f2704", label: "> 50 m" },
+];
+
 /**
  * Initial state — must be a *function* so the defaults are computed once,
  * not regenerated on every render.
@@ -64,6 +97,13 @@ const LAYER_DEFS: LayerDef[] = [
 function defaultState(): Record<LayerId, boolean> {
   const out = {} as Record<LayerId, boolean>;
   for (const d of LAYER_DEFS) out[d.id] = d.defaultOn;
+  return out;
+}
+
+/** Initial opacity state — every layer at 100% by default. */
+function defaultOpacityState(): Record<LayerId, number> {
+  const out = {} as Record<LayerId, number>;
+  for (const d of LAYER_DEFS) out[d.id] = 1;
   return out;
 }
 
@@ -84,6 +124,7 @@ function defaultState(): Record<LayerId, boolean> {
 export default function GisLayerPanel() {
   const { t } = useTranslation();
   const [enabled, setEnabled] = useState<Record<LayerId, boolean>>(defaultState);
+  const [opacity, setOpacity] = useState<Record<LayerId, number>>(defaultOpacityState);
   const [counts, setCounts] = useState<{ cpt: number; bore: number }>({ cpt: 0, bore: 0 });
 
   // Broadcast initial state on mount so MapView can sync up.
@@ -128,6 +169,18 @@ export default function GisLayerPanel() {
     });
   };
 
+  const changeOpacity = (id: LayerId, value: number) => {
+    setOpacity((prev) => {
+      const next = { ...prev, [id]: value };
+      window.dispatchEvent(
+        new CustomEvent("ogs:layer-opacity", {
+          detail: { id, opacity: value },
+        }),
+      );
+      return next;
+    });
+  };
+
   const refresh = () => {
     window.dispatchEvent(new CustomEvent("ogs:bro-load-area"));
   };
@@ -145,18 +198,57 @@ export default function GisLayerPanel() {
         </div>
         <div className="panel-section-body">
           <ul className="gis-layer-list">
-            {items.map((d) => (
-              <li key={d.id}>
-                <label className="gis-layer-row">
-                  <input
-                    type="checkbox"
-                    checked={enabled[d.id]}
-                    onChange={() => toggle(d.id)}
-                  />
-                  <span>{d.label}</span>
-                </label>
-              </li>
-            ))}
+            {items.map((d) => {
+              const op = opacity[d.id];
+              const pct = Math.round(op * 100);
+              return (
+                <li key={d.id}>
+                  <label className="gis-layer-row">
+                    <input
+                      type="checkbox"
+                      checked={enabled[d.id]}
+                      onChange={() => toggle(d.id)}
+                    />
+                    <span className="gis-layer-label">{d.label}</span>
+                  </label>
+                  <div
+                    className="gis-layer-opacity"
+                    title={`Transparantie: ${100 - pct}% — slider regelt zichtbaarheid`}
+                  >
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={pct}
+                      disabled={!enabled[d.id]}
+                      onChange={(e) =>
+                        changeOpacity(d.id, Number(e.currentTarget.value) / 100)
+                      }
+                      aria-label={`Transparantie ${d.label}`}
+                    />
+                    <span className="gis-layer-opacity-val">{pct}%</span>
+                  </div>
+                  {d.hasLegend && d.id === "ahn" && enabled[d.id] && (
+                    <div className="gis-layer-legend">
+                      <div className="gis-legend-title">Hoogte NAP</div>
+                      <ul className="gis-legend-list">
+                        {AHN_LEGEND.map((stop) => (
+                          <li key={stop.color}>
+                            <span
+                              className="gis-legend-swatch"
+                              style={{ background: stop.color }}
+                              aria-hidden="true"
+                            />
+                            <span className="gis-legend-label">{stop.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
           {footer}
         </div>
@@ -202,7 +294,19 @@ export default function GisLayerPanel() {
       </div>
 
       {renderGroup("base", t("baseLayers", "Onderlagen"))}
+      {renderGroup("overlay", t("overlayLayers", "Overlay"))}
       {renderGroup("data", t("dataLayers", "Data"), dataFooter)}
+
+      <div className="panel-section">
+        <div className="panel-section-header-row">
+          <div className="panel-section-header" style={{ cursor: "default" }}>
+            <span className="panel-section-title">{t("topotijdreis", "Topotijdreis")}</span>
+          </div>
+        </div>
+        <div className="panel-section-body">
+          <TopotijdreisSlider />
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,15 +1,18 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { Cpt, ProjectMeta } from "../types/cpt";
+import type { Bore } from "../types/bore";
+import { parseBhrgtXml, looksLikeBoringXml } from "../types/bore";
 
 // ─── Document model ──────────────────────────────────────────────
 //
 // Every tab in the DocumentBar is an "AppDocument" — either a single
-// standalone CPT (sondering) or a project (.ifcgis) which contains a
-// ProjectMeta + multiple CPTs. The active document determines what the
-// chart, panels, and right panel render.
+// standalone CPT (sondering), a single BHR-GT borehole (boring) or a
+// project (.ifcgis) which contains a ProjectMeta + multiple CPTs. The
+// active document determines what the chart, panels, and right panel
+// render.
 
-export type DocumentKind = "cpt" | "project";
+export type DocumentKind = "cpt" | "bore" | "project";
 
 export interface CptDocument {
   kind: "cpt";
@@ -17,6 +20,14 @@ export interface CptDocument {
   title: string;         // shown in tab — typically filename
   path?: string;
   cpt: Cpt;
+}
+
+export interface BoreDocument {
+  kind: "bore";
+  id: string;
+  title: string;
+  path?: string;
+  bore: Bore;
 }
 
 export interface ProjectDocument {
@@ -29,7 +40,7 @@ export interface ProjectDocument {
   activeCptId: string | null;
 }
 
-export type AppDocument = CptDocument | ProjectDocument;
+export type AppDocument = CptDocument | BoreDocument | ProjectDocument;
 
 interface HoveredPoint {
   depth: number;
@@ -62,6 +73,15 @@ interface DocStore {
   activeCptId: string | null;
   projectMeta: ProjectMeta;
   hoveredPoint: HoveredPoint | null;
+
+  /**
+   * Last-known map viewport (lat / lon / zoom) — updated by MapView on
+   * every `moveend` so that other map-based views (notably the
+   * Sonderingstekening paper view) can default to the same location
+   * instead of recentring on the geographic middle of NL.
+   * `null` until the user has actually moved the Kaart at least once.
+   */
+  lastMapView: { lat: number; lon: number; zoom: number } | null;
 
   /** Per-CPT visibility flag — present means hidden from the chart and map.
    *  Cleaned up automatically by `closeCpt` so stale ids don't accumulate. */
@@ -108,6 +128,7 @@ interface DocStore {
   // ── Project meta / hover ─────────────────────────────
   setProjectMeta: (m: Partial<ProjectMeta>) => void;
   setHover: (p: HoveredPoint | null) => void;
+  setLastMapView: (v: { lat: number; lon: number; zoom: number }) => void;
 }
 
 // ── Helpers ───────────────────────────────────────────
@@ -126,6 +147,17 @@ function deriveFromActive(documents: AppDocument[], activeDocId: string | null) 
       cpts: new Map<string, Cpt>([[active.cpt.id, active.cpt]]),
       activeCptId: active.cpt.id,
       projectMeta: { ...DEFAULT_PROJECT_META },
+    };
+  }
+  if (active.kind === "bore") {
+    // Boring documents have no CPT data — clear the chart-related
+    // derived state so the chart doesn't keep rendering the prior CPT.
+    // Title becomes the boring id so any header that reads projectMeta
+    // gets a sensible label.
+    return {
+      cpts: new Map<string, Cpt>(),
+      activeCptId: null as string | null,
+      projectMeta: { ...DEFAULT_PROJECT_META, title: active.bore.id || active.title },
     };
   }
   // project
@@ -150,6 +182,7 @@ export const useCptStore = create<DocStore>((set, get) => ({
   activeCptId: null,
   projectMeta: { ...DEFAULT_PROJECT_META },
   hoveredPoint: null,
+  lastMapView: null,
   hiddenCptIds: new Set(),
   pdfCache: new Map(),
   ifcCache: new Map(),
@@ -199,9 +232,14 @@ export const useCptStore = create<DocStore>((set, get) => ({
     // this doc. Stale entries on the Rust side are harmless if this fails.
     const target = get().documents.find((d) => d.id === id);
     if (target) {
-      const ids = target.kind === "cpt"
-        ? [target.cpt.id]
-        : Array.from(target.cpts.keys());
+      // Collect CPT ids to free on the Rust side. Borings don't allocate
+      // a Rust-side CPT entry, so skip them.
+      const ids =
+        target.kind === "cpt"
+          ? [target.cpt.id]
+          : target.kind === "project"
+            ? Array.from(target.cpts.keys())
+            : [];
       for (const cid of ids) {
         try { await invoke("close_cpt", { id: cid }); } catch { /* no-op */ }
       }
@@ -263,6 +301,9 @@ export const useCptStore = create<DocStore>((set, get) => ({
         return { documents, activeDocId, hiddenCptIds, pdfCache, ifcCache, ...derived };
       }
 
+      // Boring doc — close-CPT is a no-op (borings don't own CPTs).
+      if (active.kind === "bore") return { hiddenCptIds };
+
       // Project doc — drop the CPT from its map.
       const next = new Map(active.cpts);
       next.delete(id);
@@ -305,10 +346,14 @@ export const useCptStore = create<DocStore>((set, get) => ({
     const active = state.documents.find((d) => d.id === state.activeDocId);
     if (!active) return;
 
-    // Collect CPT ids owned by this doc and try to free them on the Rust side.
-    const cptIds = active.kind === "cpt"
-      ? [active.cpt.id]
-      : Array.from(active.cpts.keys());
+    // Collect CPT ids owned by this doc and try to free them on the Rust
+    // side. Bores hold no Rust-side CPT entries so they contribute none.
+    const cptIds =
+      active.kind === "cpt"
+        ? [active.cpt.id]
+        : active.kind === "project"
+          ? Array.from(active.cpts.keys())
+          : [];
     for (const cid of cptIds) {
       try { await invoke("close_cpt", { id: cid }); } catch { /* no-op */ }
     }
@@ -357,6 +402,7 @@ export const useCptStore = create<DocStore>((set, get) => ({
   },
 
   setHover(p) { set({ hoveredPoint: p }); },
+  setLastMapView(v) { set({ lastMapView: v }); },
 }));
 
 // ─── Pre-rendered PDF cache ──────────────────────────────────────
@@ -370,7 +416,63 @@ export const useCptStore = create<DocStore>((set, get) => ({
 // the time the user clicks the Rapport tab. Also invoked again whenever
 // project meta or the CPT list changes for an open document.
 
+/**
+ * Debounce window per doc — multiple `schedulePdfPreview(doc)` calls for
+ * the same doc within this window are coalesced into a single run.
+ * Opening 4 sondering files at once → 4 debounce timers → after the
+ * window each fires once (still queued globally below). Stops the rapid
+ * "open → metaChange → open" loop from spamming the Rust side.
+ */
+const PDF_DEBOUNCE_MS = 400;
+const pdfDebounceTimers: Map<string, number> = new Map();
+
+/**
+ * Global serial queue — only one PDF preview is generated at a time, so
+ * opening N CPTs spreads the CPU work over time instead of saturating
+ * the runtime. New requests for the same docId replace older queued
+ * ones (latest-wins). The actual render still runs on Rust's blocking
+ * thread pool (see `preview_report`); this just throttles dispatch.
+ */
+interface PdfQueueEntry {
+  docId: string;
+  cptIds: string[];
+  meta: ProjectMeta;
+}
+const pdfQueue: PdfQueueEntry[] = [];
+let pdfQueueRunning = false;
+
+async function runPdfQueue(): Promise<void> {
+  if (pdfQueueRunning) return;
+  pdfQueueRunning = true;
+  try {
+    while (pdfQueue.length > 0) {
+      // Take the *last* entry (newest wins) and drop everything else for
+      // the same docId — only the most recent state needs to render.
+      const entry = pdfQueue.pop()!;
+      for (let i = pdfQueue.length - 1; i >= 0; i--) {
+        if (pdfQueue[i].docId === entry.docId) pdfQueue.splice(i, 1);
+      }
+      try {
+        const bytes = await invoke<number[]>("preview_report", {
+          cptIds: entry.cptIds,
+          project: entry.meta,
+        });
+        const state = useCptStore.getState();
+        if (!state.documents.some((d) => d.id === entry.docId)) continue;
+        state.setPdfCache(entry.docId, new Uint8Array(bytes));
+      } catch {
+        // Swallow — Rapport tab will retry via the live path.
+      }
+    }
+  } finally {
+    pdfQueueRunning = false;
+  }
+}
+
 export function schedulePdfPreview(doc: AppDocument): void {
+  // Boring documents don't generate a CPT-style chart report yet —
+  // skip silently so the rest of the doc-open pipeline doesn't fail.
+  if (doc.kind === "bore") return;
   const cptIds = doc.kind === "cpt"
     ? [doc.cpt.id]
     : Array.from(doc.cpts.keys());
@@ -379,22 +481,21 @@ export function schedulePdfPreview(doc: AppDocument): void {
   const meta = doc.kind === "project" ? doc.meta : { ...DEFAULT_PROJECT_META };
   const docId = doc.id;
 
-  // Run async; never block the caller.
-  void (async () => {
-    try {
-      const bytes = await invoke<number[]>("preview_report", {
-        cptIds,
-        project: meta,
-      });
-      const u8 = new Uint8Array(bytes);
-      // Only commit if the doc is still around (doc may have been closed).
-      const state = useCptStore.getState();
-      if (!state.documents.some((d) => d.id === docId)) return;
-      state.setPdfCache(docId, u8);
-    } catch {
-      // Swallow — Rapport tab will retry via the live path.
+  // Coalesce rapid re-schedules per docId. Each call wins; the timer is
+  // reset on every invocation so the queue entry only lands after the
+  // user pauses for `PDF_DEBOUNCE_MS`.
+  const existing = pdfDebounceTimers.get(docId);
+  if (existing) window.clearTimeout(existing);
+  const timer = window.setTimeout(() => {
+    pdfDebounceTimers.delete(docId);
+    // Replace any older queued entry for this docId with the freshest snapshot.
+    for (let i = pdfQueue.length - 1; i >= 0; i--) {
+      if (pdfQueue[i].docId === docId) pdfQueue.splice(i, 1);
     }
-  })();
+    pdfQueue.push({ docId, cptIds, meta });
+    void runPdfQueue();
+  }, PDF_DEBOUNCE_MS);
+  pdfDebounceTimers.set(docId, timer);
 }
 
 // ─── Auto-generated IFC cache ────────────────────────────────────
@@ -418,6 +519,9 @@ interface GeneratedIfcResult {
 }
 
 export function scheduleIfcGenerate(doc: AppDocument): void {
+  // Boring documents don't (yet) get an auto-generated IFC export —
+  // skip to avoid an empty/erroneous IFCX in the cache.
+  if (doc.kind === "bore") return;
   const cptIds = doc.kind === "cpt"
     ? [doc.cpt.id]
     : Array.from(doc.cpts.keys());
@@ -499,6 +603,34 @@ export async function loadCptFromContent(
     scheduleIfcGenerate(createdDoc);
   }
   return cpt;
+}
+
+/**
+ * Parses a BHR-GT (borehole) XML in TypeScript and opens it as a brand-
+ * new BoreDocument tab. Used by the BRO popup's "Open in viewer" action
+ * when the marker is a boring. Always creates a fresh tab — borings can
+ * also be added to a project via a future `addBoreToActiveProject` helper.
+ */
+export async function loadBoreFromContent(
+  xml: string,
+  filename: string,
+  path?: string,
+): Promise<Bore> {
+  const bore = parseBhrgtXml(xml, filename);
+  useCptStore.setState((s) => {
+    const doc: BoreDocument = {
+      kind: "bore",
+      id: makeId(),
+      title: bore.id || filename,
+      path,
+      bore,
+    };
+    const documents = [...s.documents, doc];
+    const activeDocId = doc.id;
+    const derived = deriveFromActive(documents, activeDocId);
+    return { documents, activeDocId, ...derived };
+  });
+  return bore;
 }
 
 /**
@@ -633,9 +765,13 @@ export function newProjectDocument(): void {
 }
 
 /**
- * Routes a file path to either `loadCptFromContent` (GEF / XML) or
- * `openProjectIfcgis` (.ifcgis) based on the extension. Returns true
- * when the file was handled, false otherwise.
+ * Routes a file path to the right loader based on extension + content:
+ *   .ifcgis            → openProjectIfcgis (Project tab)
+ *   .gef / .ifcgeo     → loadCptFromContent (CPT tab)
+ *   .xml               → sniff for `<BHR_*_O>` root → loadBoreFromContent
+ *                        (Bore tab), otherwise loadCptFromContent.
+ *
+ * Returns true when the file was handled, false otherwise.
  */
 export async function openPathByExtension(path: string): Promise<boolean> {
   const lower = path.toLowerCase();
@@ -647,7 +783,12 @@ export async function openPathByExtension(path: string): Promise<boolean> {
     const { readTextFile } = await import("@tauri-apps/plugin-fs");
     const content = await readTextFile(path);
     const filename = path.split(/[\\/]/).pop() ?? path;
-    await loadCptFromContent(content, filename, path);
+    // XML: sniff first 4 KB to distinguish BHR borings from CPTs/GEFs.
+    if (lower.endsWith(".xml") && looksLikeBoringXml(content.slice(0, 4096))) {
+      await loadBoreFromContent(content, filename, path);
+    } else {
+      await loadCptFromContent(content, filename, path);
+    }
     return true;
   }
   return false;

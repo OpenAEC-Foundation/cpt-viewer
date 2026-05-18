@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as L from "leaflet";
+import { fetchBagPanden, fetchKadasterPercelen } from "../../utils/pdokWfs";
 import "leaflet/dist/leaflet.css";
 import { invoke } from "@tauri-apps/api/core";
 import proj4 from "proj4";
 import {
   useCptStore,
   loadCptFromContent,
+  loadBoreFromContent,
   mergeIntoNewProject,
   addBroToActiveProject,
 } from "../../store/useCptStore";
-import TopotijdreisSlider from "./TopotijdreisSlider";
+// Topotijdreis slider lives in the GisLayerPanel (left side, with the
+// other map layer controls) — not in this view's bottom bar.
 
 /**
  * RD New (Amersfoort / EPSG:28992) definition for proj4. PDOK
@@ -236,6 +239,13 @@ export default function MapView() {
   // layer instance per active year because each service is a separate
   // ArcGIS endpoint. Disposed + recreated when the slider year changes.
   const topotijdreisLayerRef = useRef<L.GridLayer | null>(null);
+  // PDOK WFS-driven overlays — BAG (grey + red outline polygons) and
+  // Kadaster (dashed center-line per perceelgrens). Both are populated
+  // on moveend when their toggle is enabled.
+  const bagLayerRef = useRef<L.LayerGroup | null>(null);
+  const kadasterLayerRef = useRef<L.LayerGroup | null>(null);
+  const bagAbortRef = useRef<AbortController | null>(null);
+  const kadasterAbortRef = useRef<AbortController | null>(null);
   /** Snapshot of which base layers were attached just before the user
    *  enabled the topotijdreis overlay. Used to restore them when the
    *  user turns the slider back off. */
@@ -247,6 +257,19 @@ export default function MapView() {
     brt: true,
     "project-sonderingen": true,
   });
+
+  /** Per-layer opacity (0..1). Defaults to 1.0 for any unknown id. Used
+   *  by `onLayerOpacity` to apply transparency to tile/marker layers
+   *  and to remember the value when new markers get added later
+   *  (e.g. after a BRO archive reload). */
+  const layerOpacityRef = useRef<Record<string, number>>({});
+
+  /** When a topotijdreis layer is active it replaces the base layers, so
+   *  user-driven opacity slider for a base layer should also affect the
+   *  topotijdreis overlay. This ref holds the id of the base layer whose
+   *  opacity should mirror to the topotijdreis layer (the "actueel" base
+   *  acts as proxy by default). */
+  const topoOpacityProxyRef = useRef<string>("luchtfoto-actueel");
 
   // Measurement-mode state — held in a ref so the click handler always
   // sees the latest value without re-binding.
@@ -316,6 +339,28 @@ export default function MapView() {
         { attribution: "Luchtfoto © PDOK", maxZoom: 19 },
       );
     }
+    // ── AHN (Actueel Hoogtebestand Nederland) — coloured DTM elevation
+    // raster from PDOK. The `dtm_05m` service ships as a paletted PNG
+    // overlay where colour ramps from blue (low) → green → yellow → red
+    // (high). It sits on top of the base layer at user-controlled
+    // opacity so the user can read the underlying topography too.
+    baseLayers["ahn"] = L.tileLayer(
+      "https://service.pdok.nl/rws/ahn/wmts/v1_0/dtm_05m/EPSG:3857/{z}/{x}/{y}.png",
+      { attribution: "AHN © Rijkswaterstaat | PDOK", maxZoom: 19, opacity: 0.7 },
+    );
+    // ── Kadastrale kaart + BAG are now served via PDOK WFS instead of
+    // WMTS so we can style the features ourselves (BAG = solid grey with
+    // red outline; Kadaster = dashed center-line per perceelgrens). The
+    // actual fetch + render happens in the `ogs:layer-toggle` handler
+    // below — the LayerGroup placeholders are created up front so the
+    // toggle logic can simply attach/detach them.
+    // ── BGT (Basisregistratie Grootschalige Topografie) — fine-grained
+    // topography: pavement, terrain, water lines, vegetation polygons.
+    // The "standaardvisualisatie" layer is the human-readable variant.
+    baseLayers["bgt"] = L.tileLayer(
+      "https://service.pdok.nl/lv/bgt/wmts/v1_0/standaardvisualisatie/EPSG:3857/{z}/{x}/{y}.png",
+      { attribution: "BGT © Geonovum / Kadaster | PDOK", maxZoom: 20, opacity: 0.85 },
+    );
     baseLayersRef.current = baseLayers;
     // Default: BRT on.
     baseLayers["brt"].addTo(map);
@@ -326,13 +371,19 @@ export default function MapView() {
     distLayerRef.current = L.layerGroup().addTo(map);   // pairwise distance lines
     cptLayerRef.current = L.layerGroup().addTo(map);    // project sondering markers
     measureLayerRef.current = L.layerGroup().addTo(map); // measure lines
+    // WFS-backed overlays — created here but only populated when their
+    // toggle is enabled (see onLayerToggle below). They start NOT
+    // attached so the early viewport doesn't trigger a useless fetch.
+    bagLayerRef.current = L.layerGroup();
+    kadasterLayerRef.current = L.layerGroup();
 
     mapRef.current = map;
 
     // ── BRO load helpers ─────────────────────────────────────
     /**
-     * Render one CPT-archive marker. Lightweight grey down-triangle so it
-     * reads as "background data" against the louder amber project markers.
+     * Render one CPT-archive marker. Light-red down-triangle so the BRO
+     * sonderingen stand out clearly against both the BRT topo background
+     * and the amber project markers — easier to find at low zoom levels.
      * Click → fetch the full GEF/XML and load it as a project tab.
      */
     const renderCptMarker = (f: BroFeature): L.Marker => {
@@ -340,8 +391,8 @@ export default function MapView() {
         <div class="bro-sondering-marker">
           <svg width="14" height="14" viewBox="0 0 14 14" overflow="visible">
             <polygon points="1,1 13,1 7,13"
-                     fill="#A1A1AA" stroke="#52525B"
-                     stroke-width="1" stroke-linejoin="round" />
+                     fill="#FCA5A5" stroke="#B91C1C"
+                     stroke-width="1.1" stroke-linejoin="round" />
           </svg>
         </div>
       `;
@@ -388,8 +439,78 @@ export default function MapView() {
         fillColor: "#D4D4D8",
         fillOpacity: 0.85,
       });
-      m.bindPopup(buildPopupHtml(f, /* loadable = */ false, "openOnly"), { minWidth: 240 });
+      // Bores are now loadable — clicking "Open in viewer" fetches the
+      // BHRGT XML and opens a BoreDocument tab. The popup link uses the
+      // dedicated `bro-popup-open-bore` class so the click delegate can
+      // route to fetch_bro_bore instead of fetch_bro_cpt.
+      m.bindPopup(buildPopupHtml(f, /* loadable = */ true, "openOnly"), { minWidth: 240 });
       return m;
+    };
+
+    // ── PDOK WFS reloads (BAG / Kadaster) ───────────────────────
+    // Refetched on every moveend when their toggle is on. Bounded by
+    // the current viewport bbox and capped at a few thousand features.
+    const reloadBag = async () => {
+      const layer = bagLayerRef.current;
+      if (!layer) return;
+      bagAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      bagAbortRef.current = ctrl;
+      const b = map.getBounds();
+      const fc = await fetchBagPanden(
+        {
+          south: b.getSouth(),
+          west: b.getWest(),
+          north: b.getNorth(),
+          east: b.getEast(),
+        },
+        ctrl.signal,
+      );
+      if (ctrl.signal.aborted || !fc) return;
+      layer.clearLayers();
+      // Solid grey (192,192,192) fill, red outline — matches the
+      // user-requested rendering convention.
+      L.geoJSON(fc, {
+        style: () => ({
+          color: "#DC2626",       // outline = red-600
+          weight: 1.1,
+          fillColor: "rgb(192,192,192)",
+          fillOpacity: 0.85,
+          opacity: 0.95,
+        }),
+      }).addTo(layer);
+    };
+
+    const reloadKadaster = async () => {
+      const layer = kadasterLayerRef.current;
+      if (!layer) return;
+      kadasterAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      kadasterAbortRef.current = ctrl;
+      const b = map.getBounds();
+      const fc = await fetchKadasterPercelen(
+        {
+          south: b.getSouth(),
+          west: b.getWest(),
+          north: b.getNorth(),
+          east: b.getEast(),
+        },
+        ctrl.signal,
+      );
+      if (ctrl.signal.aborted || !fc) return;
+      layer.clearLayers();
+      // Center-line type: dashed grey-blue stroke with no fill so the
+      // user can see the perceelgrenzen on top of BRT/luchtfoto without
+      // hiding the underlying basemap.
+      L.geoJSON(fc, {
+        style: () => ({
+          color: "#475569",       // slate-600
+          weight: 1.0,
+          dashArray: "6 3 1 3",   // center-line pattern (long-short-dot-short)
+          fillOpacity: 0,
+          opacity: 0.85,
+        }),
+      }).addTo(layer);
     };
 
     /**
@@ -438,7 +559,12 @@ export default function MapView() {
             .then((features) => {
               if (myAbort.signal.aborted) return;
               broLayerRef.current?.clearLayers();
-              features.forEach((f) => broLayerRef.current?.addLayer(renderCptMarker(f)));
+              const op = layerOpacityRef.current["bro-sonderingen"] ?? 1;
+              features.forEach((f) => {
+                const m = renderCptMarker(f);
+                m.setOpacity(op);
+                broLayerRef.current?.addLayer(m);
+              });
               cptCount = features.length;
             })
             .catch((e) => {
@@ -455,7 +581,12 @@ export default function MapView() {
             .then((features) => {
               if (myAbort.signal.aborted) return;
               broBoresLayerRef.current?.clearLayers();
-              features.forEach((f) => broBoresLayerRef.current?.addLayer(renderBoreMarker(f)));
+              const op = layerOpacityRef.current["bro-boringen"] ?? 1;
+              features.forEach((f) => {
+                const m = renderBoreMarker(f);
+                m.setStyle({ opacity: op, fillOpacity: 0.85 * op });
+                broBoresLayerRef.current?.addLayer(m);
+              });
               boreCount = features.length;
             })
             .catch((e) => {
@@ -493,17 +624,43 @@ export default function MapView() {
     // least one BRO layer is enabled — saves a request per pan otherwise.
     let panTimer: number | null = null;
     const onMoveEnd = () => {
+      // Publish the new viewport so the Sonderingstekening view (and
+      // any other map-based panel) can default to the same location.
+      const c = map.getCenter();
+      useCptStore.getState().setLastMapView({
+        lat: c.lat,
+        lon: c.lng,
+        zoom: map.getZoom(),
+      });
       if (panTimer) window.clearTimeout(panTimer);
       panTimer = window.setTimeout(() => {
         const sondOn = enabledLayersRef.current["bro-sonderingen"];
         const boresOn = enabledLayersRef.current["bro-boringen"];
-        if (!sondOn && !boresOn) return;
-        // Don't auto-fetch when zoomed too far out — bbox would be huge.
-        if (map.getZoom() < MIN_BRO_AUTOFETCH_ZOOM) return;
-        void loadVisibleArea();
+        if ((sondOn || boresOn) && map.getZoom() >= MIN_BRO_AUTOFETCH_ZOOM) {
+          void loadVisibleArea();
+        }
+        // WFS overlays piggy-back on moveend so they stay in sync with
+        // the visible bbox. Same zoom guard so a fully-zoomed-out view
+        // doesn't demand a wall of features.
+        if (enabledLayersRef.current["bag"] && map.getZoom() >= MIN_BRO_AUTOFETCH_ZOOM) {
+          void reloadBag();
+        }
+        if (enabledLayersRef.current["kadaster"] && map.getZoom() >= MIN_BRO_AUTOFETCH_ZOOM) {
+          void reloadKadaster();
+        }
       }, BRO_REFETCH_DEBOUNCE_MS);
     };
     map.on("moveend", onMoveEnd);
+    // Seed the store with the initial centre so a tab-switch to
+    // Sonderingstekening before the user pans still inherits a sane location.
+    {
+      const c = map.getCenter();
+      useCptStore.getState().setLastMapView({
+        lat: c.lat,
+        lon: c.lng,
+        zoom: map.getZoom(),
+      });
+    }
 
     /**
      * Click delegate for the action anchors inside our BRO popups —
@@ -524,25 +681,34 @@ export default function MapView() {
       const id = a.getAttribute("data-id");
       if (!id) return;
       try {
+        // For boreholes (kind="bore") we fetch BHR-GT XML + open it as a
+        // BoreDocument. All other actions (merge / addToProject) only
+        // apply to CPTs — those buttons aren't rendered on bore popups.
+        const kind = a.getAttribute("data-kind") ?? "cpt";
         if (add) {
-          // Active document is a project — fetch the BRO XML and append
-          // it to the active project. The store helper handles the
-          // fetch + open_cpt invoke + project mutation atomically.
           await addBroToActiveProject(id);
         } else if (merge) {
           const xml = await invoke<string>("fetch_bro_cpt", { broId: id });
           const existing = activeCptIdRef.current;
           if (!existing) {
-            // No active CPT — fall back to a normal open in a new tab.
             await loadCptFromContent(xml, `${id}.xml`);
           } else {
             await mergeIntoNewProject(existing, xml, `${id}.xml`);
           }
+        } else if (kind === "bore") {
+          const xml = await invoke<string>("fetch_bro_bore", { broId: id });
+          await loadBoreFromContent(xml, `${id}.xml`);
         } else {
           const xml = await invoke<string>("fetch_bro_cpt", { broId: id });
           await loadCptFromContent(xml, `${id}.xml`);
         }
         map.closePopup();
+        // Jump the ribbon back to Home so the user immediately sees the
+        // freshly-opened sondering or boring instead of being stranded on
+        // the Kaart tab. The Ribbon component listens for this event.
+        window.dispatchEvent(
+          new CustomEvent("ogs:ribbon-switch", { detail: { tab: "start" } }),
+        );
       } catch (err) {
         console.error("BRO popup action failed", err);
       }
@@ -565,6 +731,32 @@ export default function MapView() {
           if (!map.hasLayer(base)) base.addTo(map);
         } else {
           if (map.hasLayer(base)) map.removeLayer(base);
+        }
+        return;
+      }
+
+      // WFS-backed overlays — attach the empty LayerGroup, then trigger
+      // a one-shot fetch so the user sees features immediately. On
+      // disable: detach + abort any in-flight request.
+      if (id === "bag" && bagLayerRef.current) {
+        if (enabled) {
+          if (!map.hasLayer(bagLayerRef.current)) bagLayerRef.current.addTo(map);
+          if (!wasEnabled) void reloadBag();
+        } else {
+          bagAbortRef.current?.abort();
+          if (map.hasLayer(bagLayerRef.current)) map.removeLayer(bagLayerRef.current);
+          bagLayerRef.current.clearLayers();
+        }
+        return;
+      }
+      if (id === "kadaster" && kadasterLayerRef.current) {
+        if (enabled) {
+          if (!map.hasLayer(kadasterLayerRef.current)) kadasterLayerRef.current.addTo(map);
+          if (!wasEnabled) void reloadKadaster();
+        } else {
+          kadasterAbortRef.current?.abort();
+          if (map.hasLayer(kadasterLayerRef.current)) map.removeLayer(kadasterLayerRef.current);
+          kadasterLayerRef.current.clearLayers();
         }
         return;
       }
@@ -625,6 +817,9 @@ export default function MapView() {
           }
         }
         const layer = createTopotijdreisLayer(serviceId);
+        // Apply any previously-set topotijdreis opacity.
+        const op = layerOpacityRef.current["topotijdreis"];
+        if (typeof op === "number") layer.setOpacity(op);
         layer.addTo(map);
         topotijdreisLayerRef.current = layer;
       } else {
@@ -732,9 +927,59 @@ export default function MapView() {
       }
     };
 
+    /**
+     * Apply an opacity value (0..1) to a layer by id. Tile layers use
+     * `setOpacity`. Marker layer groups iterate their children — markers
+     * implement `setOpacity`, which sets the wrapping <img>/divIcon's
+     * CSS opacity. We also remember the value so future markers added to
+     * the same group (e.g. after a BRO reload) inherit the same opacity.
+     */
+    const onLayerOpacity = (e: Event) => {
+      const ce = e as CustomEvent<{ id: string; opacity: number }>;
+      const { id, opacity } = ce.detail;
+      const clamped = Math.max(0, Math.min(1, opacity));
+      layerOpacityRef.current[id] = clamped;
+
+      const base = baseLayersRef.current[id];
+      if (base) {
+        base.setOpacity(clamped);
+        // Same opacity applies to the topotijdreis layer if it's currently
+        // standing in for a base layer.
+        if (topotijdreisLayerRef.current && id === topoOpacityProxyRef.current) {
+          topotijdreisLayerRef.current.setOpacity(clamped);
+        }
+        return;
+      }
+
+      // Topotijdreis explicitly has its own opacity entry.
+      if (id === "topotijdreis" && topotijdreisLayerRef.current) {
+        topotijdreisLayerRef.current.setOpacity(clamped);
+        return;
+      }
+
+      const group: L.LayerGroup | null =
+        id === "bro-sonderingen" ? broLayerRef.current :
+        id === "bro-boringen" ? broBoresLayerRef.current :
+        id === "project-sonderingen" ? cptLayerRef.current :
+        null;
+      if (!group) return;
+      group.eachLayer((lyr) => {
+        const m = lyr as L.Marker & { setOpacity?: (o: number) => void };
+        if (typeof m.setOpacity === "function") m.setOpacity(clamped);
+      });
+      // Distance lines piggy-back on project layer opacity.
+      if (id === "project-sonderingen" && distLayerRef.current) {
+        distLayerRef.current.eachLayer((lyr) => {
+          const path = lyr as L.Path & { setStyle?: (s: L.PathOptions) => void };
+          if (typeof path.setStyle === "function") path.setStyle({ opacity: clamped });
+        });
+      }
+    };
+
     window.addEventListener("ogs:bro-load-area", onLoad);
     window.addEventListener("ogs:bro-clear", onClear);
     window.addEventListener("ogs:layer-toggle", onLayerToggle as EventListener);
+    window.addEventListener("ogs:layer-opacity", onLayerOpacity as EventListener);
     window.addEventListener("ogs:measure-toggle", onMeasureToggle);
     window.addEventListener("ogs:topotijdreis-year", onTopoYear as EventListener);
     window.addEventListener("keydown", onKey);
@@ -742,6 +987,7 @@ export default function MapView() {
       window.removeEventListener("ogs:bro-load-area", onLoad);
       window.removeEventListener("ogs:bro-clear", onClear);
       window.removeEventListener("ogs:layer-toggle", onLayerToggle as EventListener);
+      window.removeEventListener("ogs:layer-opacity", onLayerOpacity as EventListener);
       window.removeEventListener("ogs:measure-toggle", onMeasureToggle);
       window.removeEventListener("ogs:topotijdreis-year", onTopoYear as EventListener);
       window.removeEventListener("keydown", onKey);
@@ -776,8 +1022,12 @@ export default function MapView() {
     // triangle (point on the ground) with the CPT id as a label next to it.
     positioned.forEach(({ cpt, lat, lon }) => {
       const isActive = cpt.id === activeCptId;
-      const fill = isActive ? "#F59E0B" : "#D97706";
-      const stroke = isActive ? "#36363E" : "#36363E";
+      // Project sonderingen are green (so they read as "ours" against
+      // the light-red BRO sonderingen on the same map). Active = brighter
+      // green-500, inactive = green-700, dark green-900 stroke for
+      // contrast on both light and dark base layers.
+      const fill = isActive ? "#22C55E" : "#15803D";
+      const stroke = "#14532D";
       // Sondeer-symbool (Dutch convention): triangle with apex pointing DOWN
       // into the ground at the actual location. Base at top, apex at (11, 20).
       const html = `
@@ -797,6 +1047,7 @@ export default function MapView() {
           iconSize: [22, 22],
           iconAnchor: [11, 20],            // anchor at the apex (now at the bottom)
         }),
+        opacity: layerOpacityRef.current["project-sonderingen"] ?? 1,
       }).bindPopup(`<strong>${cpt.id}</strong><br>${cpt.metadata.project_name ?? ""}<br>RD ${cpt.position!.x_rd.toFixed(1)}, ${cpt.position!.y_rd.toFixed(1)}<br>diepte tot ${cpt.points.reduce((m, p) => Math.max(m, p.depth), 0).toFixed(1)} m`);
 
       // Measurement-mode click handler — delegates to the shared
@@ -889,7 +1140,6 @@ export default function MapView() {
         )}
         {status}
       </div>
-      <TopotijdreisSlider />
     </div>
   );
 }
@@ -930,8 +1180,9 @@ function buildPopupHtml(f: BroFeature, loadable: boolean, action: PopupAction): 
     )
     .join("");
   const id = escapeHtml(f.id);
+  const kindAttr = escapeHtml(f.kind);
   const openAction = loadable
-    ? `<a href="#" class="bro-popup-open" data-id="${id}">Open in viewer &rarr;</a>`
+    ? `<a href="#" class="bro-popup-open" data-id="${id}" data-kind="${kindAttr}">Open in viewer &rarr;</a>`
     : "";
   const secondaryAction =
     !loadable

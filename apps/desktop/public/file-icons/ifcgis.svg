@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Open Geotechniek Studio project bestand">
+  <!--
+    File-association icon for .ifcgis project files. Same document
+    motif as the GEF icon but with a project / multi-sondering chart
+    (three small qc curves side-by-side) to telegraph "this is a
+    project file containing multiple sonderingen".
+  -->
+
+  <!-- Page background -->
+  <rect x="80" y="80" width="864" height="864" fill="#FAFAF9" stroke="#36363E" stroke-width="24" rx="40" />
+
+  <!-- Folded amber corner -->
+  <path d="M 720 80 L 944 304 L 720 304 Z" fill="#D97706" />
+  <path d="M 720 80 L 720 304 L 944 304" fill="none" stroke="#36363E" stroke-width="24" stroke-linejoin="round" />
+
+  <!-- "IFCGIS" label -->
+  <text x="180" y="360" font-family="'Space Grotesk', 'Inter', sans-serif"
+        font-weight="800" font-size="160" fill="#36363E" letter-spacing="-6">IFCGIS</text>
+  <text x="180" y="430" font-family="'Inter', sans-serif" font-weight="500"
+        font-size="58" fill="#71717A" letter-spacing="2">PROJECT</text>
+
+  <!-- Three side-by-side mini chart panels — connoting "multiple CPTs" -->
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <!-- Panel 1 -->
+    <rect x="200" y="540" width="180" height="340" fill="none" stroke="#36363E" stroke-width="6" />
+    <polyline points="220,570 260,610 310,650 280,700 350,740 290,780 360,820 300,860"
+              fill="none" stroke="#D97706" stroke-width="14" />
+    <!-- Panel 2 -->
+    <rect x="420" y="540" width="180" height="340" fill="none" stroke="#36363E" stroke-width="6" />
+    <polyline points="440,570 480,620 520,660 470,700 540,740 490,790 570,820 500,860"
+              fill="none" stroke="#D97706" stroke-width="14" />
+    <!-- Panel 3 -->
+    <rect x="640" y="540" width="180" height="340" fill="none" stroke="#36363E" stroke-width="6" />
+    <polyline points="660,570 700,610 750,650 700,700 770,740 720,790 790,820 720,860"
+              fill="none" stroke="#D97706" stroke-width="14" />
+  </g>
+</svg>

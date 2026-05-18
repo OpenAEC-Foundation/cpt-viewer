@@ -85,6 +85,20 @@ pub async fn fetch_bro_cpt(bro_id: String) -> Result<String, String> {
     resp.text().await.map_err(|e| e.to_string())
 }
 
+/// Fetch the full BHR-GT borehole XML for a single BRO object. Returns
+/// the raw XML so the front-end can parse + render a strip log without
+/// needing additional Rust types. Same shape as `fetch_bro_cpt`.
+#[tauri::command]
+pub async fn fetch_bro_bore(bro_id: String) -> Result<String, String> {
+    let url = format!("{BASE}/sr/bhrgt/v2/objects/{bro_id}");
+    let client = http_client()?;
+    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("BRO bore API HTTP {}", resp.status()));
+    }
+    resp.text().await.map_err(|e| e.to_string())
+}
+
 /// Fetch the *full* BRO object metadata for a CPT or borehole and return
 /// it as a flat key/value map suitable for popup rendering. `kind` must
 /// be `"cpt"` or `"bore"`.

@@ -53,7 +53,8 @@ const TOPO_YEARS: TopoYear[] = [
 const DEBOUNCE_MS = 200;
 
 /**
- * Horizontal year slider docked at the bottom of the Kaart view.
+ * Horizontal year slider rendered inside the GisLayerPanel (left panel)
+ * on the Kaart tab.
  *
  * Emits `ogs:topotijdreis-year` (detail = { year, serviceId } or null)
  * whenever the user changes the year. MapView listens to this event and
@@ -68,6 +69,8 @@ export default function TopotijdreisSlider() {
   // Default: 0 (off) so the slider doesn't fight with the user's chosen
   // base layer on first mount.
   const [sliderIdx, setSliderIdx] = useState(0);
+  // Opacity for the topotijdreis tile layer (0..1). Defaults to 100%.
+  const [topoOpacity, setTopoOpacity] = useState(1);
   const debounceRef = useRef<number | null>(null);
 
   const max = TOPO_YEARS.length; // slider range 0..N
@@ -108,43 +111,45 @@ export default function TopotijdreisSlider() {
   }, [dispatchYear]);
 
   // Compute tick marks for the labelled-year hints below the track.
-  // We pick every 4th entry plus the endpoints so the strip doesn't
-  // look crowded.
+  // Slider lives in the narrow GisLayerPanel section now — pick only
+  // every 8th entry plus the endpoints so labels don't overlap.
   const tickIndices = useMemo(() => {
     const ticks: number[] = [];
-    for (let i = 0; i < TOPO_YEARS.length; i += 4) ticks.push(i);
+    for (let i = 0; i < TOPO_YEARS.length; i += 8) ticks.push(i);
     if (ticks[ticks.length - 1] !== TOPO_YEARS.length - 1) {
       ticks.push(TOPO_YEARS.length - 1);
     }
     return ticks;
   }, []);
 
+  const isOn = sliderIdx > 0;
+
   return (
     <div className="topotijdreis-slider">
-      <div className="topotijdreis-year-display">
+      {/* Top row: on/off checkbox + current year (or "Uit" when off). */}
+      <label className="topotijdreis-toggle">
+        <input
+          type="checkbox"
+          checked={isOn}
+          onChange={(e) => onChange(e.target.checked ? max : 0)}
+          aria-label="Topotijdreis aan/uit"
+        />
+        <span className="topotijdreis-toggle-label">Topotijdreis</span>
         {current ? (
           <span className="topotijdreis-year-label">{current.year}</span>
         ) : (
-          <span className="topotijdreis-year-off">Topotijdreis uit</span>
+          <span className="topotijdreis-year-off">Uit</span>
         )}
-      </div>
+      </label>
       <div className="topotijdreis-controls">
-        <button
-          type="button"
-          className="topotijdreis-off-btn"
-          onClick={() => onChange(0)}
-          disabled={sliderIdx === 0}
-          title="Zet historische kaart uit"
-        >
-          Uit
-        </button>
         <input
           className="topotijdreis-range"
           type="range"
-          min={0}
+          min={1}
           max={max}
           step={1}
-          value={sliderIdx}
+          value={Math.max(1, sliderIdx)}
+          disabled={!isOn}
           onChange={(e) => onChange(Number(e.currentTarget.value))}
           aria-label="Jaartal historische kaart"
         />
@@ -168,6 +173,31 @@ export default function TopotijdreisSlider() {
             {TOPO_YEARS[i].year}
           </span>
         ))}
+      </div>
+      <div className="topotijdreis-opacity">
+        <span className="topotijdreis-opacity-label">Transparantie</span>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          value={Math.round(topoOpacity * 100)}
+          disabled={sliderIdx === 0}
+          onChange={(e) => {
+            const pct = Number(e.currentTarget.value);
+            const op = pct / 100;
+            setTopoOpacity(op);
+            window.dispatchEvent(
+              new CustomEvent("ogs:layer-opacity", {
+                detail: { id: "topotijdreis", opacity: op },
+              }),
+            );
+          }}
+          aria-label="Transparantie historische kaart"
+        />
+        <span className="topotijdreis-opacity-val">
+          {Math.round(topoOpacity * 100)}%
+        </span>
       </div>
     </div>
   );

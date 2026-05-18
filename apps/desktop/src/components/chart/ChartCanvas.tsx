@@ -44,6 +44,12 @@ export default function ChartCanvas() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; markerIdx: number } | null>(null);
   /** Hover indicator — depth + which CPT is under the cursor. */
   const [hoverIndicator, setHoverIndicator] = useState<{ cptId: string; depth: number } | null>(null);
+  // Floating soil-layer tooltip — tracks the mouse position so it can
+  // sit next to the cursor. `soil` is the Robertson SBT zone label
+  // for the layer the cursor is currently over (or null if outside).
+  const [soilTooltip, setSoilTooltip] = useState<
+    { x: number; y: number; soil: string } | null
+  >(null);
   /** Bumps whenever document.documentElement[data-theme] changes. */
   const [themeTick, setThemeTick] = useState(0);
   /** Cursor hint depending on what's under the pointer. */
@@ -367,10 +373,17 @@ export default function ChartCanvas() {
     );
     // Hover indicator on the chart: bullets on each curve at the hovered depth.
     setHoverIndicator(hit ? { cptId: hit.cptId, depth: hit.depth } : null);
+    // Floating tooltip showing the soil-layer name at cursor.
+    if (hit?.zone?.name) {
+      setSoilTooltip({ x, y, soil: hit.zone.name });
+    } else {
+      setSoilTooltip(null);
+    }
   };
   const onLeave = () => {
     setHover(null);
     setHoverIndicator(null);
+    setSoilTooltip(null);
     setCursor("crosshair");
   };
 
@@ -395,6 +408,19 @@ export default function ChartCanvas() {
         onContextMenu={onContextMenu}
         style={{ width: "100%", height: "100%", display: "block", cursor }}
       />
+      {soilTooltip && (
+        <div
+          className="chart-soil-tooltip"
+          style={{
+            position: "absolute",
+            left: soilTooltip.x + 14,
+            top: soilTooltip.y + 14,
+            pointerEvents: "none",
+          }}
+        >
+          {soilTooltip.soil}
+        </div>
+      )}
       {contextMenu && (
         <div
           className="chart-context-menu"

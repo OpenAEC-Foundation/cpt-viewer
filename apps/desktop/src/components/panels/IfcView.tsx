@@ -26,17 +26,26 @@ const FORMAT_LABEL: Record<IfcFormat, string> = {
 export default function IfcView() {
   const { t } = useTranslation("ribbon");
 
-  const { ifc4x3, ifcx, hasContent } = useCptStore((s) => {
-    const doc = s.documents.find((d) => d.id === s.activeDocId);
-    if (!doc) return { ifc4x3: undefined, ifcx: undefined, hasContent: false };
-    const cached = s.ifcCache.get(doc.id);
-    const cptCount = doc.kind === "cpt" ? 1 : doc.cpts.size;
-    return {
-      ifc4x3: cached?.ifc4x3,
-      ifcx: cached?.ifcx,
-      hasContent: cptCount > 0,
-    };
-  });
+  // Subscribe to each primitive separately — returning a fresh object
+  // from a single selector breaks Zustand v5's strict equality check and
+  // produces "Maximum update depth exceeded" because every store update
+  // (including unrelated ones) is seen as a change.
+  const activeDocId = useCptStore((s) => s.activeDocId);
+  const ifcCache = useCptStore((s) => s.ifcCache);
+  const documents = useCptStore((s) => s.documents);
+
+  const doc = activeDocId ? documents.find((d) => d.id === activeDocId) : undefined;
+  const cached = doc ? ifcCache.get(doc.id) : undefined;
+  const ifc4x3 = cached?.ifc4x3;
+  const ifcx = cached?.ifcx;
+  const cptCount = !doc
+    ? 0
+    : doc.kind === "cpt"
+      ? 1
+      : doc.kind === "project"
+        ? doc.cpts.size
+        : 0; // bore — IFC generation not yet supported
+  const hasContent = cptCount > 0;
 
   return (
     <div className="ifc-view-twopane">

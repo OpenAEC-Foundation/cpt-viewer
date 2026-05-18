@@ -1,0 +1,284 @@
+/* ─────────────────────────────────────────────────────────────────
+   BoreView — strip log for a BHR-GT borehole.
+   Layout: header strip on top, then a 3-column grid below:
+     [depth axis] [colour strip] [per-layer descriptions]
+   The whole panel scales with the viewport so a 20 m boring fills
+   the same vertical space as a 2 m one — depth values on the axis
+   reveal the actual scale.
+   ─────────────────────────────────────────────────────────────── */
+
+.bore-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--theme-bg, #fff);
+  color: var(--theme-text, #36363e);
+  padding: 16px 20px;
+  gap: 12px;
+  overflow: auto;
+}
+
+.bore-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--theme-border, #e7e5e4);
+}
+.bore-title {
+  margin: 0;
+  font: 700 1.4rem var(--font-heading, 'Space Grotesk'), 'Inter', sans-serif;
+  color: var(--theme-text, #36363e);
+}
+.bore-sub {
+  margin: 2px 0 0;
+  font: 500 0.85rem 'Inter', sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+}
+.bore-meta {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 12px;
+  margin: 0;
+  font: 500 0.78rem 'Inter', sans-serif;
+}
+.bore-meta dt {
+  color: var(--theme-text-secondary, #71717a);
+}
+.bore-meta dd {
+  margin: 0;
+  color: var(--theme-text, #36363e);
+}
+.bore-meta code {
+  font: 500 0.78rem var(--font-code, 'JetBrains Mono'), monospace;
+}
+
+.bore-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0 4px 0;
+}
+.bore-toolbar-hint {
+  font: 400 0.7rem 'Inter', sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+}
+.bore-toolbar-zoom {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--theme-border, #e7e5e4);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.bore-zoom-btn {
+  appearance: none;
+  background: var(--theme-bg, #fff);
+  border: 0;
+  padding: 4px 10px;
+  font: 600 0.78rem 'Inter', sans-serif;
+  color: var(--theme-text, #36363e);
+  cursor: pointer;
+  min-width: 28px;
+  transition: background 0.12s;
+}
+.bore-zoom-btn:hover:not(:disabled) {
+  background: var(--theme-bg-lighter, #f5f5f4);
+}
+.bore-zoom-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.bore-zoom-btn.bore-zoom-reset {
+  font: 500 0.72rem var(--font-code, 'JetBrains Mono'), monospace;
+  color: var(--theme-text-secondary, #71717a);
+  border-left: 1px solid var(--theme-border, #e7e5e4);
+  border-right: 1px solid var(--theme-border, #e7e5e4);
+  min-width: 44px;
+}
+
+.bore-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.bore-empty {
+  margin: auto;
+  text-align: center;
+  color: var(--theme-text-secondary, #71717a);
+}
+.bore-empty-sub {
+  font-size: 0.85rem;
+  margin-top: 4px;
+}
+
+/* ── Strip log layout ────────────────────────────────────────── */
+
+.bore-strip-wrap {
+  display: grid;
+  grid-template-columns: 64px 96px 1fr;
+  gap: 0;
+  position: relative;
+  flex: 1;
+  min-height: 360px;
+}
+
+.bore-axis {
+  position: relative;
+  border-right: 1px solid var(--theme-border, #e7e5e4);
+}
+.bore-axis-spine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 1px;
+  background: var(--theme-text-secondary, #71717a);
+}
+.bore-axis-tick {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+.bore-axis-line {
+  display: inline-block;
+  width: 6px;
+  height: 1px;
+  background: var(--theme-text-secondary, #71717a);
+}
+.bore-axis-label {
+  font: 500 0.7rem var(--font-code, 'JetBrains Mono'), monospace;
+  color: var(--theme-text-secondary, #71717a);
+  white-space: nowrap;
+  padding-right: 8px;
+}
+.bore-axis-title {
+  position: absolute;
+  top: -6px;
+  right: 8px;
+  font: 600 0.62rem 'Inter', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--theme-text-secondary, #71717a);
+}
+
+.bore-strip {
+  position: relative;
+  border-right: 1px solid var(--theme-border, #e7e5e4);
+  background: var(--theme-bg-lighter, #f5f5f4);
+}
+.bore-layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid rgba(0, 0, 0, 0.15);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  transition: filter 0.15s ease;
+}
+.bore-layer:hover {
+  filter: brightness(0.92);
+}
+.bore-layer-label {
+  font: 600 0.7rem 'Inter', sans-serif;
+  color: #1f2937;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 90%;
+  text-align: center;
+}
+
+.bore-descriptions {
+  list-style: none;
+  margin: 0;
+  padding: 6px 12px;
+  display: flex;
+  flex-direction: column;
+  /* Each row takes its natural height; gap keeps neighbouring rows
+     from running into each other. The strip-wrap grid row stretches
+     to match the descriptions column's total height, which in turn
+     stretches the strip + axis so the bands grow proportionally. */
+  gap: 10px;
+}
+.bore-description-row {
+  display: flex;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--theme-border, #e7e5e4);
+  align-items: flex-start;
+  min-height: 44px;
+}
+.bore-description-row:first-child {
+  border-top: none;
+  padding-top: 2px;
+}
+.bore-description-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.bore-description-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.bore-description-soil {
+  font: 600 0.82rem 'Inter', sans-serif;
+  color: var(--theme-text, #36363e);
+}
+.bore-description-range {
+  font: 500 0.7rem var(--font-code, 'JetBrains Mono'), monospace;
+  color: var(--theme-text-secondary, #71717a);
+}
+.bore-description-extra {
+  font: 400 0.72rem 'Inter', sans-serif;
+  color: var(--theme-text, #36363e);
+  margin-top: 2px;
+}
+
+/* Nevenlagen / secondary-attribute chips beneath the soil name. */
+.bore-description-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 4px;
+}
+.bore-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: var(--theme-bg-lighter, #f5f5f4);
+  border: 1px solid var(--theme-border, #e7e5e4);
+  font: 500 0.66rem 'Inter', sans-serif;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.bore-chip-label {
+  font: 600 0.6rem 'Inter', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--theme-text-secondary, #71717a);
+}
+.bore-chip-value {
+  color: var(--theme-text, #36363e);
+}

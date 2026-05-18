@@ -1,14 +1,27 @@
 import { useTranslation } from "react-i18next";
 import { useCptStore } from "../../store/useCptStore";
 import ChartCanvas from "../chart/ChartCanvas";
+import BoreView from "./BoreView";
 
 /**
- * Main chart panel. Shows the placeholder hint until a CPT is loaded,
- * then hands off to the Canvas-backed `ChartCanvas`.
+ * Main chart panel. Routes between three states:
+ *   - empty placeholder when nothing is open
+ *   - BoreView when the active document is a borehole (BHR-GT)
+ *   - ChartCanvas when the active document is a CPT or project
+ *
+ * Borings don't have qc/fs/Rf curves, only a strip log of soil layers,
+ * so they need their own viewer instead of an empty chart canvas.
  */
 export default function ChartView() {
   const { t } = useTranslation("cpt");
   const cpts = useCptStore((s) => s.cpts);
+  const activeDocId = useCptStore((s) => s.activeDocId);
+  const documents = useCptStore((s) => s.documents);
+  const activeDoc = activeDocId ? documents.find((d) => d.id === activeDocId) : undefined;
+
+  if (activeDoc?.kind === "bore") {
+    return <BoreView bore={activeDoc.bore} />;
+  }
   if (cpts.size === 0) {
     return (
       <div className="placeholder">

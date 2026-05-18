@@ -232,9 +232,44 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
             icon={ICONS.open}
             label={t("open")}
             shortcut="Ctrl+O"
-            active={activePanel === "open"}
-            onClick={() => setActivePanel("open")}
+            onClick={() => void openAny()}
           />
+          {/* Recent-files quick list — sits directly under the Open
+              menu item so the user can jump straight to a previous
+              file without the intermediate Open panel. */}
+          {recentFiles.length > 0 && (
+            <div className="backstage-recent-list">
+              <div className="backstage-recent-header">
+                <span>{t("openPanel.title", "Recent")}</span>
+                <button
+                  type="button"
+                  className="backstage-recent-clear"
+                  onClick={clearRecentFiles}
+                  title={t("openPanel.clearAll", "Clear all")}
+                >
+                  ✕
+                </button>
+              </div>
+              <ul className="backstage-recent-items">
+                {recentFiles.slice(0, 8).map((f) => (
+                  <li key={f.path}>
+                    <button
+                      type="button"
+                      className="backstage-recent-item"
+                      onClick={() => {
+                        onClose();
+                        onOpenFile?.(f.path);
+                      }}
+                      title={f.path}
+                    >
+                      <span className="backstage-recent-name">{f.name}</span>
+                      <span className="backstage-recent-path">{f.path}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <MenuItem
             icon={ICONS.save}
             label={t("save")}

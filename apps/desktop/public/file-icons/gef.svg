@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="GEF sondering bestand">
+  <!--
+    File-association icon for .gef sondering files. Document-style page
+    with a folded amber corner and a stylised CPT qc-curve descending
+    through the body — reads as "this is a sondering file" at a glance
+    in Windows Explorer / Finder.
+    Same OpenAEC house palette as the app icon.
+  -->
+
+  <!-- Page background (Blueprint White on Deep Forge frame) -->
+  <rect x="80" y="80" width="864" height="864" fill="#FAFAF9" stroke="#36363E" stroke-width="24" rx="40" />
+
+  <!-- Folded top-right corner — Construction Amber -->
+  <path d="M 720 80 L 944 304 L 720 304 Z" fill="#D97706" />
+  <path d="M 720 80 L 720 304 L 944 304" fill="none" stroke="#36363E" stroke-width="24" stroke-linejoin="round" />
+
+  <!-- "GEF" label (Space Grotesk Bold approximated with system fallback) -->
+  <text x="180" y="360" font-family="'Space Grotesk', 'Inter', sans-serif"
+        font-weight="800" font-size="200" fill="#36363E" letter-spacing="-8">GEF</text>
+
+  <!-- Subtle subtitle -->
+  <text x="180" y="430" font-family="'Inter', sans-serif" font-weight="500"
+        font-size="58" fill="#71717A" letter-spacing="2">SONDERING</text>
+
+  <!-- CPT chart preview at the bottom: depth axis + qc curve + SBT strip -->
+  <!-- Depth axis -->
+  <line x1="220" y1="540" x2="220" y2="880" stroke="#A1A1AA" stroke-width="6" stroke-linecap="round" />
+  <g stroke="#A1A1AA" stroke-width="4">
+    <line x1="205" y1="600" x2="220" y2="600" />
+    <line x1="205" y1="670" x2="220" y2="670" />
+    <line x1="205" y1="740" x2="220" y2="740" />
+    <line x1="205" y1="810" x2="220" y2="810" />
+  </g>
+
+  <!-- Maaiveld -->
+  <line x1="220" y1="540" x2="780" y2="540" stroke="#36363E" stroke-width="6" stroke-linecap="round" />
+
+  <!-- qc curve (zigzag, Construction Amber) -->
+  <polyline
+    points="280,560 320,600 400,640 350,690 460,730 380,780 520,820 420,860 560,880"
+    fill="none" stroke="#D97706" stroke-width="22"
+    stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Robertson SBT colour strip on the right -->
+  <rect x="800" y="540" width="36" height="80"  fill="#4CAF50" />
+  <rect x="800" y="620" width="36" height="70"  fill="#8BC34A" />
+  <rect x="800" y="690" width="36" height="100" fill="#F59E0B" />
+  <rect x="800" y="790" width="36" height="90"  fill="#EA580C" />
+</svg>

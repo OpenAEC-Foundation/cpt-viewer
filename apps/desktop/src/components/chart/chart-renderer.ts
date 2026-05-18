@@ -358,12 +358,16 @@ function layoutCpt(
     u2W = 0;
   }
 
+  // Panel order (left → right): depth | qc | fs | rf | u2 | SBT.
+  // SBT used to sit on the LEFT next to the depth axis, but moving it to
+  // the right edge gives the eye a clean "data first, classification at
+  // the end" reading order and matches BRO chart conventions.
   let x = cptLeft + depthW;
-  const soilL = x; x += soilW + gap;
   const qcL   = x; x += qcW + gap;
   const fsL   = x; x += fsW + gap;
   const rfL   = x; x += rfW + gap;
-  const u2L   = x;
+  const u2L   = x; if (hasU2) x += u2W + gap;
+  const soilL = x;
 
   const layout: CptLayout = {
     cptLeft,
@@ -572,8 +576,10 @@ function drawGridH(
 ) {
   const range = c.depthViewMax - c.depthViewMin;
   const step = niceStep(range, 8);
-  const totalL = c.layout.soil.l;
-  const lastPanel = c.layout.u2 ?? c.layout.rf;
+  const totalL = c.layout.qc.l;
+  // SBT sits on the rightmost side of the chart since the layout change —
+  // so the right-edge reference is the soil panel, not the last data panel.
+  const lastPanel = c.layout.soil;
   const totalR = lastPanel.l + lastPanel.w;
 
   for (
@@ -623,22 +629,22 @@ function drawGridV(
   maxVal: number,
   ladder: number[] = QC_LADDER,
 ) {
-  const range = maxVal - minVal;
-  if (range <= 0) return;
-  const step = pickLadderStep(range, ladder);
+  const { lo, hi, span, inverted } = rangeInfo(minVal, maxVal);
+  if (span <= 0) return;
+  const step = pickLadderStep(span, ladder);
   // Major step = the largest step in the ladder (e.g. 5 for qc) — those
   // ticks get a heavier line. Always emphasises the "primary" grid.
   const majorStep = ladder[0];
 
   ctx.lineWidth = 1;
   for (
-    let v = Math.ceil(minVal / step) * step;
-    v <= maxVal + 1e-9;
+    let v = Math.ceil(lo / step) * step;
+    v <= hi + 1e-9;
     v = +(v + step).toFixed(6)
   ) {
-    if (Math.abs(v - minVal) < 1e-9) continue;   // skip the panel edge
-    if (Math.abs(v - maxVal) < 1e-9) continue;
-    const x = Math.round(panel.l + ((v - minVal) / range) * panel.w) + 0.5;
+    if (Math.abs(v - lo) < 1e-9) continue;   // skip the panel edge
+    if (Math.abs(v - hi) < 1e-9) continue;
+    const x = Math.round(valueToX(v, panel, lo, hi, inverted)) + 0.5;
     // A line is "major" when it sits on a multiple of the largest ladder
     // step. Concretely for qc that's every multiple of 5 MPa, even when
     // we're also drawing 1-MPa lines because the user zoomed in.
@@ -661,6 +667,7 @@ function drawPanelHeader(
   color: string,
   minVal: number | null,
   maxVal: number | null,
+  ladder: number[] | null = null,
 ) {
   const cx = panel.l + panel.w / 2;
   ctx.textAlign = "center";
@@ -686,17 +693,48 @@ function drawPanelHeader(
   ctx.fillStyle = color;
   ctx.fillText(displayLabel, cx, 3);
 
-  if (maxVal !== null && panel.w > 30) {
-    ctx.font = `${shared.narrow ? 7 : 9}px "JetBrains Mono", monospace`;
-    ctx.fillStyle = colors.text;
-    ctx.textAlign = "left";
-    ctx.fillText(fmtScale(minVal ?? 0), panel.l + 2, 15);
-    ctx.textAlign = "right";
-    ctx.fillText(fmtScale(maxVal), panel.l + panel.w - 2, 15);
+  if (maxVal === null || panel.w <= 30) return;
+  const { lo, hi, span, inverted } = rangeInfo(minVal ?? 0, maxVal);
+  if (span <= 0) return;
 
+  ctx.font = `${shared.narrow ? 7 : 9}px "JetBrains Mono", monospace`;
+  ctx.fillStyle = colors.text;
+
+  // Ladder-aligned labels — render one label per grid line so the header
+  // numbers line up with the vertical grid lines (e.g. 5, 10, 15, 20, 25
+  // for qc at default zoom; 1, 2, 3, 4 when the user zoomed in). When no
+  // ladder is supplied (e.g. SBT panel) fall back to endpoint labels only.
+  if (ladder) {
+    const step = pickLadderStep(span, ladder);
+    const sampleW = ctx.measureText(fmtScale(step)).width + 8;
+    const maxLabels = Math.max(2, Math.floor(panel.w / sampleW));
+    const totalSteps = Math.round(span / step);
+    const stride = Math.max(1, Math.ceil(totalSteps / maxLabels));
+    const first = Math.ceil(lo / step) * step;
+    let idx = 0;
+    for (let v = first; v <= hi + 1e-9; v = +(v + step).toFixed(6), idx++) {
+      if (idx % stride !== 0) continue;
+      const x = Math.round(valueToX(v, panel, lo, hi, inverted));
+      const labelTxt = fmtScale(v);
+      const halfW = ctx.measureText(labelTxt).width / 2;
+      const minX = panel.l + halfW + 1;
+      const maxX = panel.l + panel.w - halfW - 1;
+      const drawX = Math.max(minX, Math.min(maxX, x));
+      ctx.textAlign = "center";
+      ctx.fillText(labelTxt, drawX, 15);
+    }
+  } else {
+    // Endpoint-only labels — order them so "min" lives on the
+    // value-low side of the panel regardless of inversion.
+    const leftLabel = inverted ? fmtScale(hi) : fmtScale(lo);
+    const rightLabel = inverted ? fmtScale(lo) : fmtScale(hi);
+    ctx.textAlign = "left";
+    ctx.fillText(leftLabel, panel.l + 2, 15);
+    ctx.textAlign = "right";
+    ctx.fillText(rightLabel, panel.l + panel.w - 2, 15);
     if (panel.w > 60) {
       ctx.textAlign = "center";
-      ctx.fillText(fmtScale(((minVal ?? 0) + maxVal) / 2), cx, 15);
+      ctx.fillText(fmtScale((lo + hi) / 2), cx, 15);
     }
   }
 }
@@ -754,6 +792,29 @@ function formatNap(v: number): string {
   return v.toFixed(2);
 }
 
+/**
+ * Compute a normalised projection helper for a value-axis panel. Caller
+ * passes the *signed* min/max — if `minVal > maxVal` the axis is
+ * rendered **inverted** (high value on the left, low on the right),
+ * which is the Dutch geotechnical convention for the wrijvingsgetal (Rf)
+ * axis. All grid / curve / label drawing routes through this helper so
+ * inversion works consistently.
+ */
+function rangeInfo(minVal: number, maxVal: number) {
+  const lo = Math.min(minVal, maxVal);
+  const hi = Math.max(minVal, maxVal);
+  const span = hi - lo;
+  const inverted = minVal > maxVal;
+  return { lo, hi, span, inverted };
+}
+
+function valueToX(v: number, panel: PanelRect, lo: number, hi: number, inverted: boolean): number {
+  const span = hi - lo;
+  if (span <= 0) return panel.l;
+  const t = (v - lo) / span;
+  return panel.l + (inverted ? (1 - t) : t) * panel.w;
+}
+
 function drawCurve(
   ctx: CanvasRenderingContext2D,
   shared: SharedLayout,
@@ -765,7 +826,7 @@ function drawCurve(
   color: string,
   lineWidth: number,
 ) {
-  const span = maxVal - minVal;
+  const { lo, hi, span, inverted } = rangeInfo(minVal, maxVal);
   if (span <= 0) return;
   ctx.save();
   ctx.beginPath();
@@ -785,7 +846,7 @@ function drawCurve(
       started = false;
       continue;
     }
-    const x = panel.l + ((v - minVal) / span) * panel.w;
+    const x = valueToX(v, panel, lo, hi, inverted);
     const y = depthToY(d, shared, c.depthViewMin, c.depthViewMax);
     if (!started) {
       ctx.moveTo(x, y);
@@ -869,8 +930,11 @@ function drawMarker(
   if (depth < c.depthViewMin || depth > c.depthViewMax) return;
   const y = Math.round(depthToY(depth, shared, c.depthViewMin, c.depthViewMax)) + 0.5;
 
-  const lastPanel = c.layout.u2 ?? c.layout.rf;
-  const xStart = c.layout.soil.l;
+  // SBT sits on the rightmost side of the chart since the layout change —
+  // so the right-edge reference is the soil panel, not the last data panel.
+  const lastPanel = c.layout.soil;
+  // Leftmost data panel is now qc (depth axis sits to its left, SBT to the right).
+  const xStart = c.layout.qc.l;
   const xEnd = lastPanel.l + lastPanel.w;
 
   // Use OpenAEC info-blue for the reference marker (visually distinct
@@ -910,7 +974,8 @@ function drawMarker(
     const series: Series[] = [
       { panel: c.layout.qc, min: c.qcViewMin, max: c.qcViewMax, color: colors.qc, value: pt.qc, fmt: (v) => v.toFixed(2) },
       { panel: c.layout.fs, min: c.fsViewMin, max: c.fsViewMax, color: colors.fs, value: pt.fs, fmt: (v) => v.toFixed(3) },
-      { panel: c.layout.rf, min: c.rfViewMin, max: c.rfViewMax, color: colors.rf, value: pt.rf, fmt: (v) => v.toFixed(2) },
+      // Rf is mirrored — pass max/min so the bullet is at the correct x.
+      { panel: c.layout.rf, min: c.rfViewMax, max: c.rfViewMin, color: colors.rf, value: pt.rf, fmt: (v) => v.toFixed(2) },
     ];
     if (c.layout.u2) {
       series.push({ panel: c.layout.u2, min: c.u2ViewMin, max: c.u2ViewMax, color: colors.u2, value: pt.u2, fmt: (v) => v.toFixed(3) });
@@ -919,10 +984,10 @@ function drawMarker(
     ctx.font = '600 9px "JetBrains Mono", monospace';
     for (const s of series) {
       if (s.value == null) continue;
-      const span = s.max - s.min;
+      const { lo, hi, span, inverted } = rangeInfo(s.min, s.max);
       if (span <= 0) continue;
-      const t = Math.max(0, Math.min(1, (s.value - s.min) / span));
-      const bx = s.panel.l + t * s.panel.w;
+      const clamped = Math.max(lo, Math.min(hi, s.value));
+      const bx = valueToX(clamped, s.panel, lo, hi, inverted);
       // White halo + filled colored bullet (matches curve color).
       ctx.fillStyle = colors.bg;
       ctx.beginPath();
@@ -1028,8 +1093,11 @@ function drawHoverIndicator(
   const pt = c.cpt.points[bestI];
 
   // Faint horizontal guide line across the panels.
-  const lastPanel = c.layout.u2 ?? c.layout.rf;
-  const xStart = c.layout.soil.l;
+  // SBT sits on the rightmost side of the chart since the layout change —
+  // so the right-edge reference is the soil panel, not the last data panel.
+  const lastPanel = c.layout.soil;
+  // Leftmost data panel is now qc (depth axis sits to its left, SBT to the right).
+  const xStart = c.layout.qc.l;
   const xEnd = lastPanel.l + lastPanel.w;
   ctx.save();
   ctx.strokeStyle = colors.text;
@@ -1046,7 +1114,8 @@ function drawHoverIndicator(
   const series: Series[] = [
     { panel: c.layout.qc, min: c.qcViewMin, max: c.qcViewMax, color: colors.qc, value: pt.qc, label: "qc", fmt: (v) => v.toFixed(2) },
     { panel: c.layout.fs, min: c.fsViewMin, max: c.fsViewMax, color: colors.fs, value: pt.fs, label: "fs", fmt: (v) => v.toFixed(3) },
-    { panel: c.layout.rf, min: c.rfViewMin, max: c.rfViewMax, color: colors.rf, value: pt.rf, label: "Rf", fmt: (v) => v.toFixed(2) },
+    // Rf is mirrored — pass max/min swapped.
+    { panel: c.layout.rf, min: c.rfViewMax, max: c.rfViewMin, color: colors.rf, value: pt.rf, label: "Rf", fmt: (v) => v.toFixed(2) },
   ];
   if (c.layout.u2) {
     series.push({ panel: c.layout.u2, min: c.u2ViewMin, max: c.u2ViewMax, color: colors.u2, value: pt.u2, label: "u2", fmt: (v) => v.toFixed(3) });
@@ -1055,11 +1124,10 @@ function drawHoverIndicator(
   ctx.font = '600 9px "JetBrains Mono", monospace';
   for (const s of series) {
     if (s.value == null) continue;
-    const span = s.max - s.min;
+    const { lo, hi, span, inverted } = rangeInfo(s.min, s.max);
     if (span <= 0) continue;
-    // Clamp x to panel range so the bullet stays visible even for off-scale values.
-    const t = Math.max(0, Math.min(1, (s.value - s.min) / span));
-    const x = s.panel.l + t * s.panel.w;
+    const clamped = Math.max(lo, Math.min(hi, s.value));
+    const x = valueToX(clamped, s.panel, lo, hi, inverted);
     // White halo + filled colored bullet
     ctx.fillStyle = colors.bg;
     ctx.beginPath();
@@ -1114,8 +1182,10 @@ export function hitTestMarkerIndex(
   let bestIdx: number | null = null;
   let bestDist = Infinity;
   for (const c of computed) {
-    if (x < c.layout.soil.l) continue;
-    const lastPanel = c.layout.u2 ?? c.layout.rf;
+    if (x < c.layout.qc.l) continue;
+    // SBT sits on the rightmost side of the chart since the layout change —
+  // so the right-edge reference is the soil panel, not the last data panel.
+  const lastPanel = c.layout.soil;
     const xEnd = lastPanel.l + lastPanel.w;
     if (x > xEnd + 60) continue;   // include label area
     for (let mi = 0; mi < markers.length; mi++) {
@@ -1235,7 +1305,8 @@ export function renderChart(
     drawGridH(ctx, colors, shared, c);
     drawGridV(ctx, colors, shared, c.layout.qc, c.qcViewMin, c.qcViewMax, QC_LADDER);
     drawGridV(ctx, colors, shared, c.layout.fs, c.fsViewMin, c.fsViewMax, FS_LADDER);
-    drawGridV(ctx, colors, shared, c.layout.rf, c.rfViewMin, c.rfViewMax, RF_LADDER);
+    // Rf is mirrored — pass max/min swapped so the axis runs right→left.
+    drawGridV(ctx, colors, shared, c.layout.rf, c.rfViewMax, c.rfViewMin, RF_LADDER);
     if (c.layout.u2) drawGridV(ctx, colors, shared, c.layout.u2, c.u2ViewMin, c.u2ViewMax, U2_LADDER);
 
     drawDepthAxis(ctx, colors, shared, c);
@@ -1287,14 +1358,17 @@ export function renderChart(
     }
 
     drawPanelHeader(ctx, colors, shared, c.layout.soil, "SBT", colors.textBright, null, null);
-    drawPanelHeader(ctx, colors, shared, c.layout.qc,   "Conusweerstand (qc, MPa)",  colors.qc, c.qcViewMin, c.qcViewMax);
-    drawPanelHeader(ctx, colors, shared, c.layout.fs,   "Plaatselijke wrijving (fs, MPa)", colors.fs, c.fsViewMin, c.fsViewMax);
-    drawPanelHeader(ctx, colors, shared, c.layout.rf,   "Wrijvingsgetal (Rf, %)",   colors.rf, c.rfViewMin, c.rfViewMax);
-    if (c.layout.u2) drawPanelHeader(ctx, colors, shared, c.layout.u2, "Waterspanning (u2, MPa)", colors.u2, c.u2ViewMin, c.u2ViewMax);
+    drawPanelHeader(ctx, colors, shared, c.layout.qc,   "Conusweerstand (qc, MPa)",  colors.qc, c.qcViewMin, c.qcViewMax, QC_LADDER);
+    drawPanelHeader(ctx, colors, shared, c.layout.fs,   "Plaatselijke wrijving (fs, MPa)", colors.fs, c.fsViewMin, c.fsViewMax, FS_LADDER);
+    // Rf header is mirrored — pass max/min swapped so label "0" lands on
+    // the right edge and the highest Rf value lands on the left.
+    drawPanelHeader(ctx, colors, shared, c.layout.rf,   "Wrijvingsgetal (Rf, %)",   colors.rf, c.rfViewMax, c.rfViewMin, RF_LADDER);
+    if (c.layout.u2) drawPanelHeader(ctx, colors, shared, c.layout.u2, "Waterspanning (u2, MPa)", colors.u2, c.u2ViewMin, c.u2ViewMax, U2_LADDER);
 
     if (curves.qc) drawCurve(ctx, shared, c, c.layout.qc, "qc", c.qcViewMin, c.qcViewMax, colors.qc, 1.8);
     if (curves.fs) drawCurve(ctx, shared, c, c.layout.fs, "fs", c.fsViewMin, c.fsViewMax, colors.fs, 1.4);
-    if (curves.rf) drawCurve(ctx, shared, c, c.layout.rf, "rf", c.rfViewMin, c.rfViewMax, colors.rf, 1.4);
+    // Rf curve is mirrored: low Rf on the right, high Rf on the left.
+    if (curves.rf) drawCurve(ctx, shared, c, c.layout.rf, "rf", c.rfViewMax, c.rfViewMin, colors.rf, 1.4);
     if (curves.u2 && c.layout.u2) {
       drawCurve(ctx, shared, c, c.layout.u2, "u2", c.u2ViewMin, c.u2ViewMax, colors.u2, 1.4);
     }

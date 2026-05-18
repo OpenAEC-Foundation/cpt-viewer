@@ -37,10 +37,10 @@ export default function WelcomeScreen({ onClose, onNewProject, onOpenProject, on
       <div className="welcome-dialog">
         <div className="welcome-header">
           <div className="welcome-logo">
-            {/* Open GEO Studio mark: hexagonal CPT chart in OpenAEC house style */}
+            {/* Open GEO Studio mark: square CPT chart in OpenAEC house style */}
             <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-              <path d="M 32 2 L 58 17 L 58 47 L 32 62 L 6 47 L 6 17 Z" fill="#36363E" />
-              <path d="M 32 4.3 L 56 18.2 L 56 45.8 L 32 59.7 L 8 45.8 L 8 18.2 Z" fill="none" stroke="#27272A" strokeWidth="0.8" />
+              <rect x="0" y="0" width="64" height="64" fill="#36363E" />
+              <rect x="1.7" y="1.7" width="60.6" height="60.6" fill="none" stroke="#27272A" strokeWidth="0.8" />
               <line x1="16" y1="14" x2="16" y2="50" stroke="#A1A1AA" strokeWidth="0.6" strokeLinecap="round" />
               <g stroke="#A1A1AA" strokeWidth="0.5">
                 <line x1="14.5" y1="20" x2="16" y2="20" />

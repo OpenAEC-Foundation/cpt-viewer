@@ -339,6 +339,284 @@
   font: 500 12px 'Inter', sans-serif;
 }
 
+/* ── Raster object: derived markers, label pill, edit handles ── */
+
+.tek-marker-raster {
+  width: 10px;
+  height: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tek-marker-raster.selected {
+  filter: drop-shadow(0 0 3px rgba(217, 119, 6, 0.7));
+}
+
+/* The leaflet divIcon wrapper inherits a default white background — strip it. */
+.tek-raster-marker,
+.tek-raster-label,
+.tek-handle {
+  background: transparent !important;
+  border: none !important;
+}
+
+.tek-raster-label-pill {
+  display: inline-block;
+  padding: 2px 6px;
+  background: rgba(54, 54, 62, 0.85);
+  color: #fafaf9;
+  border-radius: 9999px;
+  font: 600 10px 'Inter', sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+  text-align: center;
+}
+
+/* Corner handle = white square w/ amber outline. Resize cursor. */
+.tek-handle-dot {
+  width: 12px;
+  height: 12px;
+  background: #fafaf9;
+  border: 1.6px solid #d97706;
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  cursor: nwse-resize;
+}
+
+/* Edge midpoint handle = small white circle w/ amber border. Move cursor.
+   Lives on each side midpoint of the bounding box — grab it to translate
+   the whole raster. */
+.tek-handle-edge-dot {
+  width: 14px;
+  height: 14px;
+  background: #fafaf9;
+  border: 1.6px solid #d97706;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  cursor: move;
+}
+
+/* Rotation button = bigger amber circle with a curved-arrow icon. Reads
+   as a button so the user knows to press-and-hold + drag instead of
+   click. The press state slightly darkens the fill for tactile feedback. */
+.tek-handle-rot-btn {
+  appearance: none;
+  background: #d97706;
+  border: 2px solid #fafaf9;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  transition: background 0.12s ease;
+}
+.tek-handle-rot-btn:hover {
+  background: #c2670a;
+}
+.tek-handle-rot-btn:active {
+  background: #a3550b;
+  cursor: grabbing;
+}
+
+/* Inline edit panel that appears in the toolbox when a raster is selected. */
+.tek-tool-group-edit {
+  border: 1px solid var(--amber, #d97706);
+  border-radius: 6px;
+  padding: 8px;
+  background: rgba(217, 119, 6, 0.06);
+}
+
+.tek-numfield {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 0.75rem 'Inter', sans-serif;
+  color: var(--theme-text, #36363e);
+  flex: 1;
+}
+.tek-numfield-wide {
+  margin-top: 6px;
+}
+.tek-numfield > span {
+  min-width: 64px;
+  color: var(--theme-text-secondary, #71717a);
+}
+.tek-numfield input[type="number"] {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--theme-border, #e7e5e4);
+  border-radius: 4px;
+  background: var(--theme-bg, #fff);
+  color: var(--theme-text, #36363e);
+  font: inherit;
+}
+.tek-numfield input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+.tek-num-val {
+  width: 36px;
+  text-align: right;
+  font: 500 0.72rem var(--font-code, 'JetBrains Mono'), monospace;
+  color: var(--theme-text-secondary, #71717a);
+  flex-shrink: 0;
+}
+
+/* ── Detailblad title block (page 2 of preview-titleblock.html) ── */
+
+.tek-titleblock-db {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  background: #fff;
+  border: 1.5px solid #36363e;
+  font: 500 0.75rem 'Inter', system-ui, sans-serif;
+  color: #36363e;
+  pointer-events: auto;
+  z-index: 1100;
+}
+
+.tek-db-project-bar {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  background: #36363e;
+  color: #fafaf9;
+  gap: 12px;
+}
+.tek-dbp-title {
+  font: 700 0.85rem var(--font-heading, 'Space Grotesk'), 'Inter', sans-serif;
+  letter-spacing: -0.01em;
+  flex: 0 0 auto;
+}
+.tek-dbp-address {
+  font: 400 0.72rem 'Inter', sans-serif;
+  color: rgba(250, 250, 249, 0.7);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tek-dbp-type {
+  font: 600 0.7rem var(--font-code, 'JetBrains Mono'), monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #d97706;
+}
+
+.tek-db-body {
+  display: grid;
+  grid-template-columns: 110px 1fr 90px;
+  align-items: stretch;
+}
+
+.tek-db-logo-cell {
+  border-right: 1px solid #36363e;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.tek-db-logo-text {
+  font: 700 0.85rem var(--font-heading, 'Space Grotesk'), 'Inter', sans-serif;
+  color: #36363e;
+}
+.tek-db-logo-text span { color: #d97706; }
+.tek-db-logo-sub {
+  font: 500 0.6rem var(--font-code, 'JetBrains Mono'), monospace;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.tek-db-cells {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: minmax(28px, auto);
+}
+.tek-db-cell {
+  padding: 3px 6px;
+  border-right: 1px solid #d4d4d8;
+  border-bottom: 1px solid #d4d4d8;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.tek-db-cell:nth-child(4n) { border-right: 1px solid #36363e; }
+.tek-db-cell:nth-last-child(-n+4) { border-bottom: none; }
+.tek-db-cell-label {
+  font: 500 0.58rem 'Inter', sans-serif;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.tek-db-cell-val {
+  font: 600 0.78rem 'Inter', sans-serif;
+  color: #36363e;
+}
+.tek-db-cell-val.mono { font-family: var(--font-code, 'JetBrains Mono'), monospace; }
+.tek-db-cell-val.amber { color: #d97706; }
+
+.tek-db-geo {
+  border-left: 1px solid #36363e;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: #fafaf9;
+}
+.tek-db-geo-label {
+  font: 500 0.55rem 'Inter', sans-serif;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.tek-db-geo-format {
+  font: 700 1.4rem var(--font-heading, 'Space Grotesk'), 'Inter', sans-serif;
+  color: #d97706;
+}
+
+/* ── RD-coordinate tag (a small label dropped at click) ─────── */
+
+.tek-coord-icon {
+  background: transparent !important;
+  border: none !important;
+}
+.tek-coord-tag {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.tek-coord-tag > svg {
+  margin-left: 6px;
+}
+.tek-coord-text {
+  margin-top: 2px;
+  margin-left: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #d97706;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font: 500 0.65rem var(--font-code, 'JetBrains Mono'), monospace;
+  color: #36363e;
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+.tek-coord-text strong {
+  color: #d97706;
+}
+
 /* ── Toast for transient messages ────────────────────────────── */
 
 .tek-toast {

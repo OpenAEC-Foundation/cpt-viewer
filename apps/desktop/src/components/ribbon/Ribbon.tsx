@@ -16,21 +16,40 @@ interface RibbonProps {
   onViewChange: (view: string) => void;
 }
 
-// IFC sits between Kaart and Rapport so the workflow reads
-// left → right: Start (project) → Kaart (location) → IFC (model) →
-// Rapport → Sonderingstekening (tekening/plan).
-const TABS = ["start", "kaart", "ifc", "rapport", "tekening"] as const;
+// Tab order (left → right): Home (project + chart) → Kaart (location) →
+// Rapport → Sonderingstekening (tekening) → IFC (model, always last).
+// IFC is auto-generated and rarely the active workflow target, so it
+// sits at the end where it can't get in the way.
+const TABS = ["start", "kaart", "rapport", "tekening", "ifc"] as const;
 type TabId = (typeof TABS)[number];
 
 export default function Ribbon({ onFileTabClick, onProjectSettingsClick, onViewChange }: RibbonProps) {
   const { t, i18n } = useTranslation("ribbon");
   const [activeTab, setActiveTab] = useState<TabId>("start");
+
+  // Allow other parts of the app (e.g. MapView's "Open in viewer" popup)
+  // to programmatically jump to a specific ribbon tab. Listeners on
+  // `ogs:ribbon-switch` with `detail.tab` matching a TabId.
+  useEffect(() => {
+    const onSwitch = (e: Event) => {
+      const ce = e as CustomEvent<{ tab: TabId }>;
+      const next = ce.detail?.tab;
+      if (next && (TABS as readonly string[]).includes(next)) {
+        switchTabRef.current?.(next);
+      }
+    };
+    window.addEventListener("ogs:ribbon-switch", onSwitch as EventListener);
+    return () => window.removeEventListener("ogs:ribbon-switch", onSwitch as EventListener);
+  }, []);
   const [prevTab, setPrevTab] = useState<TabId | null>(null);
   const [animating, setAnimating] = useState(false);
   const [direction, setDirection] = useState<"left" | "right">("right");
   const tabsRef = useRef<HTMLDivElement>(null);
   const borderRef = useRef<HTMLDivElement>(null);
   const gapRef = useRef<HTMLDivElement>(null);
+  // Mirror of the latest switchTab callback so the once-bound
+  // `ogs:ribbon-switch` listener always calls the up-to-date version.
+  const switchTabRef = useRef<((tab: TabId) => void) | null>(null);
 
   const updateHighlight = useCallback(() => {
     const tabsEl = tabsRef.current;
@@ -79,6 +98,12 @@ export default function Ribbon({ onFileTabClick, onProjectSettingsClick, onViewC
     else if (newTab === "tekening") onViewChange("tekening");
     else onViewChange("default");
   }, [activeTab, onViewChange]);
+
+  // Keep the ref pointing at the latest switchTab so the global event
+  // listener (registered once on mount) calls the up-to-date version.
+  useEffect(() => {
+    switchTabRef.current = switchTab;
+  }, [switchTab]);
 
   useEffect(() => {
     updateHighlight();

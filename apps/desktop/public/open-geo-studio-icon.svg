@@ -1,9 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Open Geotechniek Studio">
   <!--
-    Open GEO Studio app icon.
-    Hexagonal motif inherited from OpenAEC's isometric block, repurposed for
-    geotechnics: a stylised CPT qc-curve descending through Robertson SBT
-    colour layers.
+    Open GEO Studio app icon — square (not hexagon) to match the rest of
+    the OpenAEC tool family. A stylised CPT qc-curve descending through
+    Robertson SBT colour layers.
 
     Palette (OpenAEC Foundation house style):
       Deep Forge      #36363E  – background
@@ -15,15 +14,12 @@
       Layer greens (Robertson) – #4CAF50, #8BC34A for upper clayey/silty bands
   -->
 
-  <!-- Hexagonal background -->
-  <path
-    d="M 32 2 L 58 17 L 58 47 L 32 62 L 6 47 L 6 17 Z"
-    fill="#36363E" />
+  <!-- Square background (full bleed; rendered at any size keeps sharp corners). -->
+  <rect x="0" y="0" width="64" height="64" fill="#36363E" />
 
-  <!-- Subtle inner border (1 unit inset) -->
-  <path
-    d="M 32 4.3 L 56 18.2 L 56 45.8 L 32 59.7 L 8 45.8 L 8 18.2 Z"
-    fill="none" stroke="#27272A" stroke-width="0.8" />
+  <!-- Subtle inner border (1.7 unit inset) -->
+  <rect x="1.7" y="1.7" width="60.6" height="60.6"
+        fill="none" stroke="#27272A" stroke-width="0.8" />
 
   <!-- Vertical depth axis on the left (m NAP), scaffold gray -->
   <line x1="16" y1="14" x2="16" y2="50" stroke="#A1A1AA" stroke-width="0.6" stroke-linecap="round" />
