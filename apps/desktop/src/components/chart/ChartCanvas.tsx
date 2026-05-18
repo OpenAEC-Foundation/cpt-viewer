@@ -413,8 +413,12 @@ export default function ChartCanvas() {
           className="chart-soil-tooltip"
           style={{
             position: "absolute",
-            left: soilTooltip.x + 14,
+            // Sit to the LEFT of the cursor (translateX(-100%)) so the
+            // label doesn't get clipped by the right-side LocationMiniMap
+            // when the cursor approaches the right edge of the chart.
+            left: soilTooltip.x - 14,
             top: soilTooltip.y + 14,
+            transform: "translateX(-100%)",
             pointerEvents: "none",
           }}
         >

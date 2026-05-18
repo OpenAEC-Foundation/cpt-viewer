@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as L from "leaflet";
 import { fetchBagPanden, fetchKadasterPercelen } from "../../utils/pdokWfs";
+import MapAddressSearch from "./MapAddressSearch";
 import "leaflet/dist/leaflet.css";
 import { invoke } from "@tauri-apps/api/core";
 import proj4 from "proj4";
@@ -263,6 +264,12 @@ export default function MapView() {
    *  and to remember the value when new markers get added later
    *  (e.g. after a BRO archive reload). */
   const layerOpacityRef = useRef<Record<string, number>>({});
+  /** Last document id we auto-fitted the map for. `null` until the
+   *  first fit. Mismatch with `activeDocId` triggers a force-fit even
+   *  when the markers are already in the current view — used so a
+   *  tab-switch into Kaart with a project loaded snaps to the
+   *  sonderingen immediately. */
+  const fittedDocIdRef = useRef<string | null>(null);
 
   /** When a topotijdreis layer is active it replaces the base layers, so
    *  user-driven opacity slider for a base layer should also affect the
@@ -283,6 +290,7 @@ export default function MapView() {
   // Hidden CPTs are filtered out so they don't clutter the map.
   const cptsMap = useCptStore((s) => s.cpts);
   const activeCptId = useCptStore((s) => s.activeCptId);
+  const activeDocId = useCptStore((s) => s.activeDocId);
   const hiddenCptIds = useCptStore((s) => s.hiddenCptIds);
   // Active doc (kind: cpt | project | undefined) — drives whether BRO popups
   // offer the "Maak project + voeg toe" button (only when a single CPT is open).
@@ -637,7 +645,7 @@ export default function MapView() {
         const sondOn = enabledLayersRef.current["bro-sonderingen"];
         const boresOn = enabledLayersRef.current["bro-boringen"];
         if ((sondOn || boresOn) && map.getZoom() >= MIN_BRO_AUTOFETCH_ZOOM) {
-          void loadVisibleArea();
+          void loadVisibleArea({ force: true });
         }
         // WFS overlays piggy-back on moveend so they stay in sync with
         // the visible bbox. Same zoom guard so a fully-zoomed-out view
@@ -651,6 +659,36 @@ export default function MapView() {
       }, BRO_REFETCH_DEBOUNCE_MS);
     };
     map.on("moveend", onMoveEnd);
+
+    // Zoom-only refresh: forces a fresh BRO + WFS reload the moment a
+    // zoom gesture completes. Without this the markers can lag behind
+    // the new viewport — e.g. zooming in shows the previous coarse
+    // viewport's positions until the next pan. We bypass the panTimer
+    // so the response feels snappy.
+    const onZoomEnd = () => {
+      const sondOn = enabledLayersRef.current["bro-sonderingen"];
+      const boresOn = enabledLayersRef.current["bro-boringen"];
+      if ((sondOn || boresOn) && map.getZoom() >= MIN_BRO_AUTOFETCH_ZOOM) {
+        void loadVisibleArea({ force: true });
+      }
+      if (enabledLayersRef.current["bag"] && map.getZoom() >= MIN_BRO_AUTOFETCH_ZOOM) {
+        void reloadBag();
+      }
+      if (enabledLayersRef.current["kadaster"] && map.getZoom() >= MIN_BRO_AUTOFETCH_ZOOM) {
+        void reloadKadaster();
+      }
+    };
+    map.on("zoomend", onZoomEnd);
+
+    // Fly-to handler triggered by the MapAddressSearch component.
+    const onFlyTo = (e: Event) => {
+      const ce = e as CustomEvent<{ lat: number; lon: number; zoom?: number }>;
+      const { lat, lon, zoom } = ce.detail;
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        map.flyTo([lat, lon], zoom ?? map.getZoom(), { duration: 0.8 });
+      }
+    };
+    window.addEventListener("ogs:map-fly-to", onFlyTo as EventListener);
     // Seed the store with the initial centre so a tab-switch to
     // Sonderingstekening before the user pans still inherits a sane location.
     {
@@ -990,9 +1028,11 @@ export default function MapView() {
       window.removeEventListener("ogs:layer-opacity", onLayerOpacity as EventListener);
       window.removeEventListener("ogs:measure-toggle", onMeasureToggle);
       window.removeEventListener("ogs:topotijdreis-year", onTopoYear as EventListener);
+      window.removeEventListener("ogs:map-fly-to", onFlyTo as EventListener);
       window.removeEventListener("keydown", onKey);
       document.removeEventListener("click", onPopupClick);
       map.off("moveend", onMoveEnd);
+      map.off("zoomend", onZoomEnd);
       map.off("click", onMapClick);
       if (panTimer) window.clearTimeout(panTimer);
       pendingAbort?.abort();
@@ -1104,19 +1144,30 @@ export default function MapView() {
       }
     }
 
-    // Auto-fit bounds the first time we get positions, but don't keep
-    // re-fitting on every re-render — would yank the view away from the user.
+    // Auto-fit logic:
+    //  - On MOUNT (`fittedDocIdRef.current === null`) → always fit to
+    //    the project sonderingen, so opening Kaart with a project
+    //    loaded immediately zooms onto the markers.
+    //  - When the active document CHANGES (user opens another project
+    //    while still on Kaart) → re-fit.
+    //  - Otherwise (same doc, marker added/removed) → only fit when
+    //    markers escape the current view, so casual edits don't yank
+    //    the user's zoom away.
+    const isInitialOrDocChange = fittedDocIdRef.current !== activeDocId;
     if (positioned.length === 1) {
-      // Only zoom in if currently very zoomed-out.
-      if (map.getZoom() < 12) map.setView([positioned[0].lat, positioned[0].lon], 17);
+      if (isInitialOrDocChange || map.getZoom() < 12) {
+        map.setView([positioned[0].lat, positioned[0].lon], 17);
+      }
     } else {
-      const bounds = L.latLngBounds(positioned.map((p) => [p.lat, p.lon] as [number, number]));
+      const bounds = L.latLngBounds(
+        positioned.map((p) => [p.lat, p.lon] as [number, number]),
+      );
       const current = map.getBounds();
-      // Only auto-fit if the markers are largely outside the current view.
-      if (!current.contains(bounds)) {
+      if (isInitialOrDocChange || !current.contains(bounds)) {
         map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
       }
     }
+    fittedDocIdRef.current = activeDocId;
 
     // Whenever the active CPT changes, gently pan to centre it (without
     // changing zoom — the user's zoom level is preserved).
@@ -1129,11 +1180,12 @@ export default function MapView() {
         }
       }
     }
-  }, [cpts, activeCptId]);
+  }, [cpts, activeCptId, activeDocId]);
 
   return (
     <div className="map-view-wrap">
       <div ref={containerRef} className={`map-view-container${measureMode ? " measuring" : ""}`} />
+      <MapAddressSearch />
       <div className="map-status">
         {cpts.filter((c) => c.position).length > 0 && (
           <span className="map-cpt-count">{cpts.filter((c) => c.position).length} sondering(en) ·&nbsp;</span>

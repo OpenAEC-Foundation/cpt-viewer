@@ -653,6 +653,101 @@ body,
   z-index: 1000; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
+/* ── Address-search box (top-left of the Map view) ──────────── */
+.map-addrsearch {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 320px;
+  max-width: calc(100% - 24px);
+  z-index: 1100;
+  font: 500 0.82rem 'Inter', system-ui, sans-serif;
+}
+.map-addrsearch-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--theme-bg, white);
+  border: 1px solid var(--theme-border, #E7E5E4);
+  border-radius: 6px;
+  padding: 6px 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+.map-addrsearch-icon {
+  color: var(--theme-text-secondary, #71717a);
+  flex-shrink: 0;
+}
+.map-addrsearch-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--theme-text, #36363e);
+}
+.map-addrsearch-input::placeholder {
+  color: var(--theme-text-secondary, #a1a1aa);
+}
+.map-addrsearch-clear {
+  appearance: none;
+  background: none;
+  border: 0;
+  color: var(--theme-text-secondary, #a1a1aa);
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 0.8rem;
+  border-radius: 3px;
+}
+.map-addrsearch-clear:hover {
+  background: var(--theme-bg-lighter, #f5f5f4);
+  color: var(--theme-text, #36363e);
+}
+.map-addrsearch-results {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 4px;
+  background: var(--theme-bg, white);
+  border: 1px solid var(--theme-border, #E7E5E4);
+  border-radius: 6px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.map-addrsearch-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--theme-text, #36363e);
+}
+.map-addrsearch-item.highlight,
+.map-addrsearch-item:hover {
+  background: var(--theme-hover, rgba(217, 119, 6, 0.08));
+}
+.map-addrsearch-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-addrsearch-item-type {
+  font: 500 0.7rem var(--font-code, 'JetBrains Mono'), monospace;
+  color: var(--theme-text-secondary, #a1a1aa);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
 /* ── Topotijdreis slider — lives inside the GisLayerPanel section ── */
 .topotijdreis-slider {
   display: flex;

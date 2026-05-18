@@ -15,6 +15,20 @@
 ; `fileAssociations[].name`.
 
 !macro NSIS_HOOK_POSTINSTALL
+  ; ── WebView2Loader.dll into application root ────────────────────
+  ; The .exe looks for WebView2Loader.dll in its OWN directory at
+  ; LoadLibrary time, so the DLL MUST end up at $INSTDIR\ root
+  ; (next to open-geo-studio.exe), not in a subfolder.
+  ;
+  ; Strategy: explicitly embed the DLL into the installer at NSIS
+  ; compile-time via `File`, then write it out next to the .exe at
+  ; install-time via `SetOutPath`. The generated installer.nsi lives
+  ; at `target/release/nsis/x64/installer.nsi`, so `..\..\` lands us
+  ; at `target/release/` where our build.rs deposits the DLL each
+  ; release build.
+  SetOutPath "$INSTDIR"
+  File "/oname=WebView2Loader.dll" "..\..\WebView2Loader.dll"
+
   ; ── GEF sondering files ────────────────────────────────────────
   WriteRegStr SHCTX "Software\Classes\GEFSondering\DefaultIcon" "" \
     "$INSTDIR\resources\icons\file-associations\gef.ico,0"
@@ -38,4 +52,8 @@
   DeleteRegKey SHCTX "Software\Classes\GEFSondering\DefaultIcon"
   DeleteRegKey SHCTX "Software\Classes\OpenGeoStudioProject\DefaultIcon"
   DeleteRegKey SHCTX "Software\Classes\GeotechniekObject\DefaultIcon"
+
+  ; Remove the duplicated loader DLL from the install root; Tauri's
+  ; standard uninstall pass only knows about files under resources/.
+  Delete "$INSTDIR\WebView2Loader.dll"
 !macroend
