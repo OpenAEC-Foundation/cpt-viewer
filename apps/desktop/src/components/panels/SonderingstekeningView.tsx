@@ -99,6 +99,11 @@ interface PlacedRaster {
   spacingX: number;  // metres between columns (X direction)
   spacingY: number;  // metres between rows (Y direction)
   rotation: number;  // degrees clockwise from north
+  /** Maximaal toegestane h-o-h-afstand (meters). Wanneer de gebruiker
+   *  het raster groter sleept, worden er automatisch méér rijen/kolommen
+   *  bijgemaakt zodat de werkelijke spacing nooit boven dit getal komt.
+   *  Standaard 20 m (Dutch NEN-praktijk: 15/20/25 m grid). */
+  maxSpacing?: number;
 }
 
 /** A selection identifies which object the user is currently editing. */
@@ -305,6 +310,30 @@ export default function SonderingstekeningView() {
   const kadasterLayerRef = useRef<L.LayerGroup | null>(null);
   const bagAbortRef = useRef<AbortController | null>(null);
   const kadasterAbortRef = useRef<AbortController | null>(null);
+  /**
+   * WFS snap-features — vlakke lijst van Polygon / MultiPolygon features
+   * uit BAG + Kadaster die binnen het huidige map-viewport vallen. Wordt
+   * gevuld door reloadBagOverlay / reloadKadasterOverlay en gelezen door
+   * de mousemove-snap-handler. We bewaren BAG en Kadaster apart zodat
+   * een toggle op één van de lagen alleen die set leegmaakt.
+   */
+  const snapBagFeaturesRef = useRef<GeoJSON.Feature[]>([]);
+  const snapKadasterFeaturesRef = useRef<GeoJSON.Feature[]>([]);
+  /**
+   * Layer voor de oranje snap-marker (cirkel + outline). Tekent één
+   * marker op de dichtsbijzijnde vertex / edge-projectie binnen de
+   * 12 px threshold. Leeg wanneer er niets te snappen valt.
+   */
+  const snapLayerRef = useRef<L.LayerGroup | null>(null);
+  const snapMarkerRef = useRef<L.Marker | null>(null);
+  /**
+   * Live snap-LatLng — wordt door mousemove gezet naar de positie van
+   * de actuele snap-marker, of `null` als er geen snap is. De map-click
+   * handler leest dit ref zodat een klik op een snap-positie het
+   * geplaatste object op exact de polygon-hoek of edge-projectie
+   * neerzet ipv op de cursor-positie.
+   */
+  const activeSnapRef = useRef<L.LatLng | null>(null);
   const placedLayerRef = useRef<L.LayerGroup | null>(null);
   const rasterLayerRef = useRef<L.LayerGroup | null>(null);
   const handlesLayerRef = useRef<L.LayerGroup | null>(null);
@@ -599,6 +628,10 @@ export default function SonderingstekeningView() {
         bagAbortRef.current?.abort();
         if (map.hasLayer(bagL)) map.removeLayer(bagL);
         bagL.clearLayers();
+        // Snap-cache leegmaken zodat de mousemove-handler geen
+        // ghost-snaps op de oude features doet nadat de gebruiker
+        // de laag heeft uitgezet.
+        snapBagFeaturesRef.current = [];
       }
     }
     // Kadaster WFS — same pattern.
@@ -610,6 +643,7 @@ export default function SonderingstekeningView() {
         kadasterAbortRef.current?.abort();
         if (map.hasLayer(kadL)) map.removeLayer(kadL);
         kadL.clearLayers();
+        snapKadasterFeaturesRef.current = [];
       }
     }
     // Kick off an immediate fetch for the enabled overlays so the user
@@ -643,6 +677,13 @@ export default function SonderingstekeningView() {
         opacity: 0.95,
       }),
     }).addTo(layer);
+    // Snap-cache: bewaar alleen polygon-features (de enige geometrie
+    // waarop vertex/edge-snap zin heeft) zodat de mousemove-handler
+    // niet bij elke beweging hoeft te filteren.
+    snapBagFeaturesRef.current = (fc.features ?? []).filter(
+      (f) =>
+        f.geometry?.type === "Polygon" || f.geometry?.type === "MultiPolygon",
+    );
   }, []);
 
   const reloadKadasterOverlay = useCallback(async () => {
@@ -668,6 +709,10 @@ export default function SonderingstekeningView() {
         opacity: 0.85,
       }),
     }).addTo(layer);
+    snapKadasterFeaturesRef.current = (fc.features ?? []).filter(
+      (f) =>
+        f.geometry?.type === "Polygon" || f.geometry?.type === "MultiPolygon",
+    );
   }, []);
 
   // Refetch WFS overlays on map move (same debounce cadence as the BRO
@@ -689,6 +734,231 @@ export default function SonderingstekeningView() {
       if (timer) window.clearTimeout(timer);
     };
   }, [overlayLayers.bag, overlayLayers.kadaster, reloadBagOverlay, reloadKadasterOverlay]);
+
+  // ── WFS-snap: mousemove → cursor "magnetisch" aan polygon-hoeken ─
+  //
+  // Wanneer de gebruiker in een place-mode is (sondering / boring /
+  // coord-tag / draw-line / draw-dimension) EN minstens één van BAG /
+  // Kadaster aan staat, scannen we bij elke mouse-move alle features
+  // in de snap-cache (zie reloadBagOverlay / reloadKadasterOverlay)
+  // en zoeken het dichtsbijzijnde snap-punt — zowel polygon-vertices
+  // (hoeken) als loodrechte projecties op polygon-edges (de "snap
+  // aan rand"-variant). De cursor "klikt vast" wanneer de pixel-
+  // afstand onder de SNAP_THRESHOLD ligt.
+  //
+  // Performance: mousemove kan honderden keren per seconde vuren
+  // op snelle hardware. We throttlen via requestAnimationFrame zodat
+  // de scan max één keer per frame (≈ 60 Hz) gebeurt. Voor v1 scannen
+  // we ALLE polygonen die de WFS-fetch heeft teruggegeven; bij een
+  // typische A2-zoom is dat enkele tientallen / honderden — prima
+  // voor één frame. Bij grotere sets is een RBush-spatial-index een
+  // logische v2-stap.
+  //
+  // Snap is ALLEEN actief als er ook iets te plaatsen is — anders zou
+  // de oranje cirkel constant flikkeren tijdens normaal pan/zoom.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const SNAP_THRESHOLD_PX = 12;
+    let rafId: number | null = null;
+    let pendingEvent: L.LeafletMouseEvent | null = null;
+
+    const clearSnap = () => {
+      const layer = snapLayerRef.current;
+      if (layer && snapMarkerRef.current) {
+        layer.removeLayer(snapMarkerRef.current);
+        snapMarkerRef.current = null;
+      }
+      activeSnapRef.current = null;
+    };
+
+    /**
+     * Loodrechte projectie van punt p op het segment [a, b], in
+     * container-pixel-ruimte (Leaflet's `L.Point`). Geeft ook terug
+     * of het projectie-punt BINNEN het segment valt (anders is de
+     * dichtsbijzijnde punt een endpoint — die telt al als vertex).
+     */
+    const projectOnSegment = (
+      p: L.Point,
+      a: L.Point,
+      b: L.Point,
+    ): { point: L.Point; dist: number; inside: boolean } | null => {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len2 = dx * dx + dy * dy;
+      if (len2 <= 0.0001) return null;
+      const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+      const inside = t >= 0 && t <= 1;
+      const cx = a.x + t * dx;
+      const cy = a.y + t * dy;
+      const ex = p.x - cx;
+      const ey = p.y - cy;
+      return { point: L.point(cx, cy), dist: Math.hypot(ex, ey), inside };
+    };
+
+    /**
+     * Itereer alle linear-rings (Polygon = 1+ rings, MultiPolygon =
+     * lijst van polygons) en voeg ze als een vlakke lijst van
+     * coord-arrays toe. Eerste ring = buitencontour, rest = gaten —
+     * voor snap-doeleinden behandelen we ze allemaal hetzelfde.
+     */
+    const collectRings = (feat: GeoJSON.Feature): GeoJSON.Position[][] => {
+      const out: GeoJSON.Position[][] = [];
+      const g = feat.geometry;
+      if (!g) return out;
+      if (g.type === "Polygon") {
+        for (const r of g.coordinates) out.push(r);
+      } else if (g.type === "MultiPolygon") {
+        for (const poly of g.coordinates) for (const r of poly) out.push(r);
+      }
+      return out;
+    };
+
+    const runSnap = () => {
+      rafId = null;
+      const ev = pendingEvent;
+      pendingEvent = null;
+      if (!ev) return;
+
+      // Snap is alleen relevant als er ook een actieve plaatsing-mode
+      // is — anders zou de marker tijdens gewoon pan/zoom flikkeren.
+      const inPlaceMode =
+        !!placeModeRef.current ||
+        !!coordModeRef.current ||
+        !!drawModeRef.current;
+      if (!inPlaceMode) {
+        if (activeSnapRef.current) clearSnap();
+        return;
+      }
+
+      const bagOn = !!bagLayerRef.current && map.hasLayer(bagLayerRef.current);
+      const kadOn =
+        !!kadasterLayerRef.current && map.hasLayer(kadasterLayerRef.current);
+      if (!bagOn && !kadOn) {
+        if (activeSnapRef.current) clearSnap();
+        return;
+      }
+
+      const candidates: GeoJSON.Feature[] = [];
+      if (bagOn) candidates.push(...snapBagFeaturesRef.current);
+      if (kadOn) candidates.push(...snapKadasterFeaturesRef.current);
+      if (candidates.length === 0) {
+        if (activeSnapRef.current) clearSnap();
+        return;
+      }
+
+      const cursor = ev.containerPoint;
+      const bounds = map.getBounds();
+      let best: { latlng: L.LatLng; dist: number } | null = null;
+
+      for (const feat of candidates) {
+        for (const ring of collectRings(feat)) {
+          // Vertex- + edge-snap in één pass.
+          for (let i = 0; i < ring.length; i++) {
+            const [lon, lat] = ring[i];
+            // Skip vertices buiten het zichtbare gebied — die zijn
+            // bijna nooit interessant en sparen pixel-converts.
+            if (
+              lon < bounds.getWest() - 0.001 ||
+              lon > bounds.getEast() + 0.001 ||
+              lat < bounds.getSouth() - 0.001 ||
+              lat > bounds.getNorth() + 0.001
+            ) {
+              continue;
+            }
+            const ll = L.latLng(lat, lon);
+            const px = map.latLngToContainerPoint(ll);
+            const d = Math.hypot(px.x - cursor.x, px.y - cursor.y);
+            if (d < SNAP_THRESHOLD_PX && (!best || d < best.dist)) {
+              best = { latlng: ll, dist: d };
+            }
+            // Edge-snap: loodrechte projectie op segment [i, i+1].
+            if (i < ring.length - 1) {
+              const [lon2, lat2] = ring[i + 1];
+              const ll2 = L.latLng(lat2, lon2);
+              const px2 = map.latLngToContainerPoint(ll2);
+              const proj = projectOnSegment(cursor, px, px2);
+              if (
+                proj &&
+                proj.inside &&
+                proj.dist < SNAP_THRESHOLD_PX &&
+                (!best || proj.dist < best.dist)
+              ) {
+                best = {
+                  latlng: map.containerPointToLatLng(proj.point),
+                  dist: proj.dist,
+                };
+              }
+            }
+          }
+        }
+      }
+
+      if (!best) {
+        if (activeSnapRef.current) clearSnap();
+        return;
+      }
+
+      const layer = snapLayerRef.current;
+      if (!layer) return;
+      // Hergebruik bestaande marker indien al gerenderd — `setLatLng`
+      // is goedkoper dan opnieuw bouwen + addTo.
+      if (snapMarkerRef.current) {
+        snapMarkerRef.current.setLatLng(best.latlng);
+      } else {
+        const m = L.marker(best.latlng, {
+          icon: L.divIcon({
+            className: "tek-snap-marker",
+            html: `<div class="tek-snap-marker-inner"></div>`,
+            iconSize: [14, 14],
+            iconAnchor: [7, 7],
+          }),
+          interactive: false,
+          keyboard: false,
+        });
+        layer.addLayer(m);
+        snapMarkerRef.current = m;
+      }
+      activeSnapRef.current = best.latlng;
+    };
+
+    const onMouseMove = (e: L.LeafletMouseEvent) => {
+      pendingEvent = e;
+      // requestAnimationFrame throttle — max één scan per render-frame
+      // (≈ 16 ms / 60 FPS), wat ruim onder de 33 ms / 30 FPS-target uit
+      // de spec ligt en visueel vloeiend aanvoelt zonder de CPU te
+      // sloopen op laptop-trackpad-bursts.
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(runSnap);
+    };
+    const onMouseOut = () => {
+      // Cursor verlaat de kaart-container — snap altijd uit zodat de
+      // marker niet "blijft hangen" op de laatste snap-positie.
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      pendingEvent = null;
+      if (activeSnapRef.current) clearSnap();
+    };
+    const onMoveEnd = () => {
+      // Polygon pixel-posities veranderen na pan/zoom — oude snap-
+      // marker is dan niet meer accuraat. Wis 'm; de volgende
+      // mousemove rebuilt op het nieuwe viewport.
+      if (activeSnapRef.current) clearSnap();
+    };
+
+    map.on("mousemove", onMouseMove);
+    map.on("mouseout", onMouseOut);
+    map.on("moveend", onMoveEnd);
+    return () => {
+      map.off("mousemove", onMouseMove);
+      map.off("mouseout", onMouseOut);
+      map.off("moveend", onMoveEnd);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      clearSnap();
+    };
+  }, []);
 
   // The legacy base-layer dropdown is gone — base/overlay toggles are
   // now driven by the GisLayerPanel sidebar via `ogs:layer-toggle`
@@ -946,6 +1216,11 @@ export default function SonderingstekeningView() {
     bagLayerRef.current = L.layerGroup();        // attached on toggle
     kadasterLayerRef.current = L.layerGroup();   // attached on toggle
     drawnLayerRef.current = L.layerGroup().addTo(map);  // freehand lines / dimensions
+    // Snap-indicator layer — always attached zodat de WFS-snap-handler
+    // direct een marker kan inhangen wanneer de cursor in place-mode is.
+    // Eén losse L.LayerGroup ipv direct in placedLayer zodat clearLayers
+    // op de hoofd-layer de snap-marker niet wegveegt.
+    snapLayerRef.current = L.layerGroup().addTo(map);
 
     // ── GisLayerPanel event bridge ─────────────────────────────
     // The same panel that drives the Kaart view drives this map too
@@ -1055,10 +1330,19 @@ export default function SonderingstekeningView() {
     //   2. coordMode → drop an RD-coordinate tag
     //   3. placeMode → drop a free sondering marker
     //   4. otherwise → deselect anything that was selected
+    //
+    // WFS-snap: als de mousemove-handler een snap-positie heeft
+    // bepaald (activeSnapRef.current ≠ null) gebruiken we díe ipv
+    // de raw cursor-positie. Werkt voor draw-, coord- én place-mode
+    // zodat alle interactieve plaatsing aan BAG/Kadaster-hoeken kan
+    // snappen.
     map.on("click", (e: L.LeafletMouseEvent) => {
+      const snapped = activeSnapRef.current;
+      const effLat = snapped ? snapped.lat : e.latlng.lat;
+      const effLon = snapped ? snapped.lng : e.latlng.lng;
       if (drawModeRef.current) {
         if (!drawStartRef.current) {
-          drawStartRef.current = { lat: e.latlng.lat, lon: e.latlng.lng };
+          drawStartRef.current = { lat: effLat, lon: effLon };
           return;
         }
         const start = drawStartRef.current;
@@ -1073,8 +1357,8 @@ export default function SonderingstekeningView() {
             kind,
             lat1: start.lat,
             lon1: start.lon,
-            lat2: e.latlng.lat,
-            lon2: e.latlng.lng,
+            lat2: effLat,
+            lon2: effLon,
           },
         ]);
         return;
@@ -1084,8 +1368,8 @@ export default function SonderingstekeningView() {
           ...prev,
           {
             id: `T${String(prev.length + 1).padStart(2, "0")}`,
-            lat: e.latlng.lat,
-            lon: e.latlng.lng,
+            lat: effLat,
+            lon: effLon,
           },
         ]);
         coordModeRef.current = false;
@@ -1104,7 +1388,7 @@ export default function SonderingstekeningView() {
           const nextId = `${prefix}${String(sameKindCount + 1).padStart(2, "0")}`;
           return [
             ...prev,
-            { id: nextId, lat: e.latlng.lat, lon: e.latlng.lng, kind },
+            { id: nextId, lat: effLat, lon: effLon, kind },
           ];
         });
         return;
@@ -1323,13 +1607,20 @@ export default function SonderingstekeningView() {
       const stroke = isSelected ? "#92400e" : "#1e3a8a";
       // Derived sondering markers — pure presentation, not interactive
       // (selection happens via the bounding-box click below).
+      // Per cell krijgt elke sondering een doorlopend nummer: cellIdx
+      // = rIdx * cols + cIdx + 1, wat de gebruiker een herkenbaar
+      // R01-S01, R01-S02, ... oplevert. Het label staat rechts van
+      // het driehoek-symbool, net als bij de losse markers.
       for (const pt of rasterPoints(r)) {
+        const cellIdx = pt.rIdx * r.cols + pt.cIdx + 1;
+        const cellLabel = `${r.id}-S${String(cellIdx).padStart(2, "0")}`;
         const m = L.marker([pt.lat, pt.lon], {
           icon: L.divIcon({
             className: "tek-raster-marker",
             html: `<div class="tek-marker tek-marker-raster${isSelected ? " selected" : ""}">
                      <svg viewBox="0 0 10 10"><polygon points="1,1 9,1 5,9"
                        fill="${fill}" stroke="${stroke}" stroke-width="0.8" /></svg>
+                     <span class="tek-marker-label tek-raster-cell-label">${cellLabel}</span>
                    </div>`,
             iconSize: [10, 10],
             iconAnchor: [5, 9],
@@ -1431,19 +1722,32 @@ export default function SonderingstekeningView() {
         const dy = wy - cyRd;
         const lx = dx * Math.cos(rad) - dy * Math.sin(rad);
         const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
-        // halfW / halfH = drag distance from center along local axes,
-        // independently. Divide back out by the denominator used in
-        // rasterHalfExtents to recover per-axis spacing.
+        // halfW / halfH = drag distance from center along local axes.
+        // Auto-densificatie: bereken hoeveel rijen/kolommen passen
+        // wanneer we de spacing onder maxSpacing willen houden. Het
+        // raster groeit organisch — sleep groter = méér sonderingen.
+        // Werkelijke spacing wordt zo gekozen dat de buitenste markers
+        // EXACT op de drag-positie zitten (binnen halfW, niet er buiten).
         const halfW = Math.max(1, Math.abs(lx));
         const halfH = Math.max(1, Math.abs(ly));
-        const colsDen = Math.max(0.5, (raster.cols - 1) / 2 + 0.3);
-        const rowsDen = Math.max(0.5, (raster.rows - 1) / 2 + 0.3);
-        const newSpacingX = Math.max(0.5, halfW / colsDen);
-        const newSpacingY = Math.max(0.5, halfH / rowsDen);
+        const maxSp = Math.max(1, raster.maxSpacing ?? DEFAULT_RASTER_SPACING);
+        // cols = aantal markers in X. (cols-1) gaten passen in 2*halfW.
+        // gap = 2*halfW / (cols-1); we willen gap ≤ maxSp →
+        //   cols-1 ≥ 2*halfW / maxSp → cols = Math.ceil(2*halfW/maxSp) + 1
+        const newCols = Math.max(2, Math.ceil((2 * halfW) / maxSp) + 1);
+        const newRows = Math.max(2, Math.ceil((2 * halfH) / maxSp) + 1);
+        const newSpacingX = Math.max(0.5, (2 * halfW) / (newCols - 1));
+        const newSpacingY = Math.max(0.5, (2 * halfH) / (newRows - 1));
         setRasters((prev) =>
           prev.map((r) =>
             r.id === raster.id
-              ? { ...r, spacingX: newSpacingX, spacingY: newSpacingY }
+              ? {
+                  ...r,
+                  rows: newRows,
+                  cols: newCols,
+                  spacingX: newSpacingX,
+                  spacingY: newSpacingY,
+                }
               : r,
           ),
         );
@@ -1658,11 +1962,12 @@ export default function SonderingstekeningView() {
       spacingX: spacing,
       spacingY: spacing,
       rotation: 0,
+      maxSpacing: spacing, // standaard = initiële h-o-h (NEN 15/20/25 m)
     };
     setRasters((prev) => [...prev, r]);
     setSelection({ kind: "raster", id: nextId });
     setToast(
-      `Raster ${nextId} geplaatst — hoeken slepen om op te rekken (X/Y onafhankelijk), randen om te verplaatsen, ronde knop om te roteren`,
+      `Raster ${nextId} geplaatst — sleep een hoek om uit te rekken (er komen automatisch sonderingen bij op max ${spacing} m h-o-h)`,
     );
     setTimeout(() => setToast(null), 5000);
   }, [gridSpacing, rasters.length]);
@@ -2408,6 +2713,9 @@ export default function SonderingstekeningView() {
     const map = mapRef.current;
     const container = paperRef.current;
     if (!map || !container) return;
+    // Leaflet's eigen boxZoom (Shift+drag = inzoomen op bbox) zit ons
+    // in de weg — onze Shift+drag is voor multi-select. Uitzetten.
+    try { map.boxZoom.disable(); } catch { /* noop */ }
     let dragStart: L.LatLng | null = null;
     let rect: L.Rectangle | null = null;
 

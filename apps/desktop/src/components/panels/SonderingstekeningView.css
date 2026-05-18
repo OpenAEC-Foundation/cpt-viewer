@@ -179,6 +179,44 @@
   outline-offset: -3px;
   box-shadow: 0 0 10px rgba(217, 119, 6, 0.55);
 }
+
+/* Raster-cell sondering-label — compact zodat dichte rasters niet
+   in een wolk van overlappende labels veranderen. Iets kleiner +
+   transparanter dan het reguliere marker-label, geen achtergrond. */
+.tek-raster-cell-label {
+  font-size: 8px;
+  font-weight: 600;
+  color: #1e3a8a;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  box-shadow: none;
+  text-shadow: 0 0 2px white, 0 0 1px white;
+  left: 6px;
+  top: -1px;
+}
+
+/* Schaalbalk — vaste positie linksonder boven het titleblock, op het
+   papier. z-index hoger dan de kaart-tegels (1) en frame (3) zodat
+   de bar altijd boven de map zichtbaar is, lager dan het titleblock
+   (1100) zodat die er overheen kan rangschikken. */
+.tek-scale-bar {
+  position: absolute;
+  left: 16px;
+  bottom: 120px; /* boven het titleblock (titleblock zit bottom: 12px en is ~100px hoog) */
+  z-index: 50;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(17, 17, 17, 0.25);
+  border-radius: 3px;
+  padding: 2px 4px;
+  font: 600 9px 'JetBrains Mono', monospace;
+  color: #111;
+  pointer-events: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+.tek-scale-bar svg {
+  display: block;
+}
 .tek-overlay-pdf {
   border: none;
   opacity: 0.85;
@@ -639,6 +677,27 @@
 }
 .tek-coord-text strong {
   color: #d97706;
+}
+
+/* ── WFS snap-indicator ──────────────────────────────────────── */
+/* Wordt getoond door SonderingstekeningView wanneer de cursor in
+   een place-mode (sondering / boring / coord-tag) binnen 12 px
+   van een BAG / Kadaster polygon-vertex of edge-projectie zit.
+   Eigen divIcon (geen Leaflet-default marker-styling), met een
+   semi-transparante oranje cirkel + outline + glow zodat hij ook
+   over donkere ondergronden goed zichtbaar blijft. */
+.tek-snap-marker {
+  background: transparent !important;
+  border: 0 !important;
+}
+.tek-snap-marker-inner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #d97706;
+  border-radius: 50%;
+  background: rgba(217, 119, 6, 0.18);
+  box-shadow: 0 0 6px rgba(217, 119, 6, 0.7);
+  pointer-events: none;
 }
 
 /* ── Toast for transient messages ────────────────────────────── */
