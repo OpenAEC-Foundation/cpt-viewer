@@ -154,6 +154,30 @@ export default function TekeningProperties() {
             scale={snap.scale}
             liveScale={snap.liveScale}
           />
+          {/* Snel-presets voor de gangbare bouwkundige drukschalen.
+              Klik op een chip = exacte 1:N (zelfde event als de
+              getypte waarde). Active-state op chip die matcht de
+              huidige requested scale (snap.scale, niet liveScale —
+              anders flikkert het bij zoom-correcties). */}
+          <div className="tekprops-scale-presets" role="group" aria-label="Schaal-presets">
+            {[500, 1000, 2000, 5000].map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                className={`tekprops-scale-chip${snap.scale === preset ? " active" : ""}`}
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent("ogs:tekening-set-scale", {
+                      detail: { scale: preset },
+                    }),
+                  )
+                }
+                title={`Zet schaal op 1:${preset}`}
+              >
+                1:{preset}
+              </button>
+            ))}
+          </div>
           {/* Freeze viewport — checkbox-vorm in het paneel. De ribbon-
               knop blijft ook bestaan; ze schrijven naar dezelfde state
               via `ogs:tekening-toggle-freeze`. */}

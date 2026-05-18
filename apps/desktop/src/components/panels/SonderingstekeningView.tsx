@@ -363,6 +363,30 @@ export default function SonderingstekeningView() {
    */
   const [handleRedraw, setHandleRedraw] = useState(0);
   const [selection, setSelection] = useState<Selection>(null);
+  // Mirror van `selection` zodat ribbon-event-handlers (in een useEffect
+  // met [] deps) altijd de huidige selectie kunnen lezen zonder dat we
+  // ze elke keer opnieuw moeten registreren.
+  const selectionRef = useRef<Selection>(null);
+  useEffect(() => { selectionRef.current = selection; }, [selection]);
+  // Multi-selectie: ontstaat door Shift+drag een rechthoek op het papier
+  // te tekenen. Bevat een mix van marker / raster / overlay / line /
+  // coord-tag-ids. Het Delete-event verwijdert ze allemaal in één
+  // keer. Wordt automatisch gewist bij iedere plain (geen-shift) klik
+  // op de kaart of bij Escape.
+  type MultiItem =
+    | { kind: "marker"; id: string }
+    | { kind: "raster"; id: string }
+    | { kind: "overlay"; id: string }
+    | { kind: "line"; id: string }
+    | { kind: "coord"; id: string };
+  const [multiSelection, setMultiSelection] = useState<MultiItem[]>([]);
+  const multiSelectionRef = useRef<MultiItem[]>([]);
+  useEffect(() => { multiSelectionRef.current = multiSelection; }, [multiSelection]);
+  // Rotatie (graden, klokwise) voor de actieve image/svg overlay.
+  // Wordt door de ribbon-rotate-knop opgehoogd en als CSS transform
+  // toegepast in een effect dat de Leaflet imageOverlay DOM-element
+  // bewerkt. Markers + rasters hebben hun eigen rotatie elders.
+  const [overlayRotation, setOverlayRotation] = useState(0);
   // Legacy state — kept off the render path. Base/overlay layer
   // selection is now driven entirely by the GisLayerPanel sidebar.
   /** Per-overlay enable flags for the PDOK overlay-tile layers. None
@@ -783,6 +807,26 @@ export default function SonderingstekeningView() {
     };
     img.src = overlay.src;
   }, [overlay, selection]);
+
+  // Reset overlay-rotatie wanneer de gebruiker een NIEUWE overlay
+  // importeert (anders zou de volgende image meteen op de oude hoek
+  // staan, wat verwarrend is).
+  useEffect(() => {
+    setOverlayRotation(0);
+  }, [overlay?.id]);
+
+  // Pas overlay-rotatie toe via CSS transform op het Leaflet <img>
+  // element. L.ImageOverlay heeft .getElement() dat het onderliggende
+  // DOM-element teruggeeft. We forceren transform-origin: center zodat
+  // de afbeelding om zijn middelpunt draait, niet om de bounds-hoek.
+  useEffect(() => {
+    const ov = overlayLayerRef.current;
+    if (!ov) return;
+    const el = ov.getElement();
+    if (!el) return;
+    el.style.transform = `rotate(${overlayRotation}deg)`;
+    el.style.transformOrigin = "center center";
+  }, [overlayRotation, overlay?.id]);
 
   // ── Init Leaflet map inside the paper rect ─────────────────────
   useEffect(() => {
@@ -1631,6 +1675,27 @@ export default function SonderingstekeningView() {
 
   /** Delete whatever is currently selected (raster / marker / overlay). */
   const deleteSelection = useCallback(() => {
+    // Multi-selection (van Shift+drag-rect) heeft voorrang — als die
+    // niet leeg is, verwijderen we ALLES daarin en negeren we de
+    // single-selectie. Anders pakt de oude single-select-flow het.
+    const multi = multiSelectionRef.current;
+    if (multi.length > 0) {
+      const markerIds = new Set(multi.filter((m) => m.kind === "marker").map((m) => m.id));
+      const rasterIds = new Set(multi.filter((m) => m.kind === "raster").map((m) => m.id));
+      const lineIds = new Set(multi.filter((m) => m.kind === "line").map((m) => m.id));
+      const coordIds = new Set(multi.filter((m) => m.kind === "coord").map((m) => m.id));
+      const overlayHit = multi.some((m) => m.kind === "overlay");
+      if (markerIds.size > 0) setPlaced((prev) => prev.filter((p) => !markerIds.has(p.id)));
+      if (rasterIds.size > 0) setRasters((prev) => prev.filter((r) => !rasterIds.has(r.id)));
+      if (lineIds.size > 0) setDrawnLines((prev) => prev.filter((l) => !lineIds.has(l.id)));
+      if (coordIds.size > 0) setCoordTags((prev) => prev.filter((c) => !coordIds.has(c.id)));
+      if (overlayHit) setOverlay(null);
+      setMultiSelection([]);
+      setSelection(null);
+      setToast(`${multi.length} object(en) verwijderd`);
+      setTimeout(() => setToast(null), 1800);
+      return;
+    }
     setSelection((sel) => {
       if (!sel) return null;
       if (sel.kind === "marker") {
@@ -1813,20 +1878,28 @@ export default function SonderingstekeningView() {
       const isA2 = paperSize === "A2";
       const pageW = isA2 ? "594mm" : "420mm";
       const pageH = isA2 ? "420mm" : "297mm";
-      // Inline screen-styles die ervoor zorgen dat het papier OOK op
-      // het scherm naar de A2/A3 grootte gaat — alleen ZICHTBAAR
-      // tijdens print (verstopt achter `display:none` containers),
-      // maar Leaflet ziet de echte pixelgrootte en herrendert.
+      // Inline print-styles. Twee fases:
+      //   (a) SCHERM-fase tijdens `body.tek-printing`: paper wordt
+      //       op A2/A3 mm-grootte gezet zodat Leaflet de juiste
+      //       tile-grid kan opbouwen, MAAR off-screen via
+      //       `left: -100vw` zodat de gebruiker niets ziet. Anders
+      //       "explodeert" het papier over de hele app tijdens de
+      //       print-dialog (594mm ≈ 2245px op 96dpi).
+      //   (b) PRINT-fase (@media print): paper wordt naar (0,0)
+      //       gezet en zichtbaar gemaakt; al het andere is verborgen
+      //       via visibility:hidden.
       const css =
         // Page rule met expliciete mm-dimensies zodat WebView2 geen
         // 'A2'-naam hoeft te kennen.
         `@page { size: ${pageW} ${pageH}; margin: 0; }\n` +
-        // Op-class zodat we de juiste paper ook BUITEN @media print
-        // alvast op de juiste mm-grootte kunnen zetten en daarna
-        // map.invalidateSize() kunnen aanroepen.
+        // SCHERM-fase: paper off-screen op de juiste mm-grootte.
+        // pointer-events: none zodat de UI achter het off-screen
+        // papier nog steeds gewoon klikbaar is (anders zou de
+        // gebruiker per ongeluk niet meer met de ribbon kunnen
+        // werken na cancel).
         `body.tek-printing .tek-paper {\n` +
         `  position: fixed !important;\n` +
-        `  left: 0 !important; top: 0 !important;\n` +
+        `  left: -100vw !important; top: 0 !important;\n` +
         `  width: ${pageW} !important;\n` +
         `  height: ${pageH} !important;\n` +
         `  max-width: none !important; max-height: none !important;\n` +
@@ -1835,14 +1908,26 @@ export default function SonderingstekeningView() {
         `  border: none !important;\n` +
         `  transform: none !important;\n` +
         `  z-index: 99999 !important;\n` +
+        `  pointer-events: none !important;\n` +
         `}\n` +
-        // Tijdens print: verberg ALLES behalve het papier en zijn
-        // descendants. visibility houdt het DOM-layout intact zodat
-        // Leaflet niets opnieuw hoeft te berekenen.
+        // Stage-wrapper ook off-screen + verberg de in-canvas
+        // representatie. De stage was de "kijkglas"-laag in de
+        // gewone view; tijdens print willen we hem volledig uit
+        // de weg.
+        `body.tek-printing .tek-paper-stage {\n` +
+        `  visibility: hidden !important;\n` +
+        `}\n` +
+        // PRINT-fase: paper naar (0,0) brengen en zichtbaar maken.
+        // body * { visibility: hidden } verbergt eerst álles, dan
+        // .tek-paper en al zijn kinderen weer zichtbaar.
         `@media print {\n` +
         `  html, body { background: white !important; margin: 0 !important; padding: 0 !important; }\n` +
         `  body * { visibility: hidden !important; }\n` +
-        `  .tek-paper, .tek-paper * { visibility: visible !important; }\n` +
+        `  body.tek-printing .tek-paper {\n` +
+        `    left: 0 !important;\n` +
+        `    visibility: visible !important;\n` +
+        `  }\n` +
+        `  .tek-paper * { visibility: visible !important; }\n` +
         `  /* Zorg dat oude box-shadow van de leaflet tiles niet roeit. */\n` +
         `  .leaflet-tile { box-shadow: none !important; }\n` +
         `}\n`;
@@ -1891,6 +1976,39 @@ export default function SonderingstekeningView() {
     const onMove = (e: Event) => {
       const ce = e as CustomEvent<{ dx: number; dy: number }>;
       moveSelection(ce.detail.dx, ce.detail.dy);
+    };
+    // Roteer het geselecteerde object met `deg` graden (klokwise = +).
+    // Werkt op:
+    //   - raster: rotation-property optellen (modulo 360 voor netheid)
+    //   - overlay (image/svg): we voegen rotation toe via een
+    //     custom CSS-transform op de Leaflet imageOverlay element
+    //     en bewaren de hoek in een nieuwe state (overlayRotation).
+    //   - marker / coord-tag: nog niet rotatable (rond symbool of
+    //     puur tekstlabel — rotatie heeft daar geen visuele zin)
+    const onRotate = (e: Event) => {
+      const ce = e as CustomEvent<{ deg: number }>;
+      const deg = Number(ce.detail.deg) || 0;
+      if (!deg) return;
+      const sel = selectionRef.current;
+      if (!sel) {
+        setToast("Selecteer eerst een object om te roteren");
+        setTimeout(() => setToast(null), 2200);
+        return;
+      }
+      if (sel.kind === "raster") {
+        setRasters((prev) =>
+          prev.map((r) =>
+            r.id === sel.id
+              ? { ...r, rotation: ((r.rotation + deg) % 360 + 360) % 360 }
+              : r,
+          ),
+        );
+      } else if (sel.kind === "overlay" && overlayLayerRef.current) {
+        setOverlayRotation((d) => ((d + deg) % 360 + 360) % 360);
+      } else {
+        setToast("Dit objecttype kun je niet roteren");
+        setTimeout(() => setToast(null), 2200);
+      }
     };
     // Properties-panel ↔ view bridge.
     const onSetTitleBlock = (e: Event) => {
@@ -1977,6 +2095,7 @@ export default function SonderingstekeningView() {
     window.addEventListener("ogs:tekening-copy", onCopy);
     window.addEventListener("ogs:tekening-delete", onDelete);
     window.addEventListener("ogs:tekening-move", onMove as EventListener);
+    window.addEventListener("ogs:tekening-rotate", onRotate as EventListener);
     window.addEventListener("ogs:tekening-set-titleblock", onSetTitleBlock as EventListener);
     window.addEventListener(
       "ogs:tekening-update-selected-raster",
@@ -1993,6 +2112,7 @@ export default function SonderingstekeningView() {
       window.removeEventListener("ogs:tekening-copy", onCopy);
       window.removeEventListener("ogs:tekening-delete", onDelete);
       window.removeEventListener("ogs:tekening-move", onMove as EventListener);
+      window.removeEventListener("ogs:tekening-rotate", onRotate as EventListener);
       window.removeEventListener("ogs:tekening-set-titleblock", onSetTitleBlock as EventListener);
       window.removeEventListener(
         "ogs:tekening-update-selected-raster",
@@ -2277,6 +2397,127 @@ export default function SonderingstekeningView() {
       new CustomEvent("ogs:tekening-freeze-changed", { detail: { frozen } }),
     );
   }, [frozen]);
+
+  // ── Multi-select drag-rectangle ───────────────────────────────
+  // Shift+drag op het papier tekent een amber rechthoek; op mouseup
+  // gaan alle bevatte markers / rasters / lijnen / coord-tags / image-
+  // overlays in `multiSelection`. Plain klik (zonder shift) of Esc
+  // wist hem. De Delete-handler in deleteSelection() pakt vervolgens
+  // multiSelection in bulk op.
+  useEffect(() => {
+    const map = mapRef.current;
+    const container = paperRef.current;
+    if (!map || !container) return;
+    let dragStart: L.LatLng | null = null;
+    let rect: L.Rectangle | null = null;
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (!e.shiftKey) return;
+      if (placeModeRef.current || drawModeRef.current || coordModeRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const bbox = container.getBoundingClientRect();
+      const cp = L.point(e.clientX - bbox.left, e.clientY - bbox.top);
+      dragStart = map.containerPointToLatLng(cp);
+      map.dragging.disable();
+    };
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragStart) return;
+      const bbox = container.getBoundingClientRect();
+      const cp = L.point(e.clientX - bbox.left, e.clientY - bbox.top);
+      const cur = map.containerPointToLatLng(cp);
+      const bounds = L.latLngBounds(dragStart, cur);
+      if (!rect) {
+        rect = L.rectangle(bounds, {
+          color: "#D97706",
+          weight: 1.5,
+          fillColor: "#FBBF24",
+          fillOpacity: 0.18,
+          interactive: false,
+        }).addTo(map);
+      } else {
+        rect.setBounds(bounds);
+      }
+    };
+    const onMouseUp = (e: MouseEvent) => {
+      if (!dragStart) return;
+      const bbox = container.getBoundingClientRect();
+      const cp = L.point(e.clientX - bbox.left, e.clientY - bbox.top);
+      const end = map.containerPointToLatLng(cp);
+      const bounds = L.latLngBounds(dragStart, end);
+      const dragPx = Math.abs(
+        map.latLngToContainerPoint(dragStart).distanceTo(cp),
+      );
+      if (dragPx > 5) {
+        const hits: MultiItem[] = [];
+        // Markers (CPTs + boringen)
+        for (const m of placed) {
+          if (bounds.contains([m.lat, m.lon])) {
+            hits.push({ kind: "marker", id: m.id });
+          }
+        }
+        // Rasters — match op center
+        for (const r of rasters) {
+          if (bounds.contains([r.centerLat, r.centerLon])) {
+            hits.push({ kind: "raster", id: r.id });
+          }
+        }
+        // Coord-tags
+        for (const c of coordTags) {
+          if (bounds.contains([c.lat, c.lon])) {
+            hits.push({ kind: "coord", id: c.id });
+          }
+        }
+        // Lijnen / maatlijnen — match wanneer EEN van de twee endpoints
+        // binnen de box valt (volle-include zou te strikt zijn voor
+        // lange lijnen).
+        for (const l of drawnLines) {
+          if (
+            bounds.contains([l.lat1, l.lon1]) ||
+            bounds.contains([l.lat2, l.lon2])
+          ) {
+            hits.push({ kind: "line", id: l.id });
+          }
+        }
+        // Overlay — match wanneer overlay-center binnen bounds
+        if (overlay && overlay.centerLat != null && overlay.centerLon != null) {
+          if (bounds.contains([overlay.centerLat, overlay.centerLon])) {
+            hits.push({ kind: "overlay", id: overlay.id });
+          }
+        }
+        setMultiSelection(hits);
+        setSelection(null);
+        if (hits.length > 0) {
+          setToast(`${hits.length} object(en) geselecteerd — Delete om te verwijderen`);
+          setTimeout(() => setToast(null), 2800);
+        }
+      }
+      rect?.remove();
+      rect = null;
+      dragStart = null;
+      map.dragging.enable();
+    };
+
+    container.addEventListener("mousedown", onMouseDown, true);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && multiSelectionRef.current.length > 0) {
+        setMultiSelection([]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+
+    return () => {
+      container.removeEventListener("mousedown", onMouseDown, true);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("keydown", onKey);
+      rect?.remove();
+      try { map.dragging.enable(); } catch { /* map weg */ }
+    };
+  }, [placed, rasters, coordTags, drawnLines, overlay]);
 
   // ── Track meters-per-pixel for the scale bar ──────────────────
   // Sampled at the map centre by measuring the great-circle distance

@@ -1159,6 +1159,61 @@ body,
   color: white;
   border-color: var(--amber, #D97706);
 }
+/* Geselecteerde sondering: amber-gloed rond de driehoek + amber outline
+   op het label, zonder de bestaande active/inactive kleuren te
+   overschrijven. Werkt cumulatief met .active (active+selected =
+   amber-on-amber wat extra opvalt). */
+.cpt-sondeer-marker.selected svg {
+  filter:
+    drop-shadow(0 0 3px var(--amber, #D97706))
+    drop-shadow(0 0 1.5px var(--amber, #D97706))
+    drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.35));
+}
+.cpt-sondeer-marker.selected .cpt-sondeer-label {
+  border-color: var(--amber, #D97706);
+  border-width: 2px;
+  padding: 0 4px;
+  box-shadow: 0 0 6px rgba(217, 119, 6, 0.55);
+}
+
+/* Floating selectie-badge linksboven op de kaart. Bouw op de zelfde
+   bg-glas-stijl als andere overlays in de viewer (witte bg + amber-
+   accent + lichte schaduw zodat hij ook over luchtfoto-tiles leesbaar
+   blijft). */
+.map-selection-badge {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--theme-bg, #FAFAF9);
+  color: var(--theme-text, #36363E);
+  border: 1.5px solid var(--amber, #D97706);
+  border-radius: 999px;
+  padding: 5px 8px 5px 12px;
+  font: 600 0.75rem 'Inter', sans-serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  pointer-events: auto;
+}
+.map-selection-count {
+  color: var(--amber, #D97706);
+}
+.map-selection-clear {
+  appearance: none;
+  border: 0;
+  background: var(--amber, #D97706);
+  color: white;
+  font: 600 0.7rem 'Inter', sans-serif;
+  border-radius: 999px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.map-selection-clear:hover {
+  background: var(--signal-orange, #EA580C);
+}
 
 /* ── MapView: BRO archive sonderingen (small grey triangles) ── */
 .bro-sondering-icon {

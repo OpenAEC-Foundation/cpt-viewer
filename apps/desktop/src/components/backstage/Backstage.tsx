@@ -12,7 +12,11 @@ import {
   getLatestTekening,
   tekeningStateToIfcgis,
   titleBlockToIfcgis,
+  buildDeliverable,
+  getAllLayerLive,
+  getEnabledLayerIds,
 } from "../../store/tekeningState";
+import { catalogToIfcgisLayers } from "../../utils/gisLayerCatalog";
 import ExtensionManagerPanel from "./ExtensionManagerPanel";
 import "./Backstage.css";
 
@@ -132,9 +136,36 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
       const titleBlock = tekState
         ? titleBlockToIfcgis(tekState.titleBlock)
         : null;
+      // GIS-sectie (ifcgis-0.3): alle bekende lagen + hun live
+      // enabled/opacity-state (overschrijft defaults waar MapView een
+      // toggle/opacity heeft gepubliceerd). Center wordt overgenomen
+      // van de tekening-view-center als die er is, anders default NL.
+      const liveLayerOverrides = getAllLayerLive();
+      const gis = {
+        epsg: 28992,
+        name: "Amersfoort / RD New",
+        center: tekState
+          ? {
+              lat: tekState.center.lat,
+              lon: tekState.center.lon,
+              zoom: tekState.center.zoom,
+            }
+          : null,
+        layers: catalogToIfcgisLayers(liveLayerOverrides),
+      };
+      // Deliverable (ifcgis-0.3): IFC4x3-stijl flat-annotations-snapshot
+      // van de tekening. Alleen aanmaken als er een tekening-state is.
+      const deliverable = tekState
+        ? buildDeliverable({
+            projectName: meta.title,
+            projectNumber: meta.project_number,
+            tek: tekState,
+            activeLayerIds: getEnabledLayerIds(),
+          })
+        : null;
       const payload = {
         header: {
-          schema: "ifcgis-0.2",
+          schema: "ifcgis-0.3",
           originating_system: "Open Geotechniek Studio",
           timestamp: new Date().toISOString(),
         },
@@ -146,8 +177,10 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
         // analoog aan project.cpts oppakken.
         bores: [],
         crs: { epsg: 28992, name: "Amersfoort / RD New" },
+        gis,
         ...(tekening ? { tekening } : {}),
         ...(titleBlock ? { title_block: titleBlock } : {}),
+        ...(deliverable ? { deliverable } : {}),
       };
       await invoke("save_project_ifcgis_full", {
         payload,

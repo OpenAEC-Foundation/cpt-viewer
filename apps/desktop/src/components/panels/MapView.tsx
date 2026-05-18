@@ -13,6 +13,7 @@ import {
   mergeIntoNewProject,
   addBroToActiveProject,
 } from "../../store/useCptStore";
+import { setLayerLive } from "../../store/tekeningState";
 // Topotijdreis slider lives in the GisLayerPanel (left side, with the
 // other map layer controls) — not in this view's bottom bar.
 
@@ -297,6 +298,13 @@ export default function MapView() {
   const activeCptId = useCptStore((s) => s.activeCptId);
   const activeDocId = useCptStore((s) => s.activeDocId);
   const hiddenCptIds = useCptStore((s) => s.hiddenCptIds);
+  // CPT-selectie state (Ctrl/Cmd+klik = toggle, Shift+drag = box-select).
+  // Wordt door dit component zelf onderhouden via store-actions; andere
+  // views (LeftPanel, Situatietekening) kunnen er op reageren.
+  const selectedCptIds = useCptStore((s) => s.selectedCptIds);
+  const toggleCptSelection = useCptStore((s) => s.toggleCptSelection);
+  const selectCpts = useCptStore((s) => s.selectCpts);
+  const clearCptSelection = useCptStore((s) => s.clearCptSelection);
   // Active doc (kind: cpt | project | undefined) — drives whether BRO popups
   // offer the "Maak project + voeg toe" button (only when a single CPT is open).
   const activeDocKind = useCptStore((s) => {
@@ -806,6 +814,10 @@ export default function MapView() {
       const { id, enabled } = ce.detail;
       const wasEnabled = enabledLayersRef.current[id] === true;
       enabledLayersRef.current[id] = enabled;
+      // Mirror naar de tekeningState-singleton zodat Backstage's
+      // save-flow weet welke lagen actief zijn in de `gis`-sectie
+      // van het .ifcgis bestand.
+      setLayerLive(id, enabled, layerOpacityRef.current[id] ?? 1);
 
       // Adressen — vector WFS overlay. Routed through AdressenLayer so
       // moveend/zoomend listeners are wired up on attach and torn down
@@ -1040,6 +1052,8 @@ export default function MapView() {
       const { id, opacity } = ce.detail;
       const clamped = Math.max(0, Math.min(1, opacity));
       layerOpacityRef.current[id] = clamped;
+      // Mirror naar tekeningState (preserveert enabled-state).
+      setLayerLive(id, enabledLayersRef.current[id] === true, clamped);
 
       // Adressen — route through the AdressenLayer instance so the
       // current markers + any markers added later from a fresh WFS
@@ -1135,19 +1149,27 @@ export default function MapView() {
     // triangle (point on the ground) with the CPT id as a label next to it.
     positioned.forEach(({ cpt, lat, lon }) => {
       const isActive = cpt.id === activeCptId;
+      const isSelected = selectedCptIds.has(cpt.id);
       // Project sonderingen are green (so they read as "ours" against
       // the light-red BRO sonderingen on the same map). Active = brighter
       // green-500, inactive = green-700, dark green-900 stroke for
       // contrast on both light and dark base layers.
+      // Geselecteerde markers krijgen een amber-stroke (#D97706) zodat
+      // de selectie meteen oogvallend is óók op de luchtfoto-tiles.
       const fill = isActive ? "#22C55E" : "#15803D";
-      const stroke = "#14532D";
+      const stroke = isSelected ? "#D97706" : "#14532D";
+      const strokeWidth = isSelected ? 2.4 : 1.6;
       // Sondeer-symbool (Dutch convention): triangle with apex pointing DOWN
       // into the ground at the actual location. Base at top, apex at (11, 20).
+      const classes =
+        "cpt-sondeer-marker" +
+        (isActive ? " active" : "") +
+        (isSelected ? " selected" : "");
       const html = `
-        <div class="cpt-sondeer-marker${isActive ? " active" : ""}">
+        <div class="${classes}">
           <svg width="22" height="22" viewBox="0 0 22 22" overflow="visible">
             <polygon points="2,2 20,2 11,20"
-                     fill="${fill}" stroke="${stroke}" stroke-width="1.6"
+                     fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}"
                      stroke-linejoin="round" />
           </svg>
           <span class="cpt-sondeer-label">${cpt.id}</span>
@@ -1163,26 +1185,36 @@ export default function MapView() {
         opacity: layerOpacityRef.current["project-sonderingen"] ?? 1,
       }).bindPopup(`<strong>${cpt.id}</strong><br>${cpt.metadata.project_name ?? ""}<br>RD ${cpt.position!.x_rd.toFixed(1)}, ${cpt.position!.y_rd.toFixed(1)}<br>diepte tot ${cpt.points.reduce((m, p) => Math.max(m, p.depth), 0).toFixed(1)} m`);
 
-      // Measurement-mode click handler — delegates to the shared
-      // `handleMeasurePoint` set up in the init effect. Snapping to the
-      // marker centre (rather than the click latLng) gives precise
-      // CPT-to-CPT distances even when the user mis-clicks.
+      // Click handler met drie modes:
+      //   1. Measure-mode (al actief) → CPT-to-CPT afstand kiezen
+      //   2. Ctrl/Cmd/Shift+klik       → CPT toggle in selectie
+      //                                  (geen popup, geen propagation)
+      //   3. Plain click               → popup tonen (default)
       marker.on("click", (e) => {
-        if (!measureModeRef.current) return;
-        // Stop propagation so the map's onClick doesn't also fire and
-        // record a generic point at the same location.
-        L.DomEvent.stopPropagation(e);
-        marker.closePopup();
-        if (measureStartRef.current?.id === cpt.id) {
-          setStatus("Kies een andere sondering");
+        if (measureModeRef.current) {
+          L.DomEvent.stopPropagation(e);
+          marker.closePopup();
+          if (measureStartRef.current?.id === cpt.id) {
+            setStatus("Kies een andere sondering");
+            return;
+          }
+          const handler = (
+            measureLayerRef.current as unknown as {
+              __handleMeasurePoint?: (lat: number, lon: number, id?: string) => void;
+            }
+          )?.__handleMeasurePoint;
+          handler?.(lat, lon, cpt.id);
           return;
         }
-        const handler = (
-          measureLayerRef.current as unknown as {
-            __handleMeasurePoint?: (lat: number, lon: number, id?: string) => void;
-          }
-        )?.__handleMeasurePoint;
-        handler?.(lat, lon, cpt.id);
+        // Modifier-klik = selectie-toggle. macOS gebruikers verwachten
+        // Cmd (metaKey), Windows/Linux verwachten Ctrl. Shift werkt
+        // op alle platforms als alias zodat het sowieso "ergens" zit.
+        const ev = e.originalEvent as MouseEvent;
+        if (ev.ctrlKey || ev.metaKey || ev.shiftKey) {
+          L.DomEvent.stopPropagation(e);
+          marker.closePopup();
+          toggleCptSelection(cpt.id);
+        }
       });
       cptLayer.addLayer(marker);
     });
@@ -1268,11 +1300,131 @@ export default function MapView() {
         }
       }
     }
-  }, [cpts, activeCptId, activeDocId]);
+    // selectedCptIds + toggleCptSelection in deps zodat de markers
+    // opnieuw renderen met de juiste highlight wanneer de selectie
+    // wijzigt (en de click-closure een verse toggle-functie heeft).
+  }, [cpts, activeCptId, activeDocId, selectedCptIds, toggleCptSelection]);
+
+  // ── CPT-selectie: Esc wist hem, Shift+drag tekent een box-select ─
+  // We zetten Leaflet's eigen box-zoom uit en bouwen een eigen drag-
+  // rect (L.Rectangle als visueel feedback). Op mouseup bepalen we
+  // welke CPTs binnen de bounds vallen en seleceren die in bulk.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.boxZoom.disable();
+    // Bouw een snelle lookup van CPT-id → lat/lon voor de bbox-check.
+    const positioned = cpts
+      .filter((c) => c.position != null)
+      .map((c) => {
+        const { lat, lon } = rdToWgs84(c.position!.x_rd, c.position!.y_rd);
+        return { id: c.id, lat, lon };
+      });
+
+    const container = map.getContainer();
+    let dragStart: L.LatLng | null = null;
+    let rect: L.Rectangle | null = null;
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (!e.shiftKey) return;
+      // Voorkom Leaflet's pan-drag tijdens Shift-drag (anders draggen
+      // we de kaart in plaats van een box te tekenen).
+      e.preventDefault();
+      e.stopPropagation();
+      const containerPoint = L.point(
+        e.clientX - container.getBoundingClientRect().left,
+        e.clientY - container.getBoundingClientRect().top,
+      );
+      dragStart = map.containerPointToLatLng(containerPoint);
+      map.dragging.disable();
+    };
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragStart) return;
+      const rectBox = container.getBoundingClientRect();
+      const cp = L.point(e.clientX - rectBox.left, e.clientY - rectBox.top);
+      const cur = map.containerPointToLatLng(cp);
+      const bounds = L.latLngBounds(dragStart, cur);
+      if (!rect) {
+        rect = L.rectangle(bounds, {
+          color: "#D97706",
+          weight: 1.5,
+          fillColor: "#FBBF24",
+          fillOpacity: 0.18,
+          interactive: false,
+        }).addTo(map);
+      } else {
+        rect.setBounds(bounds);
+      }
+    };
+    const onMouseUp = (e: MouseEvent) => {
+      if (!dragStart) return;
+      const rectBox = container.getBoundingClientRect();
+      const cp = L.point(e.clientX - rectBox.left, e.clientY - rectBox.top);
+      const end = map.containerPointToLatLng(cp);
+      const bounds = L.latLngBounds(dragStart, end);
+      // Alleen daadwerkelijk selecteren als de box ergens uit minimum
+      // 5px slepen voortkwam — voorkomt per-ongeluk-leeg-selecteren
+      // bij een simpele Shift-klik.
+      const dragPx = Math.abs(
+        map.latLngToContainerPoint(dragStart).distanceTo(cp),
+      );
+      if (dragPx > 5) {
+        const hits = positioned
+          .filter((p) => bounds.contains([p.lat, p.lon]))
+          .map((p) => p.id);
+        // Replace=false: ophogen bij meerdere Shift-drags na elkaar.
+        // De gebruiker kan altijd eerst "Wis" klikken om opnieuw te
+        // beginnen.
+        if (hits.length > 0) selectCpts(hits, false);
+      }
+      rect?.remove();
+      rect = null;
+      dragStart = null;
+      map.dragging.enable();
+    };
+
+    container.addEventListener("mousedown", onMouseDown, true);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && selectedCptIds.size > 0) {
+        clearCptSelection();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+
+    return () => {
+      container.removeEventListener("mousedown", onMouseDown, true);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("keydown", onKey);
+      rect?.remove();
+      map.dragging.enable();
+      // Re-enable boxZoom voor het geval een ander deel van de app
+      // het wil gebruiken — geen kwaad bedoeld.
+      try { map.boxZoom.enable(); } catch { /* map al weg */ }
+    };
+  }, [cpts, selectedCptIds, selectCpts, clearCptSelection]);
 
   return (
     <div className="map-view-wrap">
       <div ref={containerRef} className={`map-view-container${measureMode ? " measuring" : ""}`} />
+      {selectedCptIds.size > 0 && (
+        <div className="map-selection-badge" role="status">
+          <span className="map-selection-count">
+            {selectedCptIds.size} geselecteerd
+          </span>
+          <button
+            type="button"
+            className="map-selection-clear"
+            onClick={clearCptSelection}
+            title="Wis selectie (Esc)"
+          >
+            Wis
+          </button>
+        </div>
+      )}
       <MapAddressSearch />
       <div className="map-status">
         {cpts.filter((c) => c.position).length > 0 && (

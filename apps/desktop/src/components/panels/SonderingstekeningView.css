@@ -164,6 +164,21 @@
   opacity: 0.65;
   pointer-events: none;
 }
+
+/* Image / SVG overlays die door Leaflet als imageOverlay zijn
+   bijgehangen (className tek-overlay-img). Klikbaar zodat de
+   gebruiker kan selecteren; cursor: pointer maakt dat ook visueel
+   duidelijk. .selected krijgt een dikke amber outline + box-shadow
+   zodat zichtbaar is dat hij geselecteerd is — anders denkt de
+   gebruiker dat de klik niet werkte. */
+.tek-overlay-img {
+  cursor: pointer;
+}
+.tek-overlay-img.selected {
+  outline: 3px solid #d97706;
+  outline-offset: -3px;
+  box-shadow: 0 0 10px rgba(217, 119, 6, 0.55);
+}
 .tek-overlay-pdf {
   border: none;
   opacity: 0.85;

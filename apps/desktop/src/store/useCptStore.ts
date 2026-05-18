@@ -97,6 +97,24 @@ interface DocStore {
   hiddenCptIds: Set<string>;
 
   /**
+   * Project-wide CPT selectie (multi-select op de Kaart-tab). De Map
+   * laat de gebruiker met Ctrl/Cmd+klik markers toevoegen aan de
+   * selectie, of met Shift+drag een rechthoek trekken. Andere views
+   * (LeftPanel, Situatietekening) kunnen op de selectie reageren —
+   * b.v. om alleen de geselecteerde sonderingen op een tekening te
+   * plaatsen of in bulk te verbergen. Wordt automatisch leeggemaakt
+   * als het actieve document wisselt.
+   */
+  selectedCptIds: Set<string>;
+  /** Voeg of verwijder één CPT uit de selectie. */
+  toggleCptSelection: (id: string) => void;
+  /** Zet (of voeg toe aan) een hele lijst van CPT-ids. `replace=true`
+   *  vervangt de huidige selectie, `false` (default) voegt ze toe. */
+  selectCpts: (ids: string[], replace?: boolean) => void;
+  /** Maak de hele selectie leeg. */
+  clearCptSelection: () => void;
+
+  /**
    * Pre-rendered PDF bytes keyed by document id. Populated in the
    * background by `schedulePdfPreview` so the Rapport tab can swap in
    * an instant preview instead of waiting for a fresh `preview_report`
@@ -193,6 +211,7 @@ export const useCptStore = create<DocStore>((set, get) => ({
   hoveredPoint: null,
   lastMapView: null,
   hiddenCptIds: new Set(),
+  selectedCptIds: new Set(),
   pdfCache: new Map(),
   ifcCache: new Map(),
 
@@ -232,7 +251,13 @@ export const useCptStore = create<DocStore>((set, get) => ({
     set((s) => {
       const documents = s.documents;
       const derived = deriveFromActive(documents, id);
-      return { activeDocId: id, ...derived };
+      // Selectie hoort bij het project — wissel project = nieuwe set
+      // CPTs, oude selectie zou stale ids bevatten. Reset hem hier.
+      return {
+        activeDocId: id,
+        selectedCptIds: new Set<string>(),
+        ...derived,
+      };
     });
   },
 
@@ -295,9 +320,16 @@ export const useCptStore = create<DocStore>((set, get) => ({
         ? (() => { const n = new Set(s.hiddenCptIds); n.delete(id); return n; })()
         : s.hiddenCptIds;
 
+      // En dezelfde opruim voor de Kaart-tab-selectie — anders blijven
+      // er stale ids in `selectedCptIds` staan die niet meer naar een
+      // bestaande CPT verwijzen.
+      const selectedCptIds = s.selectedCptIds.has(id)
+        ? (() => { const n = new Set(s.selectedCptIds); n.delete(id); return n; })()
+        : s.selectedCptIds;
+
       // Standalone CPT doc — closing the only CPT closes the doc.
       if (active.kind === "cpt") {
-        if (active.cpt.id !== id) return { hiddenCptIds };
+        if (active.cpt.id !== id) return { hiddenCptIds, selectedCptIds };
         const documents = s.documents.filter((d) => d.id !== active.id);
         const activeDocId = documents[0]?.id ?? null;
         const pdfCache = s.pdfCache.has(active.id)
@@ -307,11 +339,11 @@ export const useCptStore = create<DocStore>((set, get) => ({
           ? (() => { const n = new Map(s.ifcCache); n.delete(active.id); return n; })()
           : s.ifcCache;
         const derived = deriveFromActive(documents, activeDocId);
-        return { documents, activeDocId, hiddenCptIds, pdfCache, ifcCache, ...derived };
+        return { documents, activeDocId, hiddenCptIds, selectedCptIds, pdfCache, ifcCache, ...derived };
       }
 
       // Boring doc — close-CPT is a no-op (borings don't own CPTs).
-      if (active.kind === "bore") return { hiddenCptIds };
+      if (active.kind === "bore") return { hiddenCptIds, selectedCptIds };
 
       // Project doc — drop the CPT from its map.
       const next = new Map(active.cpts);
@@ -333,7 +365,7 @@ export const useCptStore = create<DocStore>((set, get) => ({
         ? (() => { const n = new Map(s.ifcCache); n.delete(active.id); return n; })()
         : s.ifcCache;
       const derived = deriveFromActive(documents, s.activeDocId);
-      return { documents, hiddenCptIds, pdfCache, ifcCache, ...derived };
+      return { documents, hiddenCptIds, selectedCptIds, pdfCache, ifcCache, ...derived };
     });
     if (projectToReSchedule) {
       schedulePdfPreview(projectToReSchedule);
@@ -347,6 +379,28 @@ export const useCptStore = create<DocStore>((set, get) => ({
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return { hiddenCptIds: next };
+    });
+  },
+
+  toggleCptSelection(id) {
+    set((s) => {
+      const next = new Set(s.selectedCptIds);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { selectedCptIds: next };
+    });
+  },
+  selectCpts(ids, replace = false) {
+    set((s) => {
+      const next = replace ? new Set<string>() : new Set(s.selectedCptIds);
+      for (const id of ids) next.add(id);
+      return { selectedCptIds: next };
+    });
+  },
+  clearCptSelection() {
+    set((s) => {
+      if (s.selectedCptIds.size === 0) return s;
+      return { selectedCptIds: new Set() };
     });
   },
 

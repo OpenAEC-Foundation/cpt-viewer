@@ -319,3 +319,147 @@ export function titleBlockFromIfcgis(j: unknown): TekeningTitleBlock | null {
     version: String(t.version ?? ""),
   };
 }
+
+// ── GIS-laag runtime-state (mirror van MapView) ────────────────
+// MapView publiceert per laag-toggle een snapshot { id → {enabled,
+// opacity} } naar deze singleton. Backstage's save-flow leest het
+// bij build-tijd van het ifcgis payload, zodat de live aan/uit
+// status netjes wordt meegeschreven.
+
+const liveLayerState = new Map<string, { enabled: boolean; opacity: number }>();
+export function setLayerLive(id: string, enabled: boolean, opacity: number): void {
+  liveLayerState.set(id, { enabled, opacity });
+}
+export function getAllLayerLive(): Map<string, { enabled: boolean; opacity: number }> {
+  return new Map(liveLayerState);
+}
+export function getEnabledLayerIds(): string[] {
+  const ids: string[] = [];
+  for (const [id, s] of liveLayerState) if (s.enabled) ids.push(id);
+  return ids;
+}
+
+// ── Deliverable builder ─────────────────────────────────────────
+// Genereert een IFC4x3-stijl Deliverable uit de actuele tekening-
+// state + project-meta. Dit is de "2D IFC" representatie die de
+// gebruiker vroeg: een snapshot in IfcDrawingSheet-vorm met flat
+// annotations-lijst (sondering, boring, raster, lijn, maatlijn,
+// coord-tag, overlay). Wordt op save-tijd geserialiseerd naast
+// het muteerbare `tekening`-veld.
+
+export interface DeliverableInput {
+  projectName: string;
+  projectNumber: string;
+  tek: TekeningFullState;
+  activeLayerIds: string[];
+}
+
+/** Minimal IFC-compatible 22-char GUID, gegenereerd uit timestamp +
+ *  random. Niet strikt IFC-spec (die wil base64-encoded 128-bit), maar
+ *  uniek genoeg voor onze deliverable-snapshots — downstream-tools
+ *  treat het als een opaque string. */
+function makeGuid(): string {
+  const ts = Date.now().toString(36).padStart(8, "0");
+  const rnd = Math.random().toString(36).slice(2, 16).padStart(14, "0");
+  return (ts + rnd).slice(0, 22);
+}
+
+export function buildDeliverable(input: DeliverableInput): unknown {
+  const { projectName, projectNumber, tek, activeLayerIds } = input;
+  const annotations: unknown[] = [];
+  // Markers — sonderingen en boringen
+  for (const m of tek.markers) {
+    annotations.push({
+      ifc_class:
+        m.kind === "bore"
+          ? "IfcAnnotation/Boring"
+          : "IfcAnnotation/Sondering",
+      guid: makeGuid(),
+      name: m.id,
+      geometry: [[m.lat, m.lon]],
+      properties: {
+        kind: m.kind,
+        kleefmeting: !!m.kleefmeting,
+      },
+    });
+  }
+  // Rasters
+  for (const r of tek.rasters) {
+    annotations.push({
+      ifc_class: "IfcAnnotation/Raster",
+      guid: makeGuid(),
+      name: r.id,
+      geometry: [[r.centerLat, r.centerLon]],
+      properties: {
+        rows: r.rows,
+        cols: r.cols,
+        spacing_x: r.spacingX,
+        spacing_y: r.spacingY,
+        rotation: r.rotation,
+      },
+    });
+  }
+  // Lijnen + maatlijnen
+  for (const l of tek.lines) {
+    annotations.push({
+      ifc_class:
+        l.kind === "dimension"
+          ? "IfcAnnotation/Dimension"
+          : "IfcAnnotation/Line",
+      guid: makeGuid(),
+      name: l.id,
+      geometry: [
+        [l.lat1, l.lon1],
+        [l.lat2, l.lon2],
+      ],
+      properties: { kind: l.kind },
+    });
+  }
+  // Coord-tags
+  for (const c of tek.coordTags) {
+    annotations.push({
+      ifc_class: "IfcAnnotation/CoordTag",
+      guid: makeGuid(),
+      name: c.id,
+      geometry: [[c.lat, c.lon]],
+      properties: { label: c.label ?? null },
+    });
+  }
+  // Overlay
+  if (tek.overlay && tek.overlay.centerLat != null && tek.overlay.centerLon != null) {
+    annotations.push({
+      ifc_class: "IfcGeographicElement/Overlay",
+      guid: makeGuid(),
+      name: tek.overlay.name,
+      geometry: [[tek.overlay.centerLat, tek.overlay.centerLon]],
+      properties: {
+        kind: tek.overlay.kind,
+        width_meters: tek.overlay.widthMeters,
+        src: tek.overlay.src ?? null,
+      },
+    });
+  }
+  return {
+    ifc_class: "IfcDrawingSheet",
+    guid: makeGuid(),
+    name: `${projectName || "Situatietekening"} — Situatietekening`,
+    paper_size: tek.paperSize,
+    orientation: "landscape",
+    scale: tek.scale,
+    crs_epsg: 28992,
+    view_center: { lat: tek.center.lat, lon: tek.center.lon, zoom: tek.center.zoom },
+    annotations,
+    title_block: {
+      project: tek.titleBlock.project || projectName,
+      project_number: tek.titleBlock.projectNumber || projectNumber,
+      address: tek.titleBlock.address,
+      drawing_number: tek.titleBlock.drawingNumber,
+      scale: tek.titleBlock.scale,
+      date: tek.titleBlock.date,
+      drawn_by: tek.titleBlock.drawnBy,
+      checked_by: tek.titleBlock.checkedBy,
+      version: tek.titleBlock.version,
+    },
+    active_layer_ids: activeLayerIds,
+  };
+}

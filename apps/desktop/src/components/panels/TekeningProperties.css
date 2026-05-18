@@ -110,6 +110,37 @@
   color: var(--theme-text-secondary, #71717a);
 }
 
+/* Schaal-presets — vier kleine chips onder de getypte schaal-input.
+   Geven de gebruiker 1-klik toegang tot de standaard 1:500/1:1000/
+   1:2000/1:5000 zodat ze niet hoeven te typen. Active-chip toont
+   welke preset matched de huidige requested scale. */
+.tekprops-scale-presets {
+  display: flex;
+  gap: 4px;
+  padding: 0 4px 8px;
+  flex-wrap: wrap;
+}
+.tekprops-scale-chip {
+  appearance: none;
+  border: 1px solid var(--theme-border, #c4c4c4);
+  background: var(--theme-bg, #fafaf9);
+  color: var(--theme-text, #36363e);
+  font: 600 0.7rem 'Inter', sans-serif;
+  border-radius: 12px;
+  padding: 2px 9px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.tekprops-scale-chip:hover:not(.active) {
+  background: var(--theme-bg-lighter, #f4f4f3);
+  border-color: var(--amber, #d97706);
+}
+.tekprops-scale-chip.active {
+  background: var(--amber, #d97706);
+  color: white;
+  border-color: var(--amber, #d97706);
+}
+
 .tekprops-btn {
   appearance: none;
   margin-top: 6px;
