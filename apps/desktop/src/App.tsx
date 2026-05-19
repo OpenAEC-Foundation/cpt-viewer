@@ -289,7 +289,7 @@ function App() {
               <polyline points="17 8 12 3 7 8"/>
               <line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
-            <p>Laat los om te openen — GEF, BRO-XML of .ifcx</p>
+            <p>Laat los om te openen — GEF, BRO-XML of .ifcgis</p>
           </div>
         </div>
       )}

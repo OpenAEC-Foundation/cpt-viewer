@@ -612,7 +612,12 @@ export default function SonderingstekeningView() {
     if (!pdokOverlayRefs.current.bgt) {
       pdokOverlayRefs.current.bgt = L.tileLayer(
         "https://service.pdok.nl/lv/bgt/wmts/v1_0/standaardvisualisatie/EPSG:3857/{z}/{x}/{y}.png",
-        { attribution: "BGT © Geonovum / Kadaster | PDOK", maxZoom: 20, opacity: 0.85 },
+        {
+          attribution: "BGT © Geonovum / Kadaster | PDOK",
+          maxZoom: 24,
+          maxNativeZoom: 20,
+          opacity: 0.85,
+        },
       );
     }
     const bgtLayer = pdokOverlayRefs.current.bgt!;
@@ -1127,6 +1132,13 @@ export default function SonderingstekeningView() {
       zoomDelta: 0.25,
       wheelDebounceTime: 40,
       wheelPxPerZoomLevel: 80,
+      // maxZoom: 24 zodat 1:100/1:200 schalen ook bereikbaar zijn
+      // (1:500 vereist al Z≈19.5, 1:100 vereist Z≈22). Tile-layers
+      // kunnen tot Z19 of Z20 leveren — daarboven upscalen ze (zie
+      // `createTileLayer` waar elk tile-laag `maxZoom: 24` +
+      // `maxNativeZoom` krijgt).
+      maxZoom: 24,
+      minZoom: 2,
     }).setView([startLat, startLon], startZoom);
 
     // ── Tile layer registry (mirrors MapView's set) ──────────────
@@ -1146,17 +1158,36 @@ export default function SonderingstekeningView() {
       "2017": "2017_ortho25",
       "2016": "2016_ortho25",
     };
+    // Voor CAD-tekening-schalen (1:100 / 1:200) zijn zoom-niveaus tot
+    // ~22 nodig. PDOK serveert tot Z19-20; daarboven moeten tegels
+    // upscalen. Dat doet Leaflet automatisch als `maxNativeZoom` op
+    // de werkelijke tile-bron-limit staat en `maxZoom` op de gewenste
+    // weergave-limit. Anders clamp-t Leaflet de map-zoom op
+    // `tile.maxZoom` (default 18), wat de "1:699 lock" veroorzaakt:
+    // gebruiker vraagt 1:500 (Z≈19.5) maar Leaflet stopt op Z19 →
+    // liveScale rond op 1:699.
+    const T_MAX_ZOOM = 24;        // bovengrens van de Leaflet-zoom
+    const T_NATIVE_MAX = 19;      // PDOK tegels stoppen rond Z19
+    const T_NATIVE_MAX_LUCHT = 20; // luchtfoto-WMTS soms tot Z20
     const createTileLayer = (id: string): L.TileLayer | null => {
       if (id === "brt") {
         return L.tileLayer(
           "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png",
-          { attribution: "Kaartgegevens © Kadaster | PDOK", maxZoom: 19 },
+          {
+            attribution: "Kaartgegevens © Kadaster | PDOK",
+            maxZoom: T_MAX_ZOOM,
+            maxNativeZoom: T_NATIVE_MAX,
+          },
         );
       }
       if (id === "luchtfoto-actueel") {
         return L.tileLayer(
           "https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0/Actueel_ortho25/EPSG:3857/{z}/{x}/{y}.jpeg",
-          { attribution: "Luchtfoto © PDOK", maxZoom: 19 },
+          {
+            attribution: "Luchtfoto © PDOK",
+            maxZoom: T_MAX_ZOOM,
+            maxNativeZoom: T_NATIVE_MAX_LUCHT,
+          },
         );
       }
       const yearMatch = /^luchtfoto-(\d{4})$/.exec(id);
@@ -1165,13 +1196,22 @@ export default function SonderingstekeningView() {
         if (!layerId) return null;
         return L.tileLayer(
           `https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0/${layerId}/EPSG:3857/{z}/{x}/{y}.jpeg`,
-          { attribution: "Luchtfoto © PDOK", maxZoom: 19 },
+          {
+            attribution: "Luchtfoto © PDOK",
+            maxZoom: T_MAX_ZOOM,
+            maxNativeZoom: T_NATIVE_MAX_LUCHT,
+          },
         );
       }
       if (id === "ahn") {
         return L.tileLayer(
           "https://service.pdok.nl/rws/ahn/wmts/v1_0/dtm_05m/EPSG:3857/{z}/{x}/{y}.png",
-          { attribution: "AHN © Rijkswaterstaat | PDOK", maxZoom: 19, opacity: 0.7 },
+          {
+            attribution: "AHN © Rijkswaterstaat | PDOK",
+            maxZoom: T_MAX_ZOOM,
+            maxNativeZoom: T_NATIVE_MAX,
+            opacity: 0.7,
+          },
         );
       }
       if (id === "bestemmingsplan") {
@@ -1184,7 +1224,7 @@ export default function SonderingstekeningView() {
             format: "image/png",
             transparent: true,
             attribution: "Ruimtelijkeplannen © Kadaster | PDOK",
-            maxZoom: 20,
+            maxZoom: T_MAX_ZOOM,
             opacity: 0.7,
           },
         );
@@ -1504,7 +1544,9 @@ export default function SonderingstekeningView() {
     const fromZoom = map.getZoom();
     const newZoom = map.getScaleZoom(ratio, fromZoom);
     if (!Number.isFinite(newZoom)) return;
-    const clamped = Math.max(2, Math.min(22, newZoom));
+    // Clamp moet boven de targets uitkomen: 1:100 vereist Z≈22 op
+    // NL-breedte; 24 is veilig en sluit aan op map.options.maxZoom.
+    const clamped = Math.max(2, Math.min(24, newZoom));
     map.setView(centre, clamped, { animate: false });
     // canvasSize.w/h staat NIET in de deps — paperPxW hangt alleen
     // van paperSize af (vaste mm × dpi). Window-resizes veranderen

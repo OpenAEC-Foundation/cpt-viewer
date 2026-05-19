@@ -256,12 +256,12 @@ function NoProjectHint({ onClose, onCreate }: { onClose: () => void; onCreate: (
   return (
     <div style={{ padding: "16px 4px" }}>
       <p style={{ margin: 0, marginBottom: 12, color: "var(--theme-text)" }}>
-        Geen project actief — open of maak een <code>.ifcx</code> project.
+        Geen project actief — open of maak een <code>.ifcgis</code> project.
       </p>
       <p style={{ margin: 0, marginBottom: 20, color: "var(--theme-text-muted)", fontSize: "0.9rem" }}>
         De huidige actieve tab is een losse sondering. Projectinfo (titel,
         opdrachtgever, locatie, sonderingenlijst) leeft binnen een project —
-        maak er een aan of open een bestaand <code>.ifcx</code> bestand.
+        maak er een aan of open een bestaand <code>.ifcgis</code> bestand.
       </p>
       <div className="ps-footer">
         <button type="button" onClick={onClose}>Sluiten</button>
