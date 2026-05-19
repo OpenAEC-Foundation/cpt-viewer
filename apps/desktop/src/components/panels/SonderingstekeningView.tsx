@@ -2036,7 +2036,16 @@ export default function SonderingstekeningView() {
     // Stop conditie: 0.0002 = 0.02% absolute drift in mPerPx (één
     // pixel-rounding kan zoveel veroorzaken; verder is nutteloos).
     let cur = measureMPerPx();
-    if (cur === null) return;
+    if (cur === null) {
+      // Map nog niet projectie-klaar — schedule retry. Gebeurt
+      // typisch op de eerste mount voordat de rAF in init-effect
+      // invalidateSize heeft gedaan. Een tweede tick is genoeg.
+      const retryId = window.setTimeout(() => {
+        // Bump mapReady zodat het effect opnieuw runt met deps-check.
+        setMapReady((n) => n + 1);
+      }, 50);
+      return () => window.clearTimeout(retryId);
+    }
     for (let iter = 0; iter < 4; iter++) {
       const ratio = cur / targetMPerPx;
       // Convergentie-check: als ratio al ≈ 1, klaar.
@@ -3306,15 +3315,20 @@ export default function SonderingstekeningView() {
       setOverlay(null);
     }
     setMapView(pending.center);
-    // Zet de Leaflet-map ook naar het opgeslagen center + zoom; wacht
-    // een tick zodat de map-init effect zeker geweest is.
+    // Zet de Leaflet-map naar het opgeslagen CENTRE, maar laat de
+    // ZOOM aan het scale-setter effect over — dat berekent de exacte
+    // zoom voor 1:N en wint anders een race-condition (saved-zoom
+    // 18 zou de scale-effect's 19.5 overschrijven). Wacht een tick
+    // zodat de map-init zeker klaar is. panTo behoudt huidige zoom.
     const id = window.setTimeout(() => {
       const map = mapRef.current;
       if (!map) return;
       try {
-        map.setView([pending.center.lat, pending.center.lon], pending.center.zoom, {
-          animate: false,
-        });
+        map.panTo([pending.center.lat, pending.center.lon], { animate: false });
+        // Trigger scale-effect re-run zodat 1:N opnieuw wordt toegepast
+        // op de nieuwe centre-positie (mPerPx kan iets verschillen
+        // door cos(lat) verschil tussen oude en nieuwe centre).
+        setMapReady((n) => n + 1);
       } catch {
         /* map nog niet klaar — accepteer dat */
       }
