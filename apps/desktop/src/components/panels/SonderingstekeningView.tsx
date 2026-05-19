@@ -3210,10 +3210,41 @@ function ScaleBar({
   // te tonen, anders division-by-zero.
   if (!mPerPx || !Number.isFinite(mPerPx) || mPerPx <= 0) return null;
 
-  // Streefbreedte voor de bar — ongeveer een kwart van de paper.
-  const targetPx = Math.max(80, paperPxW * 0.25);
-  const targetM = targetPx * mPerPx;
-  const totalM = pickNiceScaleMeters(targetM);
+  // Schaalbalk "moet meebewegen met de schaal": kies een vaste meter-
+  // waarde per scale-range, en laat de visuele breedte VARIËREN met
+  // de huidige print-schaal. Dat is hoe een traditionele bouwkundig-
+  // schaalbalk werkt: bij 1:500 is een 25 m bar 50mm breed op papier,
+  // bij 1:1000 is dezelfde 25m maar 25mm breed.
+  //
+  // Print-schaal afleiden uit de actuele mPerPx + paper-grootte:
+  //   scale_N = mPerPx × paperPxW / paperMmW × 1000
+  //           = mPerPx × MM_TO_PX × 1000   (paperPxW/paperMmW = MM_TO_PX)
+  // Bij 1:500 en MM_TO_PX = 3.78 → N ≈ 500.
+  const MM_TO_PX = 96 / 25.4;
+  const printN = mPerPx * MM_TO_PX * 1000;
+
+  // Vaste bar-meters per scale-range. Binnen elke range groeit/krimpt
+  // de bar visueel mee met de schaal (1:500 → 1:1000 = bar visueel
+  // half zo breed). Op de range-grens springt de bar naar een volgende
+  // ronde-meterwaarde zodat hij niet onleesbaar klein wordt.
+  //
+  // Voorbeeld: 1:500 → 10m bar = 20mm op papier. 1:1000 → springt
+  // naar 50m bar = 50mm op papier. 1:2000 → nog steeds 50m bar maar
+  // nu 25mm op papier. 1:4000 → springt naar 250m = 62.5mm.
+  let totalM: number;
+  if (printN < 200) totalM = 2;
+  else if (printN < 500) totalM = 5;
+  else if (printN < 1000) totalM = 10;       // 1:500-1:999 → 10m
+  else if (printN < 4000) totalM = 50;       // 1:1000-1:3999 → 50m
+  else if (printN < 15000) totalM = 250;     // 1:4000-1:14999 → 250m
+  else totalM = 1000;
+  // Safety-net: als bar buitenproportioneel breed wordt (extreme
+  // zoom-in op het papier), val terug op de oude auto-fit-logica.
+  const proposedPx = totalM / mPerPx;
+  if (proposedPx > paperPxW * 0.6) {
+    const targetPx = Math.max(80, paperPxW * 0.25);
+    totalM = pickNiceScaleMeters(targetPx * mPerPx);
+  }
   // Aantal segmenten: 5 voor ronde 5-veelvouden (geeft labels 0,1,2,3,4,5
   // van segM), 4 voor de rest (0,1,2,3,4).
   const firstDigit = parseInt(String(totalM).charAt(0), 10);
