@@ -272,8 +272,16 @@ export default function ReportPreview() {
   } else {
     previewArea = (
       <div className="report-pages-wrapper">
+        {/* PDF-viewer URL-fragment-params verbergen de toolbar +
+            statusbar + zijpanel + page-labels die de Edge/Chrome
+            ingebouwde PDF-reader tussen pagina's toont. `toolbar=0`
+            = bovenste werkbalk uit, `navpanes=0` = thumbnails-side-
+            panel uit, `statusbar=0` = onderbalk uit, `scrollbar=1`
+            = scrollen blijft mogelijk, `view=FitH` = horizontaal
+            inpassen (gebruiker-verzoek: geen "Page X" tekst meer
+            tussen pagina's bij scrollen). */}
         <iframe
-          src={pdfUrl}
+          src={`${pdfUrl}#toolbar=0&navpanes=0&statusbar=0&scrollbar=1&view=FitH&pagemode=none`}
           title={t("report.preview", "Rapport preview")}
           className="report-iframe"
         />

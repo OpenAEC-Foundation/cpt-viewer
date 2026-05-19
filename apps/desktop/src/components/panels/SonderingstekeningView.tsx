@@ -4144,11 +4144,14 @@ function ScaleBar({
   const ticks: number[] = [];
   for (let i = 0; i <= count; i++) ticks.push(+(i * segM).toFixed(2));
 
-  const padding = 6;
-  const svgW = Math.round(barPx + padding * 2 + 16);
-  const svgH = 24;
-  const barY = 2;
-  const barH = 6;
+  /* Padding + label-ruimte 2× (gebruiker-verzoek: schaalstok-teksten
+     groter). svgH groeit van 24 → 40 zodat de 14pt labels eronder
+     passen, "m"-eenheid offset mee-geschaald. */
+  const padding = 8;
+  const svgW = Math.round(barPx + padding * 2 + 24);
+  const svgH = 40;
+  const barY = 4;
+  const barH = 10;
 
   return (
     <div className="tek-scale-bar">
@@ -4176,14 +4179,16 @@ function ScaleBar({
             strokeWidth="0.5"
           />
         ))}
-        {/* Tick-labels onder de bar */}
+        {/* Tick-labels onder de bar — fontSize 7 → 14 (gebruiker-verzoek
+            "schaalstof teksten 2x zo groot"). */}
         {ticks.map((t, i) => (
           <text
             key={i}
             x={padding + i * segPx}
-            y={barY + barH + 9}
+            y={barY + barH + 16}
             fontFamily="Inter, system-ui, sans-serif"
-            fontSize="7"
+            fontSize="14"
+            fontWeight="600"
             textAnchor="middle"
             fill="#111"
           >
@@ -4192,10 +4197,11 @@ function ScaleBar({
         ))}
         {/* "m" eenheid achter de laatste tick */}
         <text
-          x={padding + barPx + 4}
-          y={barY + barH + 9}
+          x={padding + barPx + 6}
+          y={barY + barH + 16}
           fontFamily="Inter, system-ui, sans-serif"
-          fontSize="7"
+          fontSize="14"
+          fontWeight="600"
           fill="#111"
         >
           m
