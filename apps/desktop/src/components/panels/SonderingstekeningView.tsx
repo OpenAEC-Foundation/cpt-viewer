@@ -468,7 +468,7 @@ export default function SonderingstekeningView() {
   const draggingRef = useRef(false);
 
   const [paperSize, setPaperSize] = useState<PaperSize>("A3");
-  const [scale, setScale] = useState<Scale>(1000);
+  const [scale, setScale] = useState<Scale>(500);
   const [showBro, setShowBro] = useState(true);
   const [placeMode, setPlaceMode] = useState<null | "sondering" | "bore">(null);
   // gridSpacing remains as a constant default — the in-view dropdown is
@@ -3933,9 +3933,12 @@ function ScaleCellEditor({ liveScale }: { liveScale: number }) {
  * Vaste mm-grootte op het papier (CSS px = 96/25.4 × mm).
  */
 function NorthArrow() {
+  // 3x grotere noordpijl (was 40×60, nu 120×180). Zelfde viewBox
+  // zodat de SVG-paths niet hoeven te schalen — alleen de
+  // weergavegrootte verandert.
   return (
     <div className="tek-north-arrow" aria-label="Noordpijl">
-      <svg viewBox="0 0 40 60" width="40" height="60" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 40 60" width="120" height="180" xmlns="http://www.w3.org/2000/svg">
         {/* Witte ronde achtergrond zodat de pijl over luchtfoto leesbaar is */}
         <circle cx="20" cy="32" r="18" fill="white" stroke="#111" strokeWidth="0.8" />
         {/* N letter boven de pijl */}

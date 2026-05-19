@@ -134,14 +134,36 @@
   overflow: hidden;
   border: 1px solid #d4d4d4;
 }
+/* Zwarte tekening-rand 10mm vanaf de paper-edge, traditioneel CAD-
+   bouwkundig kader. Pseudo-element zodat het bovenop alles ligt
+   maar geen mouse-events vangt. */
+.tek-paper::after {
+  content: "";
+  position: absolute;
+  top: 10mm;
+  left: 10mm;
+  right: 10mm;
+  bottom: 10mm;
+  border: 1.2px solid #111;
+  pointer-events: none;
+  z-index: 5;
+}
 .tek-paper-dragover {
   outline: 3px dashed var(--amber, #d97706);
   outline-offset: -4px;
 }
 
 .tek-paper-map {
+  /* Map vult de tekening-zone tussen de 10mm-rand en het titleblock.
+     Door bottom op 60mm te zetten (50mm titleblock + 10mm zwarte
+     rand) loopt de kaart niet meer door achter het titleblock heen.
+     Boven + zijkanten 10mm zodat de zwarte rand-frame zichtbaar
+     blijft. */
   position: absolute;
-  inset: 0;
+  top: 10mm;
+  left: 10mm;
+  right: 10mm;
+  bottom: 60mm;
   z-index: 1;
 }
 
@@ -200,9 +222,12 @@
    de map-tile-layer maar onder het titleblock. Witte cirkel achter
    de pijl zodat hij ook over luchtfoto leesbaar is. */
 .tek-north-arrow {
+  /* Binnen de 10mm-zwarte-rand, in de rechter-bovenhoek van de
+     tekening-zone. 14mm vanaf paper-edge = 4mm vanaf de zwarte
+     rand, vergelijkbaar met een traditioneel CAD-blad. */
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: 14mm;
+  right: 14mm;
   z-index: 50;
   pointer-events: none;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
@@ -216,9 +241,11 @@
    de bar altijd boven de map zichtbaar is, lager dan het titleblock
    (1100) zodat die er overheen kan rangschikken. */
 .tek-scale-bar {
+  /* Linksonder binnen de tekening-zone, net boven het titleblock.
+     bottom 64mm = 60mm map-bottom + 4mm gap. */
   position: absolute;
-  left: 16px;
-  bottom: 120px; /* boven het titleblock (titleblock zit bottom: 12px en is ~100px hoog) */
+  left: 14mm;
+  bottom: 64mm;
   z-index: 50;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(17, 17, 17, 0.25);
@@ -547,16 +574,23 @@
 /* ── Detailblad title block (page 2 of preview-titleblock.html) ── */
 
 .tek-titleblock-db {
+  /* Titleblock past binnen de 10mm-rand. Hoogte ~50mm zodat er
+     genoeg ruimte is voor project-bar + 8 cellen + logo + format-
+     corner. De map-laag heeft bottom 60mm (50mm titleblock + 10mm
+     rand) zodat de kaart precies stopt op de bovenrand van het
+     titleblock — geen overlap meer. */
   position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
+  left: 10mm;
+  right: 10mm;
+  bottom: 10mm;
+  height: 50mm;
   background: #fff;
   border: 1.5px solid #36363e;
   font: 500 0.75rem 'Inter', system-ui, sans-serif;
   color: #36363e;
   pointer-events: auto;
   z-index: 1100;
+  overflow: hidden;
 }
 
 .tek-db-project-bar {

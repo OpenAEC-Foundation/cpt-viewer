@@ -949,7 +949,7 @@ export async function openProjectIfcgis(path: string): Promise<void> {
   if (result.tekening || result.title_block) {
     const tekState = tekeningStateFromIfcgis(result.tekening) ?? {
       paperSize: "A3" as const,
-      scale: 1000,
+      scale: 500,
       center: { lat: 51.81317, lon: 4.67242, zoom: 18 },
       markers: [],
       rasters: [],
