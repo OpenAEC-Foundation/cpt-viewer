@@ -600,6 +600,12 @@ export default function SonderingstekeningView() {
   // requested print scale (e.g. Web Mercator distortion at NL
   // latitude, or aspect-ratio mismatch between paper-map and bbox).
   const [mPerPx, setMPerPx] = useState(0);
+  // Flag die getoggled wordt zodra de Leaflet-map zijn eerste
+  // invalidateSize heeft afgemaakt. Triggert het scale-effect om
+  // 1:N opnieuw toe te passen — anders bailt het bij mount omdat
+  // map.latLngToContainerPoint nog geen panes had en blijft de
+  // startzoom (b.v. 18) staan i.p.v. 1:500 (Z≈19.5).
+  const [mapReady, setMapReady] = useState(0);
   // Live centre + zoom van de Leaflet kaart. Wordt bijgewerkt op
   // moveend / zoomend; uitsluitend gebruikt door de save-snapshot
   // zodat een opgeslagen .ifcgis op exact dezelfde viewport opent.
@@ -1941,6 +1947,10 @@ export default function SonderingstekeningView() {
         // Map was torn down during the frame — safe to swallow.
         console.debug("[SonderingstekeningView] invalidateSize after dispose", e);
       }
+      // Signal dat de map ready is — triggert het scale-effect om
+      // 1:N opnieuw toe te passen (bij eerste mount bailt het anders
+      // omdat panes nog niet beschikbaar waren).
+      setMapReady((n) => n + 1);
     });
     return () => {
       disposed = true;
@@ -2049,7 +2059,13 @@ export default function SonderingstekeningView() {
     // de visuele weergave via CSS transform, maar de DOM-pixelmaat
     // van de paper div blijft gelijk; we hoeven dan niet opnieuw te
     // zoomen.
-  }, [paperSize, scale]);
+    //
+    // mapReady = mount-trigger zodat het effect opnieuw runt nadat
+    // de map-init zijn invalidateSize heeft gedaan. Zonder dit zou
+    // het effect op mount bailen (map.latLngToContainerPoint heeft
+    // nog geen panes) en de startzoom (b.v. 18) ipv 1:500 (Z≈19.5)
+    // blijven staan.
+  }, [paperSize, scale, mapReady]);
 
   // ── Render project sondering markers ───────────────────────────
   useEffect(() => {
