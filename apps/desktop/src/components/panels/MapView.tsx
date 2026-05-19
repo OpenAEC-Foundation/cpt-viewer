@@ -422,6 +422,22 @@ export default function MapView() {
       try { if (!map.dragging.enabled()) map.dragging.enable(); } catch { /* noop */ }
     });
 
+    // ── invalidateSize ResizeObserver ────────────────────────────────
+    // Leaflet cached zijn container-size bij init (`L.map(container)`).
+    // Als de container op dat moment 0×0 was (DOM nog niet helemaal
+    // opgebouwd, of tab-switch waarbij de Kaart pas zichtbaar wordt),
+    // blijft `map._size` op 0×0 staan. Dat breekt panning: drag-offsets
+    // worden gemeten t.o.v. een nul-grootte container → geen lat/lng-
+    // verandering. We forceren een invalidateSize zodra de container
+    // een echte grootte krijgt, en daarna bij elke resize.
+    requestAnimationFrame(() => {
+      try { map.invalidateSize(); } catch { /* map weg */ }
+    });
+    const ro = new ResizeObserver(() => {
+      try { map.invalidateSize(); } catch { /* map weg */ }
+    });
+    ro.observe(containerRef.current);
+
     // Build all base layers up front (cheap — they're just URL templates).
     const baseLayers: Record<string, L.TileLayer> = {};
     baseLayers["brt"] = L.tileLayer(
@@ -1323,6 +1339,7 @@ export default function MapView() {
       pendingAbort?.abort();
       adressenLayerRef.current?.detach();
       adressenLayerRef.current = null;
+      try { ro.disconnect(); } catch { /* noop */ }
       map.remove();
     };
   }, []);

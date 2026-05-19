@@ -168,9 +168,11 @@ export default function SonderingstekeningTab() {
           />
         </RibbonGroup>
 
-        {/* Bewerken-groep: alle knoppen verticaal gestackt (volgens
-            Open PDF Studio / Open 2D Studio conventie). Kompacter en
-            laat ruimte over voor de Tekenen-groep ernaast. */}
+        {/* Bewerken-groep: TWEE gestackte kolommen.
+            Kolom 1: Verplaatsen / Kopiëren / Roteren / Verwijderen.
+            Kolom 2: Trim / Extend / Mirror / Offset (de CAD-edit-tools
+            die voorheen in een aparte "Tekenen"-groep zaten — verzoek
+            gebruiker: bij elkaar onder Bewerken). */}
         <RibbonGroup label={t("tekening.editGroup", "Bewerken")}>
           <RibbonButtonStack>
             <RibbonButton
@@ -217,53 +219,6 @@ export default function SonderingstekeningTab() {
               onClick={() => dispatch("ogs:tekening-delete")}
             />
           </RibbonButtonStack>
-        </RibbonGroup>
-
-        <RibbonGroup label={t("tekening.placeGroup", "Plaatsen")}>
-          <RibbonButton
-            icon={placeIcon}
-            label={t("tekening.placeMode", "Sondering")}
-            size="large"
-            onClick={() => dispatch("ogs:tekening-toggle-place")}
-          />
-          <RibbonButton
-            icon={placeIcon}
-            label={t("tekening.placeBore", "Boring")}
-            size="large"
-            onClick={() => dispatch("ogs:tekening-toggle-place-bore")}
-          />
-          <RibbonButton
-            icon={rasterIcon}
-            label={t("tekening.placeRaster", "Sonderingsraster")}
-            size="large"
-            onClick={() => dispatch("ogs:tekening-place-raster")}
-          />
-          <RibbonButton
-            icon={lineIcon}
-            label={t("tekening.drawLine", "Lijn")}
-            size="large"
-            onClick={() => dispatch("ogs:tekening-draw-line")}
-          />
-          <RibbonButton
-            icon={dimensionIcon}
-            label={t("tekening.drawDim", "Maatlijn")}
-            size="large"
-            onClick={() => dispatch("ogs:tekening-draw-dimension")}
-          />
-          <RibbonButton
-            icon={tagIcon}
-            label={t("tekening.coordTag", "RD-coördinaat")}
-            size="large"
-            onClick={() => dispatch("ogs:tekening-coord-tag")}
-          />
-        </RibbonGroup>
-
-        {/* CAD-edit-tools: trim, extend, mirror, offset. Verticaal
-            gestackt zodat ze in één smalle kolom passen — komt overeen
-            met hoe Open PDF Studio en Open 2D Studio deze acties
-            groeperen ("Modify"-tab). De handlers zitten in de view
-            (zie ogs:tekening-cad-* events). */}
-        <RibbonGroup label={t("tekening.cadGroup", "Tekenen")}>
           <RibbonButtonStack>
             <RibbonButton
               icon={trimIcon}
@@ -308,6 +263,45 @@ export default function SonderingstekeningTab() {
           </RibbonButtonStack>
         </RibbonGroup>
 
+        <RibbonGroup label={t("tekening.placeGroup", "Plaatsen")}>
+          <RibbonButton
+            icon={placeIcon}
+            label={t("tekening.placeMode", "Sondering")}
+            size="large"
+            onClick={() => dispatch("ogs:tekening-toggle-place")}
+          />
+          <RibbonButton
+            icon={placeIcon}
+            label={t("tekening.placeBore", "Boring")}
+            size="large"
+            onClick={() => dispatch("ogs:tekening-toggle-place-bore")}
+          />
+          <RibbonButton
+            icon={rasterIcon}
+            label={t("tekening.placeRaster", "Sonderingsraster")}
+            size="large"
+            onClick={() => dispatch("ogs:tekening-place-raster")}
+          />
+          <RibbonButton
+            icon={lineIcon}
+            label={t("tekening.drawLine", "Lijn")}
+            size="large"
+            onClick={() => dispatch("ogs:tekening-draw-line")}
+          />
+          <RibbonButton
+            icon={dimensionIcon}
+            label={t("tekening.drawDim", "Maatlijn")}
+            size="large"
+            onClick={() => dispatch("ogs:tekening-draw-dimension")}
+          />
+          <RibbonButton
+            icon={tagIcon}
+            label={t("tekening.coordTag", "RD-coördinaat")}
+            size="large"
+            onClick={() => dispatch("ogs:tekening-coord-tag")}
+          />
+        </RibbonGroup>
+
         <RibbonGroup label={t("tekening.overlayGroup", "Overlay")}>
           <RibbonButton
             icon={overlayIcon}
@@ -341,26 +335,13 @@ export default function SonderingstekeningTab() {
         <RibbonGroup label={t("tekening.offertesGroup", "Offertes")}>
           <RibbonButton
             icon={quotesIcon}
-            label={t("tekening.requestQuotes", "Vraag 3 offertes")}
+            label={t("tekening.requestQuotes", "Offertes opvragen")}
             size="large"
             title={t(
               "tekening.requestQuotesHint",
               "Open een dialog met de dichtstbijzijnde sondeerbedrijven en open een mailto-offerte-aanvraag in Outlook",
             )}
             onClick={() => dispatch("ogs:tekening-request-quotes")}
-          />
-        </RibbonGroup>
-
-        <RibbonGroup label={t("tekening.previewGroup", "Preview")}>
-          <RibbonButton
-            icon={overlayIcon}
-            label={t("tekening.ifcxPreview", "IFCX preview")}
-            size="large"
-            title={t(
-              "tekening.ifcxPreviewHint",
-              "Toon de IFCX-JSON die in het .ifcgis bestand komt te staan bij opslaan",
-            )}
-            onClick={() => dispatch("ogs:tekening-ifcx-preview")}
           />
         </RibbonGroup>
       </div>
