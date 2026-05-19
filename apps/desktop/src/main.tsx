@@ -1,11 +1,31 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 
-// DEBUG: catch all runtime errors and render them on the page so the white-screen issue is diagnosable.
+// DEBUG: catch all runtime errors and render them on the page so
+// het white-screen-probleem diagnosticeerbaar is. ALLEEN het hele
+// scherm overnemen wanneer React nog niets gerendered heeft (root
+// is leeg) — anders zou een ongevaarlijke runtime-error (b.v. de
+// Leaflet getSizedParentNode race-condition) de werkende app
+// stukmaken. Voor latere runtime-errors blijven we loggen +
+// negeren we bekende-onschuldige library-races.
 function showError(label: string, err: unknown) {
+  const detail = err instanceof Error ? `${err.name}: ${err.message}\n\n${err.stack ?? ""}` : String(err);
+  // Ignore: Leaflet's getSizedParentNode null-crash bij map-unmount
+  // mid-mouseevent. Komt door interne Leaflet-cleanup-race; de app
+  // blijft functioneel.
+  if (/getSizedParentNode|_onDown.*leaflet|reading 'offsetWidth'/i.test(detail)) {
+    console.warn(`[${label} ignored — Leaflet lifecycle race]`, err);
+    return;
+  }
   const root = document.getElementById("root");
   if (!root) return;
-  const detail = err instanceof Error ? `${err.name}: ${err.message}\n\n${err.stack ?? ""}` : String(err);
+  // Als React al iets heeft gerendered, log alleen — overneem het
+  // scherm NIET. White-screen-detectie: root is leeg of bevat alleen
+  // de StrictMode-comment-placeholders.
+  if (root.children.length > 0) {
+    console.error(`[${label}]`, err);
+    return;
+  }
   root.innerHTML = `<pre style="padding:20px;font:12px/1.4 'JetBrains Mono',monospace;color:#DC2626;background:#FAFAF9;white-space:pre-wrap;word-break:break-word">[${label}]\n${detail.replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"} as Record<string,string>)[c])}</pre>`;
 }
 window.addEventListener("error", (e) => showError("window.error", e.error ?? e.message));
