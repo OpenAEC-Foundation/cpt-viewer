@@ -827,6 +827,64 @@ export default function SonderingstekeningView() {
     };
   }, [selection, overlay, placed, drawnLines, rasters]);
 
+  // ── Auto-fit scale + center op project-sonderingen ──────────────
+  // Wanneer een project met >= 1 positionele CPTs actief wordt, kiezen
+  // we de KLEINSTE preset-schaal (500/1000/2000/5000) waar alle
+  // sonderingen met 25% marge in passen op het papier, en pannen we
+  // de map naar het geografisch midden. Re-runt bij elke project-
+  // wissel zodat een nieuw project altijd zoom-fit toont, ook bij
+  // tab-switches. Gebruiker-verzoek: "ga ik naar Situatietekening
+  // met 2 sonderingen dan moet zoom-fit van die sonderingen
+  // overrulen op de standaard locatie".
+  //
+  // Tracks `fittedDocIdRef` om te voorkomen dat we de fit elke
+  // re-render opnieuw doen — alleen wanneer het actieve doc-id
+  // wisselt re-fitten we. Zo respecteren we een handmatige scale-
+  // verandering van de gebruiker tussen tab-switches.
+  const fittedDocIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!project || project.cpts.length === 0) return;
+    const positioned = project.cpts.filter((c) => c.position != null);
+    if (positioned.length === 0) return;
+    if (fittedDocIdRef.current === activeDocId) return;
+    fittedDocIdRef.current = activeDocId;
+    // Center op geografisch midden in RD-meters.
+    const meanX =
+      positioned.reduce((s, c) => s + c.position!.x_rd, 0) / positioned.length;
+    const meanY =
+      positioned.reduce((s, c) => s + c.position!.y_rd, 0) / positioned.length;
+    const ll = WGS84_TO_RD.inverse([meanX, meanY]);
+    // Bounds in RD-meters.
+    const xs = positioned.map((c) => c.position!.x_rd);
+    const ys = positioned.map((c) => c.position!.y_rd);
+    const widthM = Math.max(1, Math.max(...xs) - Math.min(...xs));
+    const heightM = Math.max(1, Math.max(...ys) - Math.min(...ys));
+    // 25% marge + 20m absolute marge (zodat 1-sondering-projecten
+    // niet op 1:500 staan met de driehoek tegen de paper-rand).
+    const fitW = widthM * 1.25 + 20;
+    const fitH = heightM * 1.25 + 20;
+    const PAPER_W_MM: Record<PaperSize, number> = { A2: 574, A3: 400 };
+    const PAPER_H_MM: Record<PaperSize, number> = { A2: 411, A3: 217 };
+    const usableW = PAPER_W_MM[paperSize];
+    const usableH = PAPER_H_MM[paperSize];
+    const PRESETS: number[] = [500, 1000, 2000, 5000];
+    let pick: number | null = null;
+    for (const N of PRESETS) {
+      const maxW = (usableW * N) / 1000;
+      const maxH = (usableH * N) / 1000;
+      if (maxW >= fitW && maxH >= fitH) { pick = N; break; }
+    }
+    if (!pick) pick = 5000; // groter dan 5000m × 2.5 = onwaarschijnlijk
+    // Pan + set scale; de scale-effect (deps [paperSize, scale, mapReady])
+    // past het map-zoomniveau aan zodat 1:N exact uitkomt.
+    map.panTo([ll[1], ll[0]], { animate: false });
+    if (pick !== scale) setScale(pick);
+    setMapReady((n) => n + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, activeDocId, paperSize]);
+
   // Auto-seed title block from active doc the first time the project changes.
   useEffect(() => {
     if (!project) return;
@@ -1825,22 +1883,25 @@ export default function SonderingstekeningView() {
     el.style.transformOrigin = "center center";
   }, [overlayRotation, overlay?.id]);
 
-  // ── DEV-only: expose setOverlay + setSelection op window zodat de
-  // Claude-Preview MCP een test-overlay kan injecteren tijdens E2E-
-  // verificatie. In productie strip Vite deze block via dead-code
-  // elimination (`import.meta.env.DEV === false`). Pure debug-hulp,
-  // niets functioneels voor de eindgebruiker.
+  // ── DEV-only: expose setOverlay + setSelection + useCptStore op
+  // window zodat de Claude-Preview MCP een test-overlay/project kan
+  // injecteren tijdens E2E-verificatie. In productie strip Vite deze
+  // block via dead-code elimination (`import.meta.env.DEV === false`).
+  // Pure debug-hulp, niets functioneels voor de eindgebruiker.
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const w = window as unknown as {
       __ogsTestSetOverlay?: (o: OverlayDrop | null) => void;
       __ogsTestSetSelection?: (s: { kind: "overlay"; id: string } | null) => void;
+      __ogsTestStore?: typeof useCptStore;
     };
     w.__ogsTestSetOverlay = setOverlay;
     w.__ogsTestSetSelection = setSelection;
+    w.__ogsTestStore = useCptStore;
     return () => {
       delete w.__ogsTestSetOverlay;
       delete w.__ogsTestSetSelection;
+      delete w.__ogsTestStore;
     };
   }, []);
 
@@ -1937,6 +1998,9 @@ export default function SonderingstekeningView() {
       );
       if (positioned.length > 0) {
         // Geografisch midden in RD-meters → terug naar lat/lon.
+        // De auto-fit-scale (preset-keuze + zoom) wordt gedaan door een
+        // aparte useEffect verderop op `[project, activeDocId, paperSize]`,
+        // zodat tab-switches en project-wissels óók opnieuw fitten.
         const meanX =
           positioned.reduce((s, c) => s + c.position!.x_rd, 0) /
           positioned.length;
