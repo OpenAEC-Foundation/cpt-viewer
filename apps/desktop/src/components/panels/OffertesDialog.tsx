@@ -61,10 +61,10 @@ export default function OffertesDialog({
     if (projectLat != null && projectLon != null) {
       return { lat: projectLat, lon: projectLon };
     }
-    // Fallback: Lange Gelderse Kade 1, Dordrecht (zelfde default als
-    // de Kaart-tab). Sorteren wordt dan op afstand-tot-Dordrecht —
-    // niet ideaal maar consistent met de rest van de app.
-    return { lat: 51.81317, lon: 4.67242 };
+    // Fallback: Lange Geldersekade 2, 3311CJ Dordrecht (zelfde
+    // home-base als de Kaart-tab). Sorteren wordt dan op afstand-
+    // tot-home — niet ideaal maar consistent met de rest van de app.
+    return { lat: 51.81435338, lon: 4.66003133 };
   }, [projectLat, projectLon]);
 
   /** Gesorteerd op afstand tot project, dichtstbij eerst. */

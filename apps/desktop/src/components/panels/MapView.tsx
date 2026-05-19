@@ -333,30 +333,36 @@ export default function MapView() {
     // staggered toggle-dispatch, ook in cleanup leeggemaakt.
     let disposed = false;
     const autoEnableTimeouts: number[] = [];
-    // Default-locatie: Lange Gelderse Kade 1, Dordrecht — historisch
-    // centrum aan de Voorstraathaven. Zoom 18 zodat de gebruiker
-    // direct het pand + omgeving ziet (BAG + Kadaster overlays zijn
-    // bij dit zoom-niveau leesbaar).
+    // Default-locatie: Lange Geldersekade 2, 3311CJ Dordrecht — onze
+    // home-base. WGS84 (4.66003133, 51.81435338) gevalideerd via PDOK
+    // LocatieServer. Zoom 17 = ~150m bredegezichtsveld, "iets verder
+    // uitgezoomd" zodat de straat + omgeving in beeld zijn, niet enkel
+    // het pand.
     //
     // Prioriteit:
-    //   1. Actief project / CPT mét positie → centreer er op (auto-fit
-    //      verderop in het CPT-render-effect doet uiteindelijk een
-    //      fitBounds, dus hier is dit puur voor de initiële view zodat
-    //      tegels meteen het juiste gebied laden).
-    //   2. Bij een LEEG project (of geen actief document) → Dordrecht
-    //      default, OOK als lastMapView in de store staat (dat zou
-    //      anders een vorig project's positie zijn die niets met dit
-    //      lege project te maken heeft — gebruiker-verzoek).
-    //   3. Geen project actief + lastMapView aanwezig → die positie.
-    const DEFAULT_LAT = 51.81317;
-    const DEFAULT_LON = 4.67242;
-    const DEFAULT_ZOOM = 18;
+    //   1. Actief project mét positionele CPTs → centreer op het
+    //      geografisch midden (zoom 17, project-overzicht).
+    //   2. Actieve losse CPT-tab mét positie → centreer op die
+    //      sondering (zoom 18, pand-zicht).
+    //   3. Leeg project (project zonder positionele CPTs) → home-base.
+    //   4. Geen document open (geen project, geen CPT) → home-base.
+    //      Override lastMapView expliciet zodat de Kaart-tab altijd op
+    //      Lange Geldersekade opent zodra er niks geladen is —
+    //      gebruiker-verzoek.
+    //   5. Alleen wanneer er een document is dat een wenselijke vorige
+    //      positie heeft (zou case 1/2 zijn) gebruiken we lastMapView
+    //      als fallback. In de praktijk is dat hier niet langer een
+    //      pad omdat docCenter dan al gezet is.
+    const DEFAULT_LAT = 51.81435338;
+    const DEFAULT_LON = 4.66003133;
+    const DEFAULT_ZOOM = 17;
     const docState = useCptStore.getState();
     const activeDoc = docState.documents.find(
       (d) => d.id === docState.activeDocId,
     );
     let docCenter: { lat: number; lon: number; zoom: number } | null = null;
     let isEmptyProject = false;
+    const noDocAtAll = !activeDoc;
     if (activeDoc && activeDoc.kind === "project") {
       const positioned = Array.from(activeDoc.cpts.values()).filter(
         (c) => c.position != null,
@@ -372,7 +378,7 @@ export default function MapView() {
         docCenter = { lat: ll.lat, lon: ll.lon, zoom: 17 };
       } else {
         // Leeg project — geen sonderingen met positie. Forceer
-        // Dordrecht-default, NIET lastMapView.
+        // home-base, NIET lastMapView.
         isEmptyProject = true;
       }
     } else if (activeDoc && activeDoc.kind === "cpt" && activeDoc.cpt.position) {
@@ -381,12 +387,17 @@ export default function MapView() {
       docCenter = { lat: ll.lat, lon: ll.lon, zoom: 18 };
     }
     const seed = useCptStore.getState().lastMapView;
+    // Force-default als er niks geladen is OF als het project leeg is.
+    // Alleen wanneer er een document zonder direct bruikbare positie is
+    // (geen kind matched, theoretisch onmogelijk maar veilig) vallen we
+    // op lastMapView terug — anders altijd home-base.
+    const forceDefault = noDocAtAll || isEmptyProject;
     const initLat =
-      docCenter?.lat ?? (isEmptyProject ? DEFAULT_LAT : seed?.lat ?? DEFAULT_LAT);
+      docCenter?.lat ?? (forceDefault ? DEFAULT_LAT : seed?.lat ?? DEFAULT_LAT);
     const initLon =
-      docCenter?.lon ?? (isEmptyProject ? DEFAULT_LON : seed?.lon ?? DEFAULT_LON);
+      docCenter?.lon ?? (forceDefault ? DEFAULT_LON : seed?.lon ?? DEFAULT_LON);
     const initZoom =
-      docCenter?.zoom ?? (isEmptyProject ? DEFAULT_ZOOM : seed?.zoom ?? DEFAULT_ZOOM);
+      docCenter?.zoom ?? (forceDefault ? DEFAULT_ZOOM : seed?.zoom ?? DEFAULT_ZOOM);
     const map = L.map(containerRef.current).setView(
       [initLat, initLon],
       initZoom,

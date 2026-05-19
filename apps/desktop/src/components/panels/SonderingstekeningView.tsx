@@ -613,7 +613,7 @@ export default function SonderingstekeningView() {
     lat: number;
     lon: number;
     zoom: number;
-  }>({ lat: 51.81317, lon: 4.67242, zoom: 18 });
+  }>({ lat: 51.81435338, lon: 4.66003133, zoom: 18 });
   // Freeze viewport — when true the Leaflet map cannot be panned or
   // zoomed (drag / scroll-wheel / pinch / double-click / box / keyboard
   // are all disabled). The ribbon's freeze toggle dispatches
@@ -1560,7 +1560,7 @@ export default function SonderingstekeningView() {
     //      als de sonderingen".
     //   2. Laatste Kaart-viewport (lastMapView) — wat de gebruiker
     //      het laatst zag op de Kaart-tab.
-    //   3. Fallback Lange Gelderse Kade 1, Dordrecht.
+    //   3. Fallback Lange Geldersekade 2, 3311CJ Dordrecht (home-base).
     const seed = useCptStore.getState().lastMapView;
     const docState = useCptStore.getState();
     const activeDoc = docState.documents.find(
@@ -1590,8 +1590,8 @@ export default function SonderingstekeningView() {
         projectCenter = { lat: ll[1], lon: ll[0] };
       }
     }
-    const startLat = projectCenter?.lat ?? seed?.lat ?? 51.81317;
-    const startLon = projectCenter?.lon ?? seed?.lon ?? 4.67242;
+    const startLat = projectCenter?.lat ?? seed?.lat ?? 51.81435338;
+    const startLon = projectCenter?.lon ?? seed?.lon ?? 4.66003133;
     // Bij project-locatie: relatief ingezoomd zodat alle sonderingen
     // binnen 1:500-papier passen. Anders neem de Kaart-zoom of de
     // default 14 (overzicht).
