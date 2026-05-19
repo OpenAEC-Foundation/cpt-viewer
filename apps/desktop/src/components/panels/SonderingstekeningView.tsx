@@ -1545,15 +1545,51 @@ export default function SonderingstekeningView() {
   // ── Init Leaflet map inside the paper rect ─────────────────────
   useEffect(() => {
     if (!paperRef.current) return;
-    // Default to whatever location the Kaart view was last looking at —
-    // MapView writes its viewport into `lastMapView` on every moveend.
-    // Falls back to the geographic centre of NL if the user hasn't
-    // opened the Kaart yet this session.
+    // Bepaal de initiële view-positie volgens prioriteit:
+    //   1. Project-sonderingen — als het actieve project CPTs met
+    //      posities heeft, centreer op het geografisch midden van
+    //      die sonderingen. Anders zou de Situatietekening op
+    //      Dordrecht openen terwijl de echte sonderingen elders
+    //      liggen — gebruiker-verzoek "tekening op dezelfde plek
+    //      als de sonderingen".
+    //   2. Laatste Kaart-viewport (lastMapView) — wat de gebruiker
+    //      het laatst zag op de Kaart-tab.
+    //   3. Fallback Lange Gelderse Kade 1, Dordrecht.
     const seed = useCptStore.getState().lastMapView;
-    // Default: Lange Gelderse Kade 1, Dordrecht (zelfde als Kaart-tab).
-    const startLat = seed?.lat ?? 51.81317;
-    const startLon = seed?.lon ?? 4.67242;
-    const startZoom = seed?.zoom ?? 14;
+    const docState = useCptStore.getState();
+    const activeDoc = docState.documents.find(
+      (d) => d.id === docState.activeDocId,
+    );
+    let projectCenter: { lat: number; lon: number } | null = null;
+    if (activeDoc && activeDoc.kind === "project") {
+      const positioned = Array.from(activeDoc.cpts.values()).filter(
+        (c) => c.position != null,
+      );
+      if (positioned.length > 0) {
+        // Geografisch midden in RD-meters → terug naar lat/lon.
+        const meanX =
+          positioned.reduce((s, c) => s + c.position!.x_rd, 0) /
+          positioned.length;
+        const meanY =
+          positioned.reduce((s, c) => s + c.position!.y_rd, 0) /
+          positioned.length;
+        const ll = WGS84_TO_RD.inverse([meanX, meanY]);
+        projectCenter = { lat: ll[1], lon: ll[0] };
+      }
+    } else if (activeDoc && activeDoc.kind === "cpt") {
+      // Losse CPT-tab: gebruik direct die positie.
+      const pos = activeDoc.cpt.position;
+      if (pos) {
+        const ll = WGS84_TO_RD.inverse([pos.x_rd, pos.y_rd]);
+        projectCenter = { lat: ll[1], lon: ll[0] };
+      }
+    }
+    const startLat = projectCenter?.lat ?? seed?.lat ?? 51.81317;
+    const startLon = projectCenter?.lon ?? seed?.lon ?? 4.67242;
+    // Bij project-locatie: relatief ingezoomd zodat alle sonderingen
+    // binnen 1:500-papier passen. Anders neem de Kaart-zoom of de
+    // default 14 (overzicht).
+    const startZoom = projectCenter ? 18 : (seed?.zoom ?? 14);
     const map = L.map(paperRef.current, {
       zoomControl: false,
       attributionControl: false,
