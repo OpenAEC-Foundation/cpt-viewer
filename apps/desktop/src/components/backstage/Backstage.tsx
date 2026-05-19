@@ -103,12 +103,17 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
   // op schijf belandt.
   const saveProject = useCallback(async () => {
     if (!activeDoc || activeDoc.kind !== "project") {
-      alert("Geen project actief — open of maak een .ifcgis project.");
+      alert("Geen project actief — open of maak een .ifcx project.");
       return;
     }
     const dst = await save({
-      defaultPath: `${activeDoc.meta.title || "project"}.ifcgis`,
-      filters: [{ name: "Open Geotechniek Studio project", extensions: ["ifcgis"] }],
+      defaultPath: `${activeDoc.meta.title || "project"}.ifcx`,
+      // .ifcx is de nieuwe standaard-extensie (IFCX = IFC5 alpha JSON
+      // representatie). .ifcgis blijft als legacy-extensie in de
+      // open-dialog ondersteund zodat oudere projecten nog laden.
+      filters: [
+        { name: "Open Geotechniek Studio project", extensions: ["ifcx", "ifcgis"] },
+      ],
     });
     if (!dst) return;
     try {
@@ -127,6 +132,11 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
       // CPTs uit de project-document map; .values() geeft een Iterable
       // dus we converteren via Array.from. Rust verwacht een array.
       const cpts = Array.from(activeDoc.cpts.values());
+      // Bores idem — Rust accepteert ze als opaque serde_json::Value
+      // (BoreJson), dus we sturen de hele Bore-struct mee zonder
+      // verdere transformatie. Lege array als het project geen
+      // boringen heeft.
+      const bores = Array.from(activeDoc.bores.values());
       // Tekening + title-block uit de singleton (gevuld door
       // SonderingstekeningView). Beide kunnen null zijn als de
       // tekening-tab nooit geopend is — dan schrijft Rust gewoon geen
@@ -171,11 +181,7 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
         },
         project: projectInfo,
         cpts,
-        // bores: TODO — bores zijn nog losse Bore-documents in de
-        // store, niet aan een project gekoppeld. Voor v1 schrijven we
-        // ze niet mee. Een toekomstige project.bores Map kan dit
-        // analoog aan project.cpts oppakken.
-        bores: [],
+        bores,
         crs: { epsg: 28992, name: "Amersfoort / RD New" },
         gis,
         ...(tekening ? { tekening } : {}),
@@ -244,7 +250,7 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
     const selected = await openDialog({
       multiple: true,
       filters: [
-        { name: "Open Geotechniek Studio", extensions: ["gef", "GEF", "xml", "XML", "ifcgis"] },
+        { name: "Open Geotechniek Studio", extensions: ["gef", "GEF", "xml", "XML", "ifcx", "ifcgis"] },
       ],
     });
     if (!selected) return;
@@ -642,7 +648,7 @@ function OpenPanel({
           </div>
           <div className="bs-open-card-text">
             <strong>{t("openPanel.openTitle", "Openen")}</strong>
-            <span>{t("openPanel.openAnyHint", "Sondering (GEF / BRO-XML) of project (.ifcgis) — elk bestand opent in een eigen tab")}</span>
+            <span>{t("openPanel.openAnyHint", "Sondering (GEF / BRO-XML) of project (.ifcx) — elk bestand opent in een eigen tab")}</span>
           </div>
         </button>
       </div>

@@ -6,6 +6,8 @@ import Modal from "../Modal";
 import {
   useCptStore,
   addCptToActiveProject,
+  addBoreToActiveProject,
+  removeBoreFromActiveProject,
   newProjectDocument,
 } from "../../store/useCptStore";
 
@@ -39,6 +41,10 @@ export default function ProjectSettingsDialog({ open, onClose }: ProjectSettings
     () => (isProject ? Array.from(activeDoc.cpts.values()) : []),
     [isProject, activeDoc],
   );
+  const bores = useMemo(
+    () => (isProject ? Array.from(activeDoc.bores.values()) : []),
+    [isProject, activeDoc],
+  );
 
   async function addCpts() {
     const selected = await openDialog({
@@ -62,6 +68,35 @@ export default function ProjectSettingsDialog({ open, onClose }: ProjectSettings
     if (!isProject) return;
     const ids = Array.from(activeDoc.cpts.keys());
     for (const id of ids) void closeCpt(id);
+  }
+
+  /**
+   * Open BHR-GT XML-bestanden en voeg ze als boring aan het project
+   * toe. Faalt stilletjes per bestand (log naar console) zodat één
+   * bad-XML niet de hele batch om zeep helpt.
+   */
+  async function addBores() {
+    const selected = await openDialog({
+      multiple: true,
+      filters: [{ name: "BHR-GT XML", extensions: ["xml", "XML"] }],
+    });
+    if (!selected) return;
+    const paths = Array.isArray(selected) ? selected : [selected];
+    for (const p of paths) {
+      try {
+        const content = await readTextFile(p);
+        const filename = p.split(/[\\/]/).pop() ?? p;
+        await addBoreToActiveProject(content, filename);
+      } catch (err) {
+        console.error("addBores: failed to open", p, err);
+      }
+    }
+  }
+
+  function removeAllBores() {
+    if (!isProject) return;
+    const ids = Array.from(activeDoc.bores.keys());
+    for (const id of ids) removeBoreFromActiveProject(id);
   }
 
   return (
@@ -147,6 +182,66 @@ export default function ProjectSettingsDialog({ open, onClose }: ProjectSettings
             </ul>
           )}
 
+          {/* Boringen-sectie — analoog aan sonderingen, accept .xml
+              (BHR-GT). Boring-id + diepte als meta-regel. */}
+          <div className="ps-section-header">
+            <h3 className="ps-section-title">
+              {t("boresInProject", "Boringen in dit project")}
+              <span className="ps-count">({bores.length})</span>
+            </h3>
+            <div className="ps-section-actions">
+              {bores.length > 0 && (
+                <button type="button" className="ps-link-btn"
+                        onClick={removeAllBores}>
+                  {t("removeAll", "Verwijder alle")}
+                </button>
+              )}
+              <button type="button" className="ps-add-btn"
+                      onClick={() => void addBores()}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"/>
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span>{t("addBore", "Boring toevoegen")}</span>
+              </button>
+            </div>
+          </div>
+
+          {bores.length === 0 ? (
+            <div className="ps-empty">
+              <p>{t("noBoresHint", "Nog geen boringen toegevoegd. Klik op 'Boring toevoegen' om BHR-GT XML te importeren.")}</p>
+            </div>
+          ) : (
+            <ul className="ps-cpt-list">
+              {bores.map((b) => {
+                const layerCount = b.layers?.length ?? 0;
+                // base_depth (NEN-conventie) = onderkant van de laag;
+                // diepste laag geeft totale boordiepte. Optioneel
+                // valt het terug op b.final_depth als die er is.
+                const maxDepth =
+                  b.layers && b.layers.length > 0
+                    ? Math.max(...b.layers.map((l) => l.base_depth ?? 0))
+                    : (b.final_depth ?? 0);
+                return (
+                  <li key={b.id} className="ps-cpt-item">
+                    <div className="ps-cpt-info">
+                      <span className="ps-cpt-id">{b.id}</span>
+                      <span className="ps-cpt-meta">
+                        {layerCount} lagen · {maxDepth.toFixed(1)} m diepte
+                        {b.position && ` · RD ${b.position.x_rd.toFixed(0)}, ${b.position.y_rd.toFixed(0)}`}
+                      </span>
+                    </div>
+                    <button type="button" className="ps-remove-btn"
+                            onClick={() => removeBoreFromActiveProject(b.id)}
+                            aria-label={t("remove", "Verwijder")}>
+                      ×
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
           <div className="ps-footer">
             <button type="button" onClick={onClose}>{t("cancel", "Annuleer")}</button>
             <button type="submit" className="btn-primary">{t("save", "Opslaan")}</button>
@@ -161,12 +256,12 @@ function NoProjectHint({ onClose, onCreate }: { onClose: () => void; onCreate: (
   return (
     <div style={{ padding: "16px 4px" }}>
       <p style={{ margin: 0, marginBottom: 12, color: "var(--theme-text)" }}>
-        Geen project actief — open of maak een <code>.ifcgis</code> project.
+        Geen project actief — open of maak een <code>.ifcx</code> project.
       </p>
       <p style={{ margin: 0, marginBottom: 20, color: "var(--theme-text-muted)", fontSize: "0.9rem" }}>
         De huidige actieve tab is een losse sondering. Projectinfo (titel,
         opdrachtgever, locatie, sonderingenlijst) leeft binnen een project —
-        maak er een aan of open een bestaand <code>.ifcgis</code> bestand.
+        maak er een aan of open een bestaand <code>.ifcx</code> bestand.
       </p>
       <div className="ps-footer">
         <button type="button" onClick={onClose}>Sluiten</button>

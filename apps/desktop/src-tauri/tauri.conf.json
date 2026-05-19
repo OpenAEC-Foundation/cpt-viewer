@@ -48,11 +48,11 @@
         "mimeType": "application/x-gef"
       },
       {
-        "ext": ["ifcgis"],
+        "ext": ["ifcx", "ifcgis"],
         "name": "OpenGeoStudioProject",
         "description": "Open Geotechniek Studio project",
         "role": "Editor",
-        "mimeType": "application/x-ifcgis+json"
+        "mimeType": "application/x-ifcx+json"
       },
       {
         "ext": ["ifcgeo"],

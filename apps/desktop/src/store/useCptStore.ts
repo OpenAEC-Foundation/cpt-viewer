@@ -46,6 +46,11 @@ export interface ProjectDocument {
   path?: string;
   meta: ProjectMeta;
   cpts: Map<string, Cpt>;
+  /** Boringen die bij dit project horen (BHR-GT XML, geparsed client-
+   *  side). Net als `cpts` keyed by id zodat dedup + remove eenvoudig
+   *  blijft. Bores worden meegeschreven naar de `bores`-sectie van
+   *  het .ifcx-bestand. */
+  bores: Map<string, Bore>;
   activeCptId: string | null;
 }
 
@@ -763,6 +768,106 @@ export async function addCptToActiveProject(
 }
 
 /**
+ * Voeg een boring toe aan het actieve project. Analoog aan
+ * addCptToActiveProject maar dan voor BHR-GT XML. Parsing gebeurt
+ * client-side (parseBhrgtXml) — geen Rust roundtrip nodig. Als er
+ * geen actief project is wordt de boring als losse Bore-tab geopend.
+ */
+export async function addBoreToActiveProject(
+  xml: string,
+  filename: string,
+): Promise<Bore> {
+  if (!looksLikeBoringXml(xml)) {
+    throw new Error(
+      `${filename}: lijkt geen BHR-GT XML (geen <BHR_*_O> root gevonden)`,
+    );
+  }
+  const bore = parseBhrgtXml(xml, filename);
+  const state = useCptStore.getState();
+  const active = state.documents.find((d) => d.id === state.activeDocId);
+  if (!active || active.kind !== "project") {
+    // Geen actief project — open als losse boring-tab.
+    useCptStore.setState((s) => {
+      const doc: BoreDocument = {
+        kind: "bore",
+        id: makeId(),
+        title: filename,
+        bore,
+        rawXml: xml,
+      };
+      const documents = [...s.documents, doc];
+      const activeDocId = doc.id;
+      const derived = deriveFromActive(documents, activeDocId);
+      return { documents, activeDocId, ...derived };
+    });
+    return bore;
+  }
+
+  let updatedDoc: ProjectDocument | null = null;
+  useCptStore.setState((s) => {
+    const target = s.documents.find((d) => d.id === active.id);
+    if (!target || target.kind !== "project") return s;
+    const next = new Map(target.bores);
+    next.set(bore.id, bore);
+    const documents = s.documents.map((d) => {
+      if (d.id !== target.id || d.kind !== "project") return d;
+      const updated: ProjectDocument = { ...d, bores: next };
+      updatedDoc = updated;
+      return updated;
+    });
+    // Project content changed — drop cached PDF + IFC zodat de
+    // volgende preview de boring meeneemt.
+    const pdfCache = s.pdfCache.has(target.id)
+      ? (() => { const n = new Map(s.pdfCache); n.delete(target.id); return n; })()
+      : s.pdfCache;
+    const ifcCache = s.ifcCache.has(target.id)
+      ? (() => { const n = new Map(s.ifcCache); n.delete(target.id); return n; })()
+      : s.ifcCache;
+    const derived = deriveFromActive(documents, s.activeDocId);
+    return { documents, pdfCache, ifcCache, ...derived };
+  });
+  if (updatedDoc) {
+    schedulePdfPreview(updatedDoc);
+    scheduleIfcGenerate(updatedDoc);
+  }
+  return bore;
+}
+
+/**
+ * Remove a boring from the active project. No-op if the active doc is
+ * not a project or the bore id is not in the project. Triggers a
+ * cache-bust + reschedule analoog aan closeCpt.
+ */
+export function removeBoreFromActiveProject(id: string): void {
+  let updatedDoc: ProjectDocument | null = null;
+  useCptStore.setState((s) => {
+    const active = s.documents.find((d) => d.id === s.activeDocId);
+    if (!active || active.kind !== "project") return s;
+    if (!active.bores.has(id)) return s;
+    const next = new Map(active.bores);
+    next.delete(id);
+    const documents = s.documents.map((d) => {
+      if (d.id !== active.id || d.kind !== "project") return d;
+      const updated: ProjectDocument = { ...d, bores: next };
+      updatedDoc = updated;
+      return updated;
+    });
+    const pdfCache = s.pdfCache.has(active.id)
+      ? (() => { const n = new Map(s.pdfCache); n.delete(active.id); return n; })()
+      : s.pdfCache;
+    const ifcCache = s.ifcCache.has(active.id)
+      ? (() => { const n = new Map(s.ifcCache); n.delete(active.id); return n; })()
+      : s.ifcCache;
+    const derived = deriveFromActive(documents, s.activeDocId);
+    return { documents, pdfCache, ifcCache, ...derived };
+  });
+  if (updatedDoc) {
+    schedulePdfPreview(updatedDoc);
+    scheduleIfcGenerate(updatedDoc);
+  }
+}
+
+/**
  * Opens a `.ifcgis` project file via the `open_project_ifcgis_full` Tauri
  * command (ifcgis-0.2 schema, includes optional tekening + title_block)
  * and creates a new ProjectDocument tab. Falls back to the legacy
@@ -805,10 +910,19 @@ export async function openProjectIfcgis(path: string): Promise<void> {
     date: result.project.date ?? "",
   };
   const cptList: Cpt[] = Array.isArray(result.cpts) ? result.cpts : [];
+  // Bores: het ifcgis-bestand bewaart ze als opaque JSON (de Rust-side
+  // doet geen strict parsing). Wij doen hier een minimal cast naar Bore
+  // — als de shape niet klopt valt de UI-rendering terug op de error-
+  // banner van BoreView. Geen exception om de open niet te blokkeren.
+  const boreList: Bore[] = Array.isArray(result.bores)
+    ? (result.bores as Bore[]).filter((b) => b && typeof b === "object" && "id" in b)
+    : [];
   let createdDoc: ProjectDocument | null = null;
   useCptStore.setState((s) => {
     const cpts = new Map<string, Cpt>();
     for (const c of cptList) cpts.set(c.id, c);
+    const bores = new Map<string, Bore>();
+    for (const b of boreList) bores.set(b.id, b);
     const filename = path.split(/[\\/]/).pop() ?? path;
     const doc: ProjectDocument = {
       kind: "project",
@@ -817,6 +931,7 @@ export async function openProjectIfcgis(path: string): Promise<void> {
       path,
       meta: projectMeta,
       cpts,
+      bores,
       activeCptId: cptList[0]?.id ?? null,
     };
     createdDoc = doc;
@@ -835,7 +950,7 @@ export async function openProjectIfcgis(path: string): Promise<void> {
     const tekState = tekeningStateFromIfcgis(result.tekening) ?? {
       paperSize: "A2" as const,
       scale: 1000,
-      center: { lat: 52.0, lon: 5.0, zoom: 8 },
+      center: { lat: 51.81317, lon: 4.67242, zoom: 18 },
       markers: [],
       rasters: [],
       lines: [],
@@ -881,6 +996,7 @@ export function newProjectDocument(): void {
       title: meta.title,
       meta,
       cpts: new Map(),
+      bores: new Map(),
       activeCptId: null,
     };
     const documents = [...s.documents, doc];
@@ -901,7 +1017,10 @@ export function newProjectDocument(): void {
  */
 export async function openPathByExtension(path: string): Promise<boolean> {
   const lower = path.toLowerCase();
-  if (lower.endsWith(".ifcgis")) {
+  // .ifcx is de nieuwe standaard-extensie voor project-bestanden.
+  // .ifcgis blijft als legacy-extensie ondersteund (zelfde Rust-
+  // loader, het schema-header bepaalt de versie).
+  if (lower.endsWith(".ifcx") || lower.endsWith(".ifcgis")) {
     await openProjectIfcgis(path);
     return true;
   }
@@ -981,6 +1100,7 @@ export async function mergeIntoNewProject(
       title: meta.title,
       meta,
       cpts,
+      bores: new Map(),
       activeCptId: newCpt.id,
     };
     createdDoc = projectDoc;

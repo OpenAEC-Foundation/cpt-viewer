@@ -17,6 +17,30 @@
   background-color: var(--theme-border-subtle, #e7e5e4);
 }
 
+/* Twee-koloms layout: IFC4x3 links, IFCX rechts. Vervangt de oude
+   tab-switcher zodat de twee output-formats direct naast elkaar
+   te vergelijken zijn. */
+.ifc-view-split {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  background: var(--theme-bg);
+  color: var(--theme-text);
+}
+.ifc-split-col {
+  flex: 1 1 50%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ifc-split-divider {
+  flex: 0 0 1px;
+  background: var(--theme-border, #d6d3d1);
+}
+
+/* Backwards-compat — oude tabbar-stijlen blijven aanwezig voor het
+   geval een ander component ze hergebruikt. */
 .ifc-view-tabbed {
   display: flex;
   flex-direction: column;

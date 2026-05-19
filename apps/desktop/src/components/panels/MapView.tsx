@@ -326,7 +326,23 @@ export default function MapView() {
   // ── 1. Init map (one-time) ─────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return;
-    const map = L.map(containerRef.current).setView([52.156, 5.388], 8);
+    // Default-locatie: Lange Gelderse Kade 1, Dordrecht — historisch
+    // centrum aan de Voorstraathaven. Zoom 18 zodat de gebruiker
+    // direct het pand + omgeving ziet (BAG + Kadaster overlays zijn
+    // bij dit zoom-niveau leesbaar). Zodra de gebruiker zelf pant
+    // schrijft `setLastMapView` de nieuwe positie in de store en
+    // wordt deze default niet meer toegepast op subsequent mounts.
+    const DEFAULT_LAT = 51.81317;
+    const DEFAULT_LON = 4.67242;
+    const DEFAULT_ZOOM = 18;
+    const seed = useCptStore.getState().lastMapView;
+    const initLat = seed?.lat ?? DEFAULT_LAT;
+    const initLon = seed?.lon ?? DEFAULT_LON;
+    const initZoom = seed?.zoom ?? DEFAULT_ZOOM;
+    const map = L.map(containerRef.current).setView(
+      [initLat, initLon],
+      initZoom,
+    );
 
     // Build all base layers up front (cheap — they're just URL templates).
     const baseLayers: Record<string, L.TileLayer> = {};

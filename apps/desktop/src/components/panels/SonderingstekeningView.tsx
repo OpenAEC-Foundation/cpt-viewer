@@ -455,7 +455,7 @@ export default function SonderingstekeningView() {
     lat: number;
     lon: number;
     zoom: number;
-  }>({ lat: 52.0, lon: 5.0, zoom: 8 });
+  }>({ lat: 51.81317, lon: 4.67242, zoom: 18 });
   // Freeze viewport — when true the Leaflet map cannot be panned or
   // zoomed (drag / scroll-wheel / pinch / double-click / box / keyboard
   // are all disabled). The ribbon's freeze toggle dispatches
@@ -1110,8 +1110,9 @@ export default function SonderingstekeningView() {
     // Falls back to the geographic centre of NL if the user hasn't
     // opened the Kaart yet this session.
     const seed = useCptStore.getState().lastMapView;
-    const startLat = seed?.lat ?? 52.156;
-    const startLon = seed?.lon ?? 5.388;
+    // Default: Lange Gelderse Kade 1, Dordrecht (zelfde als Kaart-tab).
+    const startLat = seed?.lat ?? 51.81317;
+    const startLon = seed?.lon ?? 4.67242;
     const startZoom = seed?.zoom ?? 14;
     const map = L.map(paperRef.current, {
       zoomControl: false,
