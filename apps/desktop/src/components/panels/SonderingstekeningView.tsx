@@ -1539,18 +1539,34 @@ export default function SonderingstekeningView() {
       }
     };
 
-    const cur = measureMPerPx();
+    // Iteratieve refinement: in praktijk mist één setView het doel
+    // soms met ~0.4% (b.v. 1:500 → 1:498) door de combinatie van
+    // floating-point in getScaleZoom + de R_haversine/R_eq-mismatch
+    // tussen distance-measurement en CRS-projectie. Door 2-3x te
+    // meten + bij te stellen convergeert het naar < 0.1% drift,
+    // wat liveScale.Math.round netjes op de gevraagde 1:N landt.
+    //
+    // Stop conditie: 0.0002 = 0.02% absolute drift in mPerPx (één
+    // pixel-rounding kan zoveel veroorzaken; verder is nutteloos).
+    let cur = measureMPerPx();
     if (cur === null) return;
-    // Leaflet's eigen scale-math: `getScaleZoom(scale, fromZoom)`
-    // levert het zoom-niveau waarbij `cur` × `scale` = `target` is.
-    const ratio = cur / targetMPerPx;
-    const fromZoom = map.getZoom();
-    const newZoom = map.getScaleZoom(ratio, fromZoom);
-    if (!Number.isFinite(newZoom)) return;
-    // Clamp moet boven de targets uitkomen: 1:100 vereist Z≈22 op
-    // NL-breedte; 24 is veilig en sluit aan op map.options.maxZoom.
-    const clamped = Math.max(2, Math.min(24, newZoom));
-    map.setView(centre, clamped, { animate: false });
+    for (let iter = 0; iter < 4; iter++) {
+      const ratio = cur / targetMPerPx;
+      // Convergentie-check: als ratio al ≈ 1, klaar.
+      if (Math.abs(ratio - 1) < 0.0002) break;
+      const fromZoom = map.getZoom();
+      const newZoom = map.getScaleZoom(ratio, fromZoom);
+      if (!Number.isFinite(newZoom)) break;
+      // Clamp moet boven de targets uitkomen: 1:100 vereist Z≈22
+      // op NL-breedte; 24 is veilig en sluit aan op map.options.maxZoom.
+      const clamped = Math.max(2, Math.min(24, newZoom));
+      map.setView(centre, clamped, { animate: false });
+      // Re-meet voor de volgende iteratie. setView met animate:false
+      // is synchroon dus de nieuwe state is direct beschikbaar.
+      const next = measureMPerPx();
+      if (next === null) break;
+      cur = next;
+    }
     // canvasSize.w/h staat NIET in de deps — paperPxW hangt alleen
     // van paperSize af (vaste mm × dpi). Window-resizes veranderen
     // de visuele weergave via CSS transform, maar de DOM-pixelmaat

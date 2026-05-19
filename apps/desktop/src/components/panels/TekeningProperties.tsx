@@ -429,13 +429,14 @@ function ScaleNumberField({
   liveScale?: number;
 }) {
   // Live schaal wint zolang de gebruiker niet aan het typen is.
-  // Snap naar de gevraagde scale wanneer liveScale binnen ±1 zit —
-  // anders krijgt de gebruiker 1:501 te zien terwijl ze 1:500 typten
-  // (puur door float-rounding in de mPerPx-meting). Bij grotere
-  // drift (b.v. wanneer de gebruiker zelf met het muiswiel zoomt)
-  // verschijnt wel de echte live-waarde.
+  // Snap naar de gevraagde scale wanneer liveScale binnen ±2 zit —
+  // anders krijgt de gebruiker 1:498 te zien terwijl ze 1:500 typten
+  // (de iteratieve scale-setter convergeert binnen 0.1% maar één
+  // pixel-rounding kan nog steeds ±1-2 opleveren in de read-out).
+  // Bij grotere drift (b.v. wanneer de gebruiker zelf met het
+  // muiswiel zoomt) verschijnt wel de echte live-waarde.
   const displayed =
-    liveScale != null && Math.abs(liveScale - scale) <= 1
+    liveScale != null && Math.abs(liveScale - scale) <= 2
       ? scale
       : (liveScale ?? scale);
   const [draft, setDraft] = useState<string | null>(null);
