@@ -326,6 +326,13 @@ export default function MapView() {
   // ── 1. Init map (one-time) ─────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return;
+    // Lifecycle-guards: `disposed` wordt aan het einde van het effect
+    // op true gezet bij cleanup. Hoog up gedeclareerd zodat reloadBag/
+    // reloadKadaster (verderop gedefinieerd binnen dit effect) er bij
+    // kunnen. autoEnableTimeouts collecteert setTimeout-IDs voor de
+    // staggered toggle-dispatch, ook in cleanup leeggemaakt.
+    let disposed = false;
+    const autoEnableTimeouts: number[] = [];
     // Default-locatie: Lange Gelderse Kade 1, Dordrecht — historisch
     // centrum aan de Voorstraathaven. Zoom 18 zodat de gebruiker
     // direct het pand + omgeving ziet (BAG + Kadaster overlays zijn
@@ -530,7 +537,7 @@ export default function MapView() {
     // the current viewport bbox and capped at a few thousand features.
     const reloadBag = async () => {
       const layer = bagLayerRef.current;
-      if (!layer) return;
+      if (!layer || disposed) return;
       bagAbortRef.current?.abort();
       const ctrl = new AbortController();
       bagAbortRef.current = ctrl;
@@ -544,7 +551,12 @@ export default function MapView() {
         },
         ctrl.signal,
       );
-      if (ctrl.signal.aborted || !fc) return;
+      if (ctrl.signal.aborted || !fc || disposed) return;
+      // Belt-and-braces: check dat de map nog steeds in DOM zit voor
+      // we polygonen toevoegen. Anders crashen Leaflet drag-handlers
+      // op een gedetacheerd parent-element (offsetWidth = null).
+      const internalMap = map as unknown as { _container?: HTMLElement };
+      if (!internalMap._container || !internalMap._container.isConnected) return;
       layer.clearLayers();
       // Solid grey (192,192,192) fill, red outline — matches the
       // user-requested rendering convention.
@@ -561,7 +573,7 @@ export default function MapView() {
 
     const reloadKadaster = async () => {
       const layer = kadasterLayerRef.current;
-      if (!layer) return;
+      if (!layer || disposed) return;
       kadasterAbortRef.current?.abort();
       const ctrl = new AbortController();
       kadasterAbortRef.current = ctrl;
@@ -575,7 +587,9 @@ export default function MapView() {
         },
         ctrl.signal,
       );
-      if (ctrl.signal.aborted || !fc) return;
+      if (ctrl.signal.aborted || !fc || disposed) return;
+      const internalMap = map as unknown as { _container?: HTMLElement };
+      if (!internalMap._container || !internalMap._container.isConnected) return;
       layer.clearLayers();
       // Center-line type: dashed grey-blue stroke with no fill so the
       // user can see the perceelgrenzen on top of BRT/luchtfoto without
@@ -1133,31 +1147,45 @@ export default function MapView() {
 
     // ── Default overlay-stack op de Kaart-tab ─────────────────────
     // Activeer bag + kadaster + adressen via dezelfde toggle-flow die
-    // het lagen-paneel ook gebruikt. STAGGER ze (250ms tussen elk) +
-    // wacht tot de map "ready" is voordat de eerste toggle vuurt —
-    // anders kwamen er 3 simultane WFS-fetches op zoom 18 binnen, met
-    // ieder honderden polygonen in de Leaflet-render-pipeline. Dat
-    // veroorzaakte een hard-freeze van de Kaart-tab bij elke opening.
+    // het lagen-paneel ook gebruikt. STAGGER ze (350ms tussen elk) +
+    // wacht tot de map "ready" is voordat de eerste toggle vuurt.
+    // Anders kwamen er 3 simultane WFS-fetches op zoom 18 binnen,
+    // met ieder honderden polygonen in de Leaflet-render-pipeline —
+    // dat veroorzaakte een hard-freeze van de Kaart-tab.
     //
-    // map.whenReady garandeert dat de map zijn eerste setView + size-
-    // measurement heeft gehad; daarna is getBounds() geldig en de
-    // WFS-bbox-fetch valt binnen de Dordrecht-viewport ipv heel NL.
+    // Belangrijk: timeout-IDs worden ge-collecteerd in
+    // autoEnableTimeouts (al hoog up gedeclareerd) en in cleanup
+    // gecleared zodat een snelle tab-switch (binnen 1.5s) geen
+    // toggle-events dispatcht naar een al gedestroyed map. De
+    // whenReady-callback checkt `disposed` om hetzelfde te vermijden.
     map.whenReady(() => {
-      const fire = (id: string, enabled: boolean) =>
+      if (disposed) return;
+      const fire = (id: string, enabled: boolean) => {
+        if (disposed) return;
         window.dispatchEvent(
           new CustomEvent("ogs:layer-toggle", {
             detail: { view: "map", id, enabled },
           }),
         );
-      // Lichte laag eerst (BAG = gebouwen — 1 polygoon per pand),
-      // dan kadaster (perceelgrenzen), tenslotte adressen (text-
-      // labels). Tussen elk 350ms — genoeg tijd voor de Leaflet-
-      // render-loop om te ademen.
-      window.setTimeout(() => fire("bag", true), 350);
-      window.setTimeout(() => fire("kadaster", true), 700);
-      window.setTimeout(() => fire("adressen", true), 1050);
+      };
+      // BAG eerst (lichtste payload — 1 polygon/pand), dan kadaster,
+      // tenslotte adressen. Tussen elk 350ms ademruimte voor de
+      // Leaflet-render-loop.
+      autoEnableTimeouts.push(
+        window.setTimeout(() => fire("bag", true), 350),
+      );
+      autoEnableTimeouts.push(
+        window.setTimeout(() => fire("kadaster", true), 700),
+      );
+      autoEnableTimeouts.push(
+        window.setTimeout(() => fire("adressen", true), 1050),
+      );
     });
     return () => {
+      // Disposed-flag eerst: voorkomt dat lopende whenReady-callbacks
+      // of staged timeouts nog acties dispatchen op een gedestroyed map.
+      disposed = true;
+      for (const id of autoEnableTimeouts) window.clearTimeout(id);
       window.removeEventListener("ogs:bro-load-area", onLoad);
       window.removeEventListener("ogs:bro-clear", onClear);
       window.removeEventListener("ogs:layer-toggle", onLayerToggle as EventListener);
