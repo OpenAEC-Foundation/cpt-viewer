@@ -3001,7 +3001,17 @@ export default function SonderingstekeningView() {
       setPlaceMode(null); placeModeRef.current = null;
       setCoordMode(false); coordModeRef.current = false;
       setCadMode(null); cadModeRef.current = null; cadStepRef.current = null;
-      setSelectMode((m) => !m);
+      setSelectMode((m) => {
+        const next = !m;
+        // Broadcast naar de ribbon-tab zodat de Selecteren-knop kan
+        // highlighten wanneer de mode aan staat.
+        window.dispatchEvent(
+          new CustomEvent("ogs:tekening-select-mode-changed", {
+            detail: { active: next },
+          }),
+        );
+        return next;
+      });
     };
     // Freeze toggle from the ribbon. We flip the state here; a separate
     // effect (below) handles enabling/disabling the actual Leaflet
@@ -3419,15 +3429,16 @@ export default function SonderingstekeningView() {
       if (placeModeRef.current || drawModeRef.current || coordModeRef.current) return;
       e.preventDefault();
       e.stopPropagation();
-      const bbox = container.getBoundingClientRect();
-      const cp = L.point(e.clientX - bbox.left, e.clientY - bbox.top);
+      // mouseEventToContainerPoint compenseert voor CSS transform:scale
+      // op het papier — anders zou het selectie-kader 1/viewScale-px
+      // verschoven beginnen t.o.v. waar de cursor klikt.
+      const cp = map.mouseEventToContainerPoint(e);
       dragStart = map.containerPointToLatLng(cp);
       map.dragging.disable();
     };
     const onMouseMove = (e: MouseEvent) => {
       if (!dragStart) return;
-      const bbox = container.getBoundingClientRect();
-      const cp = L.point(e.clientX - bbox.left, e.clientY - bbox.top);
+      const cp = map.mouseEventToContainerPoint(e);
       const cur = map.containerPointToLatLng(cp);
       const bounds = L.latLngBounds(dragStart, cur);
       if (!rect) {
@@ -3444,8 +3455,7 @@ export default function SonderingstekeningView() {
     };
     const onMouseUp = (e: MouseEvent) => {
       if (!dragStart) return;
-      const bbox = container.getBoundingClientRect();
-      const cp = L.point(e.clientX - bbox.left, e.clientY - bbox.top);
+      const cp = map.mouseEventToContainerPoint(e);
       const end = map.containerPointToLatLng(cp);
       const bounds = L.latLngBounds(dragStart, end);
       const dragPx = Math.abs(

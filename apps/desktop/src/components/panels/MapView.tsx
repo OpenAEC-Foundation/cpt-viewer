@@ -1288,17 +1288,17 @@ export default function MapView() {
           }),
         );
       };
-      // BAG eerst (lichtste payload — 1 polygon/pand), dan kadaster,
-      // tenslotte adressen. Tussen elk 350ms ademruimte voor de
-      // Leaflet-render-loop.
+      // BAG eerst (lichtste payload — 1 polygon/pand), dan kadaster.
+      // Adressen NIET meer auto-enabled op Kaart — gebruiker-verzoek
+      // ("standaard uit op Kaart"). Op Situatietekening blijft de
+      // adressen-laag wél standaard aan via GisLayerPanel's per-view
+      // defaultState. Tussen elk 350ms ademruimte voor de Leaflet-render-
+      // loop.
       autoEnableTimeouts.push(
         window.setTimeout(() => fire("bag", true), 350),
       );
       autoEnableTimeouts.push(
         window.setTimeout(() => fire("kadaster", true), 700),
-      );
-      autoEnableTimeouts.push(
-        window.setTimeout(() => fire("adressen", true), 1050),
       );
     });
     return () => {

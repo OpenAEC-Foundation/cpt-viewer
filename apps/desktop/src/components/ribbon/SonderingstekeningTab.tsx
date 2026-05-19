@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import RibbonGroup from "./RibbonGroup";
 import RibbonButton from "./RibbonButton";
@@ -139,6 +140,21 @@ const dispatch = (name: string, detail?: unknown) =>
 export default function SonderingstekeningTab() {
   const { t } = useTranslation("ribbon");
 
+  // Houd lokaal bij of select-mode aan staat in de view, zodat de
+  // Selecteren-knop kan highlighten (active-style). De view dispatcht
+  // `ogs:tekening-select-mode-changed` zodra de gebruiker hem toggelt.
+  const [selectActive, setSelectActive] = useState(false);
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      const ce = e as CustomEvent<{ active: boolean }>;
+      setSelectActive(!!ce.detail?.active);
+    };
+    window.addEventListener("ogs:tekening-select-mode-changed", onChange);
+    return () => {
+      window.removeEventListener("ogs:tekening-select-mode-changed", onChange);
+    };
+  }, []);
+
   return (
     <div className="ribbon-content">
       <div className="ribbon-groups">
@@ -147,6 +163,7 @@ export default function SonderingstekeningTab() {
             icon={selectIcon}
             label={t("tekening.selectMode", "Selecteren")}
             size="large"
+            active={selectActive}
             onClick={() => dispatch("ogs:tekening-select-mode")}
           />
         </RibbonGroup>

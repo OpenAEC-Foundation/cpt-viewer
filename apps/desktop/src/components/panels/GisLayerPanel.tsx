@@ -111,19 +111,19 @@ const AHN_LEGEND: { color: string; label: string }[] = [
  * default so the user can search/inspect freely without overlays getting
  * in the way.
  */
-function defaultState(_view: ViewId = "map"): Record<LayerId, boolean> {
+function defaultState(view: ViewId = "map"): Record<LayerId, boolean> {
   const out = {} as Record<LayerId, boolean>;
   for (const d of LAYER_DEFS) out[d.id] = d.defaultOn;
-  // Beide views (Kaart en Situatietekening) starten met dezelfde
-  // overlay-stack: luchtfoto-actueel als base op halve dekking +
-  // BAG-gebouwen + Kadaster-percelen + adressen/straten. Geeft de
-  // gebruiker meteen een herkenbare situatieschets zonder dat hij
-  // eerst lagen moet aanzetten. BRT blijft als fallback eronder
-  // voor tiles die niet laden.
+  // Beide views starten met dezelfde basis-overlay-stack: luchtfoto
+  // op halve dekking + BAG-gebouwen + Kadaster-percelen.
   out["luchtfoto-actueel"] = true;
   out["kadaster"] = true;
   out["bag"] = true;
-  out["adressen"] = true;
+  // Adressen + straten: alleen aan op de Situatietekening (waar je
+  // dat als CAD-tekeningkader nodig hebt). Op de Kaart-tab UIT zodat
+  // de gebruiker een schone basiskaart heeft om vrij te verkennen
+  // — adressen kan altijd handmatig aangezet worden in het laagpaneel.
+  out["adressen"] = view === "tekening";
   return out;
 }
 
