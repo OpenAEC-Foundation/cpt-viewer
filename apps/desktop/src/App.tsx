@@ -124,27 +124,37 @@ function App() {
     const isOpenable = (path: string) =>
       /\.(gef|xml|ifcgis)$/i.test(path);
 
-    const unsubscribePromise = getCurrentWebview().onDragDropEvent(async (event) => {
-      const t = event.payload.type;
-      if (t === "enter" || t === "over") {
-        const paths = (event.payload as { paths?: string[] }).paths ?? [];
-        // Only highlight if at least one dragged item looks openable.
-        if (paths.length === 0 || paths.some(isOpenable)) setDragOver(true);
-      } else if (t === "leave") {
-        setDragOver(false);
-      } else if (t === "drop") {
-        setDragOver(false);
-        const paths = (event.payload as { paths: string[] }).paths;
-        for (const path of paths) {
-          try {
-            await openPathByExtension(path);
-          } catch (err) {
-            console.error("drag-drop open failed for", path, err);
+    // Bail out in browser-test contexts (geen Tauri-runtime) — getCurrentWebview
+    // crasht dan synchroon op undefined.metadata. We laten in dat geval simpel
+    // drag-drop voor wat-ie is; native DOM dragover blijft natuurlijk werken.
+    let unsubscribePromise: Promise<() => void> | null = null;
+    try {
+      unsubscribePromise = getCurrentWebview().onDragDropEvent(async (event) => {
+        const t = event.payload.type;
+        if (t === "enter" || t === "over") {
+          const paths = (event.payload as { paths?: string[] }).paths ?? [];
+          // Only highlight if at least one dragged item looks openable.
+          if (paths.length === 0 || paths.some(isOpenable)) setDragOver(true);
+        } else if (t === "leave") {
+          setDragOver(false);
+        } else if (t === "drop") {
+          setDragOver(false);
+          const paths = (event.payload as { paths: string[] }).paths;
+          for (const path of paths) {
+            try {
+              await openPathByExtension(path);
+            } catch (err) {
+              console.error("drag-drop open failed for", path, err);
+            }
           }
         }
-      }
-    });
-    return () => { void unsubscribePromise.then((unsub) => unsub()); };
+      });
+    } catch (err) {
+      console.warn("[App] getCurrentWebview unavailable (browser mode):", err);
+    }
+    return () => {
+      if (unsubscribePromise) void unsubscribePromise.then((unsub) => unsub());
+    };
   }, []);
 
   // Allow other components (eg. ReportPreview's sidebar action) to open
@@ -180,7 +190,7 @@ function App() {
       listen<string>("ogs:open-file", (event) => {
         void openPathByExtension(event.payload);
       }).then((unsub) => { unsubFn = unsub; }),
-    );
+    ).catch(() => { /* Tauri unavailable (browser test mode) */ });
     return () => { unsubFn?.(); };
   }, []);
 

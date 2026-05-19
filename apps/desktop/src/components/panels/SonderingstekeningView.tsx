@@ -2046,10 +2046,12 @@ export default function SonderingstekeningView() {
       }, 50);
       return () => window.clearTimeout(retryId);
     }
-    for (let iter = 0; iter < 4; iter++) {
+    // 8 iteraties + strenger tolerance (1e-5 = 0.001%) zodat liveScale's
+    // Math.round netjes op het gevraagde 1:N getal landt en niet net erna
+    // (1:504 ipv 1:500). Praktisch convergeert het binnen 2-3 stappen.
+    for (let iter = 0; iter < 8; iter++) {
       const ratio = cur / targetMPerPx;
-      // Convergentie-check: als ratio al ≈ 1, klaar.
-      if (Math.abs(ratio - 1) < 0.0002) break;
+      if (Math.abs(ratio - 1) < 1e-5) break;
       const fromZoom = map.getZoom();
       const newZoom = map.getScaleZoom(ratio, fromZoom);
       if (!Number.isFinite(newZoom)) break;
@@ -2063,6 +2065,13 @@ export default function SonderingstekeningView() {
       if (next === null) break;
       cur = next;
     }
+    // Sync de mPerPx-state direct met de gemeten waarde aan het einde
+    // van de iteratie, zodat de live-scale-display (1:N input) onmiddel-
+    // lijk het juiste getal toont. Anders moet er eerst een moveend-
+    // event komen — en als de iteratie en moveend-meting marginal
+    // verschillen door tile-load-resize, ziet de gebruiker b.v. 1:504
+    // ipv 1:500 ondanks dat de iteratie convergeerde.
+    if (cur !== null && cur > 0) setMPerPx(cur);
     // canvasSize.w/h staat NIET in de deps — paperPxW hangt alleen
     // van paperSize af (vaste mm × dpi). Window-resizes veranderen
     // de visuele weergave via CSS transform, maar de DOM-pixelmaat

@@ -578,7 +578,10 @@
      genoeg ruimte is voor project-bar + 8 cellen + logo + format-
      corner. De map-laag heeft bottom 60mm (50mm titleblock + 10mm
      rand) zodat de kaart precies stopt op de bovenrand van het
-     titleblock — geen overlap meer. */
+     titleblock — geen overlap meer.
+     2-row grid (auto + 1fr) zorgt dat de project-bar zijn natuurlijke
+     hoogte houdt en de body-rij de resterende ruimte (cellen, logo,
+     format-corner) volledig vult. Geen witte band meer onderaan. */
   position: absolute;
   left: 10mm;
   right: 10mm;
@@ -591,6 +594,8 @@
   pointer-events: auto;
   z-index: 1100;
   overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr;
 }
 
 .tek-db-project-bar {
@@ -664,6 +669,7 @@
   display: grid;
   grid-template-columns: 110px 1fr 90px;
   align-items: stretch;
+  min-height: 0; /* sta krimp toe binnen de grid-row */
 }
 
 .tek-db-logo-cell {
@@ -709,7 +715,8 @@
 .tek-db-cells {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  grid-auto-rows: minmax(28px, auto);
+  grid-template-rows: 1fr 1fr; /* 2 rijen, elk vult de helft — geen witte ruimte */
+  min-height: 0;
 }
 .tek-db-cell {
   padding: 3px 6px;
