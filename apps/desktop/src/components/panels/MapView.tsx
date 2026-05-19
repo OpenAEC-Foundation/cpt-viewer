@@ -354,6 +354,16 @@ export default function MapView() {
     // effect verderop). Direct hier disablen zodat de gebruiker niet
     // per ongeluk Leaflet's BoxZoom triggert vóór die effect draait.
     try { map.boxZoom.disable(); } catch { /* noop */ }
+    // Belt-and-braces: dragging expliciet enabled houden. De CPT-
+    // selectie-effect disablet hem tijdelijk tijdens een Shift-drag
+    // en re-enabled op mouseup — als de effect-cleanup midden in een
+    // drag draait kon dragging eerder hangen op "disabled" en moest
+    // de gebruiker tab-switchen om weer te kunnen pannen. Re-enable
+    // bij elke moveend als safety-net.
+    try { map.dragging.enable(); } catch { /* noop */ }
+    map.on("moveend", () => {
+      try { if (!map.dragging.enabled()) map.dragging.enable(); } catch { /* noop */ }
+    });
 
     // Build all base layers up front (cheap — they're just URL templates).
     const baseLayers: Record<string, L.TileLayer> = {};

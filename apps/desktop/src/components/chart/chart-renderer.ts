@@ -284,11 +284,20 @@ function computeScales(points: MeasurementPoint[]): CptScales {
   //   qc default 0-30 MPa (auto-extends if measured peak exceeds 30)
   //   Rf  default 0-10 %  (auto-extends if measured peak exceeds 10)
   // fs is auto-fit because its scale varies more by soil type.
-  const qcPeak = Math.max(0, ...positive("qc"));
-  const rfPeak = Math.max(0, ...positive("rf"));
-  const qcMax = qcPeak > 30 ? niceMax(qcPeak) : 30;
-  const fsMax = niceMax(Math.max(0.01, ...positive("fs")));
-  const rfMax = rfPeak > 10 ? niceMax(rfPeak) : 10;
+  // Vaste axis-caps (gebruiker-verzoek): fs op 0.02 MPa, Rf op 10%,
+  // qc op 30 MPa. Data-waarden die boven de cap uitkomen worden
+  // door de polyline-renderer ge-clipt zodat de lijn niet de chart-
+  // area verlaat. De live waarden zijn nog steeds bekend (tooltip,
+  // download), maar visueel zit alles netjes in de schaal.
+  const qcMax = 30;
+  const fsMax = 0.02;
+  const rfMax = 10;
+  // De variabelen qcPeak / rfPeak laten we hier bestaan voor het
+  // geval een toekomstige feature ze nodig heeft (b.v. een banner
+  // "fs piek: 0.034 MPa boven schaal"). Tot dan: unused, niet
+  // verstandig om weg te halen.
+  void Math.max(0, ...positive("qc"));
+  void Math.max(0, ...positive("rf"));
 
   const u2vals = points.map((p) => p.u2).filter((v): v is number => v != null);
   const hasU2 = u2vals.length > 10;
