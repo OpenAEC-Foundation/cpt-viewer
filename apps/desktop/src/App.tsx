@@ -290,7 +290,20 @@ function App() {
 
   return (
     <>
-      <TitleBar onSettingsClick={() => setSettingsOpen(true)} onFeedbackClick={() => setFeedbackOpen(true)} />
+      <TitleBar
+        onSettingsClick={() => setSettingsOpen(true)}
+        onFeedbackClick={() => {
+          // Gebruiker-verzoek: feedback nu via GitHub-issues ipv onze
+          // eigen FeedbackDialog (mailto). Open de "new issue"-pagina
+          // van de repo in de externe browser via @tauri-apps/plugin-
+          // opener; valt onder Tauri terug op window.open zodat het
+          // ook werkt in de browser-only preview.
+          const url = "https://github.com/OpenAEC-Foundation/open-geotechniek-studio/issues/new";
+          import("@tauri-apps/plugin-opener")
+            .then(({ openUrl }) => openUrl(url))
+            .catch(() => { window.open(url, "_blank", "noopener"); });
+        }}
+      />
       {dragOver && (
         <div className="drop-overlay">
           <div className="drop-overlay-card">

@@ -621,6 +621,18 @@ export default function SonderingstekeningView() {
   // `ogs:tekening-freeze-changed` so the ribbon button can show its
   // active state.
   const [frozen, setFrozen] = useState(false);
+  // CSS-zoom op het hele papier wanneer frozen aanstaat — gebruiker-
+  // verzoek: bij freeze mag je wél in/uitzoomen op de tekening (incl.
+  // kader) zonder dat de Leaflet-map zelf reageert. Vermenigvuldigt
+  // met paperLayout.viewScale in de uiteindelijke transform.
+  const [tekZoom, setTekZoom] = useState(1);
+  // Reset paper-zoom wanneer freeze uitgaat zodat de volgende freeze
+  // weer op 100% start.
+  useEffect(() => {
+    if (!frozen) setTekZoom(1);
+  }, [frozen]);
+  const frozenRef = useRef(false);
+  useEffect(() => { frozenRef.current = frozen; }, [frozen]);
   // titleBlockOpen state removed — title block is edited via the
   // right-side TekeningProperties panel now, no in-view modal needed.
   const [titleBlock, setTitleBlock] = useState<TitleBlockData>({
@@ -782,8 +794,8 @@ export default function SonderingstekeningView() {
             icon: L.divIcon({
               className: "tek-dim-label",
               html: `<span>${distLbl}</span>`,
-              iconSize: [80, 18],
-              iconAnchor: [40, 9],
+              iconSize: [160, 36], /* 2× — gebruiker-verzoek */
+              iconAnchor: [80, 18],
             }),
             interactive: false,
           });
@@ -1427,25 +1439,26 @@ export default function SonderingstekeningView() {
     layer.clearLayers();
     // Layout-constanten — handgekozen zodat het kader naast het punt
     // staat zonder erop te overlappen, en de leader een natuurlijke
-    // 30-45° hoek krijgt.
-    const W = 150;
-    const H = 56;
-    const dotX = 4;
-    const dotY = H - 4;
-    const leaderEndX = 34;
-    const leaderEndY = 14;
+    // 30-45° hoek krijgt. Alle pixel-waardes 2× — gebruiker-verzoek
+    // RD-coordinaat 2x zo groot.
+    const W = 300;
+    const H = 112;
+    const dotX = 8;
+    const dotY = H - 8;
+    const leaderEndX = 68;
+    const leaderEndY = 28;
     const boxX = leaderEndX;
-    const boxY = 2;
-    const boxW = W - boxX - 2;
+    const boxY = 4;
+    const boxW = W - boxX - 4;
     for (const t of coordTags) {
       const [x, y] = WGS84_TO_RD.forward([t.lon, t.lat]);
       const html =
         `<div class="tek-coord-tag" style="width:${W}px;height:${H}px;position:relative;">
           <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="position:absolute;inset:0;pointer-events:none;">
             <line x1="${dotX}" y1="${dotY}" x2="${leaderEndX}" y2="${leaderEndY}"
-                  stroke="#7c2d12" stroke-width="1.3" />
-            <circle cx="${dotX}" cy="${dotY}" r="3.2"
-                    fill="#d97706" stroke="#7c2d12" stroke-width="1.2" />
+                  stroke="#7c2d12" stroke-width="2.6" />
+            <circle cx="${dotX}" cy="${dotY}" r="6.4"
+                    fill="#d97706" stroke="#7c2d12" stroke-width="2.4" />
           </svg>
           <div class="tek-coord-text" style="position:absolute;left:${boxX}px;top:${boxY}px;width:${boxW}px;">
             <strong>x:</strong> ${x.toFixed(1)}<br>
@@ -3603,17 +3616,20 @@ export default function SonderingstekeningView() {
   // Paper-zelf: vaste mm-px-grootte. Transform: scale verkleint het
   // visueel. transform-origin: 0 0 zodat het bij de linkerbovenhoek
   // van de stage uitlijnt — anders zit het halverwege buiten beeld.
+  // Effectieve scale = base view-fit × user-zoom (alleen actief tijdens
+  // freeze; zie wheel-handler hieronder).
+  const effectiveScale = paperLayout.viewScale * tekZoom;
   const paperStyle = useMemo<React.CSSProperties>(
     () => ({
       width: `${paperLayout.pxW}px`,
       height: `${paperLayout.pxH}px`,
-      transform: `scale(${paperLayout.viewScale})`,
+      transform: `scale(${effectiveScale})`,
       transformOrigin: "0 0",
       position: "absolute",
       left: 0,
       top: 0,
     }),
-    [paperLayout.pxW, paperLayout.pxH, paperLayout.viewScale],
+    [paperLayout.pxW, paperLayout.pxH, effectiveScale],
   );
   // Stage-wrapper: heeft de zichtbare (gescaled) afmetingen, zodat de
   // canvas-flex-layout de paper netjes kan centreren. Zonder deze
@@ -3622,15 +3638,35 @@ export default function SonderingstekeningView() {
   const paperStageStyle = useMemo<React.CSSProperties>(
     () => ({
       position: "relative",
-      width: `${paperLayout.pxW * paperLayout.viewScale}px`,
-      height: `${paperLayout.pxH * paperLayout.viewScale}px`,
+      width: `${paperLayout.pxW * effectiveScale}px`,
+      height: `${paperLayout.pxH * effectiveScale}px`,
       flex: "0 0 auto",
     }),
-    [paperLayout.pxW, paperLayout.pxH, paperLayout.viewScale],
+    [paperLayout.pxW, paperLayout.pxH, effectiveScale],
   );
 
+  // Wheel-zoom op de canvas wanneer frozen aanstaat — vergroot/verkleint
+  // tekZoom waardoor de hele paper-stage (papier + frame + markers) als
+  // één geheel meeschaalt. Native addEventListener met passive:false
+  // zodat preventDefault werkt (React's onWheel is standaard passive).
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!frozenRef.current) return;
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 1 / 1.15 : 1.15;
+      setTekZoom((z) => Math.min(8, Math.max(0.25, z * factor)));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
   return (
-    <div className="tek-view" ref={containerRef}>
+    <div
+      className={`tek-view${frozen ? " tek-view-frozen" : ""}`}
+      ref={containerRef}
+    >
       {/* Topbar verwijderd — papier + schaal worden gestuurd vanuit
           de TekeningProperties paneel rechts. Export PDF is uit het
           topbar gehaald (gebruik Bestand → Print of de ribbon-PDF

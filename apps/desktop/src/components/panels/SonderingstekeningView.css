@@ -114,6 +114,17 @@
   background: var(--theme-bg);
   overflow: hidden; /* CAD-style viewport: clip overflow, no scrollbars */
 }
+/* Wanneer freeze aanstaat krijgt de canvas scrollbars zodat de
+   gebruiker — die nu met scroll-wheel het hele papier kan in/uit-
+   zoomen — kan pannen door scrollen. align-items + justify-content
+   wisselen naar flex-start zodat het ingezoomde papier vanuit de
+   linkerbovenhoek scrolt; anders blijft het verticaal/horizontaal
+   gecentreerd op de oude viewport-positie en is scrollen onmogelijk. */
+.tek-view.tek-view-frozen .tek-canvas {
+  overflow: auto;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
 
 /* Stage-wrapper: heeft de visuele (gescaled) afmetingen van het
    papier. De canvas-flex centreert deze; de echte paper-div zit er
@@ -763,6 +774,26 @@
   color: #d97706;
 }
 
+/* ── Maatlijn-label (afstand tussen twee punten) ─────────────── */
+.tek-dim-label {
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent !important;
+  border: none !important;
+}
+.tek-dim-label span {
+  background: rgba(255, 255, 255, 0.95);
+  color: #36363e;
+  border: 1.5px solid #d97706;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font: 700 1.1rem 'Inter', sans-serif; /* groot leesbaar boven de maatlijn */
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+
 /* ── RD-coordinate tag (a small label dropped at click) ─────── */
 
 .tek-coord-icon {
@@ -779,16 +810,16 @@
   margin-left: 6px;
 }
 .tek-coord-text {
-  margin-top: 2px;
-  margin-left: 6px;
+  margin-top: 4px; /* 2× */
+  margin-left: 12px;
   background: rgba(255, 255, 255, 0.92);
-  border: 1px solid #d97706;
-  border-radius: 4px;
-  padding: 2px 6px;
-  font: 500 0.65rem var(--font-code, 'JetBrains Mono'), monospace;
+  border: 2px solid #d97706;
+  border-radius: 8px;
+  padding: 4px 12px;
+  font: 500 1.3rem var(--font-code, 'JetBrains Mono'), monospace; /* 0.65 × 2 */
   color: #36363e;
   white-space: nowrap;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   cursor: pointer;
 }
 .tek-coord-text strong {
