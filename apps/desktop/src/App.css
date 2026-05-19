@@ -1026,6 +1026,36 @@ body,
   padding-top: 16px;
   border-top: 1px solid var(--theme-border, #E7E5E4);
 }
+/* Default footer-button styling (Annuleer / Sluiten). De primary
+   variant (Opslaan / Nieuw project) krijgt amber via .btn-primary
+   hieronder. */
+.ps-footer button {
+  appearance: none;
+  border: 1px solid var(--theme-border, #d4d4d4);
+  background: var(--theme-bg, #fafaf9);
+  color: var(--theme-text, #36363e);
+  font: 600 0.8rem 'Inter', sans-serif;
+  padding: 7px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.ps-footer button:hover {
+  background: var(--theme-bg-lighter, #f4f4f3);
+  border-color: var(--amber, #d97706);
+}
+.ps-footer .btn-primary,
+.btn-primary {
+  background: var(--amber, #d97706);
+  color: white;
+  border-color: var(--amber, #d97706);
+}
+.ps-footer .btn-primary:hover,
+.btn-primary:hover {
+  background: var(--signal-orange, #ea580c);
+  border-color: var(--signal-orange, #ea580c);
+  color: white;
+}
 
 /* ── RightPanel: stacked sections ── */
 .right-panel-body {

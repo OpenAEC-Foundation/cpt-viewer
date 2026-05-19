@@ -77,7 +77,8 @@ export default function ProjectSettingsDialog({ open, onClose }: ProjectSettings
         />
       ) : (
         <form onSubmit={(e) => { e.preventDefault(); onClose(); }}>
-          <h3 className="ps-section-title">{t("projectInfo", "Projectinfo")}</h3>
+          {/* Geen extra "Projectinfo"-header hier — die staat al in de
+              modal-titelbalk; dubbel tonen ziet er onverzorgd uit. */}
           <Field label={t("title", "Titel")}
                  value={meta!.title}
                  onChange={(v) => setMeta({ title: v })} />
