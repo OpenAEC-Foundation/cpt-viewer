@@ -48,6 +48,13 @@ const moveIcon =
   `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ` +
   `d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>`;
 
+// Offertes-icon — envelop met handgeschreven streep (snelheid /
+// uitgaande mail-symbool). Heroicons "envelope" met arrow.
+const quotesIcon =
+  `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
+  `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ` +
+  `d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>`;
+
 // Roteer-icon — een ronde pijl die 270° om een centrum buigt (open
 // aan de bovenkant). Heroicons "arrow-path" stijl.
 const rotateIcon =
@@ -211,6 +218,19 @@ export default function SonderingstekeningTab() {
             label={t("tekening.exportPdf", "PDF")}
             size="large"
             onClick={() => dispatch("ogs:tekening-print")}
+          />
+        </RibbonGroup>
+
+        <RibbonGroup label={t("tekening.offertesGroup", "Offertes")}>
+          <RibbonButton
+            icon={quotesIcon}
+            label={t("tekening.requestQuotes", "Vraag 3 offertes")}
+            size="large"
+            title={t(
+              "tekening.requestQuotesHint",
+              "Open een dialog met de dichtstbijzijnde sondeerbedrijven en open een mailto-offerte-aanvraag in Outlook",
+            )}
+            onClick={() => dispatch("ogs:tekening-request-quotes")}
           />
         </RibbonGroup>
       </div>

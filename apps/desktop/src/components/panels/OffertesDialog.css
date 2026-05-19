@@ -1,0 +1,146 @@
+/* OffertesDialog — lijst van sondeerbedrijven met afstand-sorteer +
+   checkboxes + mailto-knop. Layout volgt de bestaande Modal-stijl
+   (witte body, amber accenten, mono voor nummers). */
+
+.offertes-hint {
+  margin: 0 0 12px;
+  padding: 0 4px;
+  font: 400 0.78rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+  line-height: 1.45;
+}
+
+.offertes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 48vh;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.offertes-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-border, #d4d4d4);
+  border-radius: 6px;
+  background: var(--theme-bg, #fafaf9);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.offertes-row:hover {
+  border-color: var(--amber, #d97706);
+}
+.offertes-row.selected {
+  border-color: var(--amber, #d97706);
+  background: color-mix(in srgb, var(--amber, #d97706) 8%, var(--theme-bg, #fafaf9));
+}
+
+.offertes-row input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--amber, #d97706);
+  cursor: pointer;
+}
+
+.offertes-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.offertes-row-name {
+  font: 600 0.88rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text, #36363e);
+  line-height: 1.2;
+}
+
+.offertes-row-meta {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font: 500 0.72rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+}
+.offertes-city {
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.offertes-dist {
+  font-family: var(--font-code, 'JetBrains Mono'), monospace;
+  color: var(--amber, #d97706);
+  font-weight: 600;
+}
+
+.offertes-row-contact {
+  font: 400 0.74rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+}
+.offertes-row-contact a {
+  color: var(--amber, #d97706);
+  text-decoration: none;
+}
+.offertes-row-contact a:hover {
+  text-decoration: underline;
+}
+.offertes-contact-person {
+  font-weight: 500;
+}
+
+.offertes-more {
+  margin: 10px 4px 0;
+  font: 400 0.72rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+}
+.offertes-more code {
+  font-family: var(--font-code, 'JetBrains Mono'), monospace;
+  font-size: 0.96em;
+  background: var(--theme-bg-lighter, #f4f4f3);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+/* Footer met selectie-info + Annuleren + Email openen. */
+.offertes-footer {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+}
+.offertes-footer-info {
+  flex: 1;
+  font: 500 0.78rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+}
+.offertes-btn-secondary,
+.offertes-btn-primary {
+  appearance: none;
+  border: 1px solid var(--theme-border, #d4d4d4);
+  background: var(--theme-bg, #fafaf9);
+  color: var(--theme-text, #36363e);
+  font: 600 0.8rem 'Inter', system-ui, sans-serif;
+  padding: 7px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.offertes-btn-secondary:hover {
+  background: var(--theme-bg-lighter, #f4f4f3);
+}
+.offertes-btn-primary {
+  background: var(--amber, #d97706);
+  color: white;
+  border-color: var(--amber, #d97706);
+}
+.offertes-btn-primary:hover:not(:disabled) {
+  background: var(--signal-orange, #ea580c);
+}
+.offertes-btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

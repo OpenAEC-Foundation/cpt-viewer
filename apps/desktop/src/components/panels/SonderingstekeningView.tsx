@@ -13,6 +13,7 @@ import { fetchBagPanden, fetchKadasterPercelen } from "../../utils/pdokWfs";
 import { AdressenLayer } from "../../utils/adressenLayer";
 import ImageCropDialog from "./ImageCropDialog";
 import PdfCropDialog from "./PdfCropDialog";
+import OffertesDialog from "./OffertesDialog";
 import "./SonderingstekeningView.css";
 
 /**
@@ -438,6 +439,9 @@ export default function SonderingstekeningView() {
   const [pdfCropPending, setPdfCropPending] = useState<
     { src: string; name: string } | null
   >(null);
+  // Open-state voor de "Vraag 3 offertes"-dialog. Wordt getriggerd
+  // door het `ogs:tekening-request-quotes` event vanuit de ribbon.
+  const [offertesOpen, setOffertesOpen] = useState(false);
   const [frame, setFrame] = useState<FrameSvg | null>(null);
   // Live "meters per CSS pixel" for the visible map — keeps the scale
   // bar correct even when the Leaflet view doesn't exactly match the
@@ -2179,6 +2183,13 @@ export default function SonderingstekeningView() {
     //      landscape voldoet, plus visibility-hiding voor alles buiten
     //      `.tek-paper`.
     //   4. Restore de oude paper-grootte nadat de dialog gesloten is.
+    // Vraag-3-offertes opent een dialog met sondeerbedrijven
+    // (catalogus in src/data/sondeerbedrijven.ts). De project-
+    // locatie en metadata pakt de dialog uit zijn eigen props
+    // via een force-rerender (de open-state in de view).
+    const onRequestQuotes = () => {
+      setOffertesOpen(true);
+    };
     const onPrint = () => {
       const isA2 = paperSize === "A2";
       const pageW = isA2 ? "594mm" : "420mm";
@@ -2395,6 +2406,7 @@ export default function SonderingstekeningView() {
     window.addEventListener("ogs:tekening-toggle-place-bore", onTogglePlaceBore);
     window.addEventListener("ogs:tekening-add-overlay", onAddOverlay);
     window.addEventListener("ogs:tekening-print", onPrint);
+    window.addEventListener("ogs:tekening-request-quotes", onRequestQuotes);
     window.addEventListener("ogs:tekening-place-raster", onPlaceRaster);
     window.addEventListener("ogs:tekening-coord-tag", onCoordTag);
     window.addEventListener("ogs:tekening-copy", onCopy);
@@ -2412,6 +2424,7 @@ export default function SonderingstekeningView() {
       window.removeEventListener("ogs:tekening-toggle-place-bore", onTogglePlaceBore);
       window.removeEventListener("ogs:tekening-add-overlay", onAddOverlay);
       window.removeEventListener("ogs:tekening-print", onPrint);
+      window.removeEventListener("ogs:tekening-request-quotes", onRequestQuotes);
       window.removeEventListener("ogs:tekening-place-raster", onPlaceRaster);
       window.removeEventListener("ogs:tekening-coord-tag", onCoordTag);
       window.removeEventListener("ogs:tekening-copy", onCopy);
@@ -3124,6 +3137,26 @@ export default function SonderingstekeningView() {
           }}
         />
       )}
+
+      {/* Vraag-3-offertes dialog — gevuld met de actuele project-
+          locatie (eerste geplaatste marker, anders mapView-center),
+          titleBlock-velden, en het totaal aantal sonderingen
+          (losse markers + raster-cellen). De dialog sorteert
+          sondeerbedrijven op afstand en biedt mailto-aanvragen. */}
+      <OffertesDialog
+        open={offertesOpen}
+        onClose={() => setOffertesOpen(false)}
+        projectName={titleBlock.project || project?.title || ""}
+        projectNumber={
+          titleBlock.projectNumber || project?.number || ""
+        }
+        projectLat={placed[0]?.lat ?? mapView.lat}
+        projectLon={placed[0]?.lon ?? mapView.lon}
+        projectAddress={titleBlock.address}
+        aantalSonderingen={
+          placed.length + rasters.reduce((s, r) => s + r.rows * r.cols, 0)
+        }
+      />
     </div>
   );
 }
