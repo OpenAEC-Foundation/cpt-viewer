@@ -1133,19 +1133,29 @@ export default function MapView() {
 
     // ── Default overlay-stack op de Kaart-tab ─────────────────────
     // Activeer bag + kadaster + adressen via dezelfde toggle-flow die
-    // het lagen-paneel ook gebruikt. requestAnimationFrame zodat de
-    // map zijn eerste fitBounds/setView heeft afgemaakt — anders
-    // gaan de WFS-fetches met een degenerate viewport off.
-    requestAnimationFrame(() => {
+    // het lagen-paneel ook gebruikt. STAGGER ze (250ms tussen elk) +
+    // wacht tot de map "ready" is voordat de eerste toggle vuurt —
+    // anders kwamen er 3 simultane WFS-fetches op zoom 18 binnen, met
+    // ieder honderden polygonen in de Leaflet-render-pipeline. Dat
+    // veroorzaakte een hard-freeze van de Kaart-tab bij elke opening.
+    //
+    // map.whenReady garandeert dat de map zijn eerste setView + size-
+    // measurement heeft gehad; daarna is getBounds() geldig en de
+    // WFS-bbox-fetch valt binnen de Dordrecht-viewport ipv heel NL.
+    map.whenReady(() => {
       const fire = (id: string, enabled: boolean) =>
         window.dispatchEvent(
           new CustomEvent("ogs:layer-toggle", {
             detail: { view: "map", id, enabled },
           }),
         );
-      fire("bag", true);
-      fire("kadaster", true);
-      fire("adressen", true);
+      // Lichte laag eerst (BAG = gebouwen — 1 polygoon per pand),
+      // dan kadaster (perceelgrenzen), tenslotte adressen (text-
+      // labels). Tussen elk 350ms — genoeg tijd voor de Leaflet-
+      // render-loop om te ademen.
+      window.setTimeout(() => fire("bag", true), 350);
+      window.setTimeout(() => fire("kadaster", true), 700);
+      window.setTimeout(() => fire("adressen", true), 1050);
     });
     return () => {
       window.removeEventListener("ogs:bro-load-area", onLoad);
