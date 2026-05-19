@@ -336,16 +336,57 @@ export default function MapView() {
     // Default-locatie: Lange Gelderse Kade 1, Dordrecht — historisch
     // centrum aan de Voorstraathaven. Zoom 18 zodat de gebruiker
     // direct het pand + omgeving ziet (BAG + Kadaster overlays zijn
-    // bij dit zoom-niveau leesbaar). Zodra de gebruiker zelf pant
-    // schrijft `setLastMapView` de nieuwe positie in de store en
-    // wordt deze default niet meer toegepast op subsequent mounts.
+    // bij dit zoom-niveau leesbaar).
+    //
+    // Prioriteit:
+    //   1. Actief project / CPT mét positie → centreer er op (auto-fit
+    //      verderop in het CPT-render-effect doet uiteindelijk een
+    //      fitBounds, dus hier is dit puur voor de initiële view zodat
+    //      tegels meteen het juiste gebied laden).
+    //   2. Bij een LEEG project (of geen actief document) → Dordrecht
+    //      default, OOK als lastMapView in de store staat (dat zou
+    //      anders een vorig project's positie zijn die niets met dit
+    //      lege project te maken heeft — gebruiker-verzoek).
+    //   3. Geen project actief + lastMapView aanwezig → die positie.
     const DEFAULT_LAT = 51.81317;
     const DEFAULT_LON = 4.67242;
     const DEFAULT_ZOOM = 18;
+    const docState = useCptStore.getState();
+    const activeDoc = docState.documents.find(
+      (d) => d.id === docState.activeDocId,
+    );
+    let docCenter: { lat: number; lon: number; zoom: number } | null = null;
+    let isEmptyProject = false;
+    if (activeDoc && activeDoc.kind === "project") {
+      const positioned = Array.from(activeDoc.cpts.values()).filter(
+        (c) => c.position != null,
+      );
+      if (positioned.length > 0) {
+        const meanX =
+          positioned.reduce((s, c) => s + c.position!.x_rd, 0) /
+          positioned.length;
+        const meanY =
+          positioned.reduce((s, c) => s + c.position!.y_rd, 0) /
+          positioned.length;
+        const ll = rdToWgs84(meanX, meanY);
+        docCenter = { lat: ll.lat, lon: ll.lon, zoom: 17 };
+      } else {
+        // Leeg project — geen sonderingen met positie. Forceer
+        // Dordrecht-default, NIET lastMapView.
+        isEmptyProject = true;
+      }
+    } else if (activeDoc && activeDoc.kind === "cpt" && activeDoc.cpt.position) {
+      const pos = activeDoc.cpt.position;
+      const ll = rdToWgs84(pos.x_rd, pos.y_rd);
+      docCenter = { lat: ll.lat, lon: ll.lon, zoom: 18 };
+    }
     const seed = useCptStore.getState().lastMapView;
-    const initLat = seed?.lat ?? DEFAULT_LAT;
-    const initLon = seed?.lon ?? DEFAULT_LON;
-    const initZoom = seed?.zoom ?? DEFAULT_ZOOM;
+    const initLat =
+      docCenter?.lat ?? (isEmptyProject ? DEFAULT_LAT : seed?.lat ?? DEFAULT_LAT);
+    const initLon =
+      docCenter?.lon ?? (isEmptyProject ? DEFAULT_LON : seed?.lon ?? DEFAULT_LON);
+    const initZoom =
+      docCenter?.zoom ?? (isEmptyProject ? DEFAULT_ZOOM : seed?.zoom ?? DEFAULT_ZOOM);
     const map = L.map(containerRef.current).setView(
       [initLat, initLon],
       initZoom,
