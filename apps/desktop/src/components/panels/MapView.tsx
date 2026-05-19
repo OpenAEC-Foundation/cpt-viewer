@@ -479,10 +479,13 @@ export default function MapView() {
     // wrappen het in L.tileLayer.wms zodat Leaflet per tegel een
     // GetMap-call doet. Transparant zodat de onderliggende BRT/luchtfoto
     // erdoorheen leesbaar blijft.
+    // Endpoint: v1_0 is de enige live versie (v2_0/v3_0 → 404). De
+    // visueel-bruikbare gekleurde zonering is layer `enkelbestemming`
+    // — niet het oude `bestemmingsplangebied` dat niet meer bestaat.
     baseLayers["bestemmingsplan"] = L.tileLayer.wms(
-      "https://service.pdok.nl/kadaster/plu/wms/v2_0",
+      "https://service.pdok.nl/kadaster/plu/wms/v1_0",
       {
-        layers: "bestemmingsplangebied",
+        layers: "enkelbestemming",
         format: "image/png",
         transparent: true,
         attribution: "Ruimtelijkeplannen © Kadaster | PDOK",

@@ -1694,10 +1694,13 @@ export default function SonderingstekeningView() {
       if (id === "bestemmingsplan") {
         // PDOK Ruimtelijkeplannen — gemeentelijke bestemmingsplannen
         // via WMS-as-tile. Transparant zodat ondergrond leesbaar blijft.
+        // Endpoint v2_0/v3_0 zijn 404; alleen v1_0 leeft. De visueel-
+        // bruikbare layer is `enkelbestemming` (gekleurde zonering),
+        // niet `bestemmingsplangebied` (bestaat niet meer).
         return L.tileLayer.wms(
-          "https://service.pdok.nl/kadaster/plu/wms/v2_0",
+          "https://service.pdok.nl/kadaster/plu/wms/v1_0",
           {
-            layers: "bestemmingsplangebied",
+            layers: "enkelbestemming",
             format: "image/png",
             transparent: true,
             attribution: "Ruimtelijkeplannen © Kadaster | PDOK",

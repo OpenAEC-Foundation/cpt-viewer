@@ -132,12 +132,16 @@ export const GIS_LAYER_CATALOG: GisLayerCatalogEntry[] = [
     defaultOpacity: 1,
   },
   {
+    // Ruimtelijke plannen — gekleurde gemeentelijke bestemmingen.
+    // Endpoint v2_0/v3_0 bestaan niet (404); alleen v1_0 levert WMS.
+    // Layer `enkelbestemming` (niet `bestemmingsplangebied` of
+    // `plu:Plangebied`) is de visueel-bruikbare gekleurde zonering.
     id: "bestemmingsplan",
     label: "Bestemmingsplan",
     group: "overlay",
     kind: "wms",
-    url: "https://service.pdok.nl/kadaster/plu/wms/v3_0",
-    layerName: "plu:Plangebied",
+    url: "https://service.pdok.nl/kadaster/plu/wms/v1_0",
+    layerName: "enkelbestemming",
     attribution: PDOK_ATTRIBUTION + " / Kadaster",
     defaultEnabled: false,
     defaultOpacity: 0.6,
