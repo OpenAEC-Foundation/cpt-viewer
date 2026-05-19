@@ -6,6 +6,7 @@ import proj4 from "proj4";
 import { useCptStore } from "../../store/useCptStore";
 import {
   consumePendingTekeningRestore,
+  getLatestTekening,
   setLatestTekening,
   type TekeningFullState,
 } from "../../store/tekeningState";
@@ -113,6 +114,7 @@ type Selection =
   | { kind: "marker"; id: string }
   | { kind: "raster"; id: string }
   | { kind: "overlay"; id: string }
+  | { kind: "line"; id: string }
   | null;
 
 interface OverlayDrop {
@@ -289,6 +291,108 @@ function rasterEdgeMidpointsLatLng(r: PlacedRaster): L.LatLng[] {
   });
 }
 
+// ── CAD-geometrie-helpers ────────────────────────────────────────
+// Lijnen worden bewaard als lat/lon-paren. Voor euclidische
+// berekeningen (snijpunt, parallel, spiegelen) projecteren we
+// telkens naar RD New (EPSG:28992) — daar zijn afstanden in meters
+// en is een loodrechte vector écht loodrecht. Resultaten gaan
+// terug via WGS84_TO_RD.inverse zodat ze direct in DrawnLine-state
+// passen.
+
+/** Punt in RD-meters (x = oost, y = noord). */
+type RdPoint = readonly [number, number];
+
+/** Lat/lon → RD-meters via de projectie boven in dit bestand. */
+const llToRd = (lat: number, lon: number): RdPoint => {
+  const [x, y] = WGS84_TO_RD.forward([lon, lat]);
+  return [x, y];
+};
+
+/** RD-meters → { lat, lon } voor opname in DrawnLine-state. */
+const rdToLl = ([x, y]: RdPoint): { lat: number; lon: number } => {
+  const ll = WGS84_TO_RD.inverse([x, y]);
+  return { lat: ll[1], lon: ll[0] };
+};
+
+/**
+ * Snijpunt van twee oneindige lijnen door A-B en C-D in RD.
+ * Geeft het punt + de parameters t (langs AB) en u (langs CD).
+ * Retourneert `null` als de lijnen parallel zijn (det ≈ 0).
+ * Het is aan de caller om te kijken of het snijpunt binnen de
+ * segmenten valt (0 ≤ t ≤ 1, 0 ≤ u ≤ 1) — voor trim/extend
+ * willen we juist ook snijpunten buiten het segment kunnen
+ * gebruiken (extend verlengt tot de oneindige referentielijn).
+ */
+function lineIntersectionRd(
+  a: RdPoint, b: RdPoint, c: RdPoint, d: RdPoint,
+): { p: RdPoint; t: number; u: number } | null {
+  const rx = b[0] - a[0];
+  const ry = b[1] - a[1];
+  const sx = d[0] - c[0];
+  const sy = d[1] - c[1];
+  const det = rx * sy - ry * sx;
+  if (Math.abs(det) < 1e-9) return null;
+  const t = ((c[0] - a[0]) * sy - (c[1] - a[1]) * sx) / det;
+  const u = ((c[0] - a[0]) * ry - (c[1] - a[1]) * rx) / det;
+  return { p: [a[0] + t * rx, a[1] + t * ry] as RdPoint, t, u };
+}
+
+/**
+ * Spiegel een punt P over de lijn door A-B (RD).
+ * Standaard-formule:  P' = P - 2 × ((P-A) - ((P-A)·n̂)n̂)
+ * waarbij n̂ de eenheidsvector langs AB is.
+ */
+function mirrorPointRd(p: RdPoint, a: RdPoint, b: RdPoint): RdPoint {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-9) return p; // graf is een punt — geen spiegelas
+  const nx = dx / len;
+  const ny = dy / len;
+  const apx = p[0] - a[0];
+  const apy = p[1] - a[1];
+  const proj = apx * nx + apy * ny;
+  const projX = proj * nx;
+  const projY = proj * ny;
+  const perpX = apx - projX;
+  const perpY = apy - projY;
+  return [p[0] - 2 * perpX, p[1] - 2 * perpY] as RdPoint;
+}
+
+/**
+ * Parallel-lijn van A-B op afstand `dist` meters, aan de zijde
+ * die door `side` wordt aangewezen: side = +1 → links van A→B
+ * (loodrecht (-dy, dx)), side = -1 → rechts. Voor offset-tool
+ * bepaalt de hint-klik op welke zijde de kopie komt door op het
+ * teken van het kruisproduct (B-A) × (clickRd - A) te kijken.
+ */
+function offsetLineRd(
+  a: RdPoint, b: RdPoint, dist: number, side: 1 | -1,
+): { a: RdPoint; b: RdPoint } {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-9) return { a, b };
+  // Loodrechte eenheidsvector — links van A→B is (-dy, dx)/len.
+  const nx = (-dy / len) * dist * side;
+  const ny = (dx / len) * dist * side;
+  return {
+    a: [a[0] + nx, a[1] + ny] as RdPoint,
+    b: [b[0] + nx, b[1] + ny] as RdPoint,
+  };
+}
+
+/**
+ * Bepaal aan welke zijde van segment A-B het punt P ligt.
+ * Geeft +1 voor "links" (positief kruisproduct in RD),
+ * -1 voor "rechts", 0 als P precies op de lijn ligt.
+ */
+function sideOfLineRd(p: RdPoint, a: RdPoint, b: RdPoint): 1 | -1 | 0 {
+  const cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+  if (Math.abs(cross) < 1e-9) return 0;
+  return cross > 0 ? 1 : -1;
+}
+
 export default function SonderingstekeningView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -374,6 +478,17 @@ export default function SonderingstekeningView() {
   const [rasters, setRasters] = useState<PlacedRaster[]>([]);
   const [coordTags, setCoordTags] = useState<CoordTag[]>([]);
   const [coordMode, setCoordMode] = useState(false);
+  // Select-mode: wanneer true, plain drag op het papier tekent een
+  // amber selectie-rechthoek (zonder Shift). Toggled door de
+  // "Selecteren" ribbon-knop.
+  const [selectMode, setSelectMode] = useState(false);
+  const selectModeRef = useRef(false);
+  useEffect(() => { selectModeRef.current = selectMode; }, [selectMode]);
+  // Custom logo data-URL — vervangt het standaard OpenAEC-driehoek-
+  // logo in de titleblock-cel. Wordt via een file-input gewisseld
+  // (klik op het logo). Null = default OpenAEC-logo.
+  const [customLogo, setCustomLogo] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
   /**
    * Currently-active drawing tool. When non-null, the next map click
    * starts a new line segment; the click after completes it. Set via
@@ -385,6 +500,40 @@ export default function SonderingstekeningView() {
   const drawStartRef = useRef<{ lat: number; lon: number } | null>(null);
   const [drawnLines, setDrawnLines] = useState<DrawnLine[]>([]);
   const drawnLayerRef = useRef<L.LayerGroup | null>(null);
+  /**
+   * Actieve CAD-edit-tool. Eén van:
+   *   - "trim":   klik eerst de referentielijn, dan het stuk dat WEG moet
+   *   - "extend": klik eerst de referentielijn, dan het endpoint dat verlengt
+   *   - "mirror": klik twee punten op de kaart om de spiegelas te zetten
+   *               (werkt op huidige `selection` — lijn of marker)
+   *   - "offset": vraag eerst de afstand in m, dan klik aan de zijde
+   *               waar de parallel-lijn moet komen
+   *   - "movedrag": sleep-handle op het geselecteerde object actief
+   *               (renderd als amber drag-handle op het center; geen
+   *               map-click flow want het is gewoon een drag)
+   * Wordt door de ribbon-knoppen gezet via ogs:tekening-cad-* events;
+   * gereset op Escape, op completion, en op select-mode-knop.
+   */
+  type CadMode = "trim" | "extend" | "mirror" | "offset" | "movedrag" | null;
+  const [cadMode, setCadMode] = useState<CadMode>(null);
+  const cadModeRef = useRef<CadMode>(null);
+  /**
+   * Cross-step state voor multi-klik CAD-tools.
+   * - trim/extend: refLineId van de eerste klik (referentielijn) zodat
+   *   de tweede klik weet welke lijn geknipt/verlengd moet worden
+   * - mirror: eerste klik-punt van de spiegelas (lat/lon) — tweede
+   *   klik completeert de as en past de spiegeling toe op de huidige
+   *   selectie
+   * - offset: bewaarde brondata (gekozen lijn + afstand in m) tussen
+   *   de offset-start (op de geselecteerde lijn) en de hint-klik
+   */
+  const cadStepRef = useRef<
+    | { kind: "trim-ref"; refLineId: string }
+    | { kind: "extend-ref"; refLineId: string }
+    | { kind: "mirror-axis"; lat: number; lon: number }
+    | { kind: "offset-hint"; lineId: string; dist: number }
+    | null
+  >(null);
   /**
    * Bump-counter used to force the handle-render effect to run again
    * after a drag ends — the actual raster state may already be at the
@@ -543,26 +692,72 @@ export default function SonderingstekeningView() {
     if (!drawMode) drawStartRef.current = null;
   }, [drawMode]);
 
+  // Mirror cadMode → ref zodat de map-click handler (in mapInitEffect
+  // met [] deps) altijd de actuele tool kent. Bij uitschakelen ook de
+  // step-state wissen — anders blijft een halve trim/mirror "open" als
+  // de gebruiker tussendoor een andere tool kiest.
+  useEffect(() => {
+    cadModeRef.current = cadMode;
+    if (!cadMode) cadStepRef.current = null;
+  }, [cadMode]);
+
   // ── Render freehand lines + dimensions ──────────────────────
   useEffect(() => {
     const layer = drawnLayerRef.current;
     if (!layer) return;
     layer.clearLayers();
     for (const ln of drawnLines) {
+      // Lijn dikker + amber wanneer geselecteerd zodat de gebruiker
+      // visueel feedback krijgt na een klik in select-mode of na een
+      // mirror/offset-source-keuze.
+      const isSelected = selection?.kind === "line" && selection.id === ln.id;
+      const baseColor = ln.kind === "dimension" ? "#d97706" : "#36363e";
       const line = L.polyline(
         [[ln.lat1, ln.lon1], [ln.lat2, ln.lon2]],
         {
-          color: ln.kind === "dimension" ? "#d97706" : "#36363e",
-          weight: 2,
+          color: isSelected ? "#d97706" : baseColor,
+          weight: isSelected ? 3.2 : 2,
           opacity: 0.9,
           interactive: true,
         },
       );
       line.on("click", (ev) => {
         L.DomEvent.stopPropagation(ev);
-        // Click-to-delete for now — dedicated selection mode could
-        // follow in a later pass.
-        setDrawnLines((prev) => prev.filter((x) => x.id !== ln.id));
+        // CAD-tools onderscheppen de lijn-klik VOOR de normale
+        // select-flow. Het klikpunt zelf hebben we nodig (vooral voor
+        // trim: welke kant van het snijpunt moet weg?) — Leaflet geeft
+        // dat via ev.latlng.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const evAny = ev as L.LeafletMouseEvent;
+        const clickLat = evAny.latlng?.lat ?? ln.lat1;
+        const clickLon = evAny.latlng?.lng ?? ln.lon1;
+        const cad = cadModeRef.current;
+        if (cad === "trim" || cad === "extend") {
+          handleCadLineClickRef.current?.(cad, ln.id, clickLat, clickLon);
+          return;
+        }
+        if (cad === "offset") {
+          // Bron-lijn voor offset gekozen — vraag direct de afstand
+          // en bewaar in step-state; volgende klik op de kaart bepaalt
+          // de zijde.
+          const raw = window.prompt(
+            "Offset-afstand in meters? (positief getal)",
+            "1",
+          );
+          if (raw === null) return;
+          const dist = parseFloat(raw.replace(",", "."));
+          if (!Number.isFinite(dist) || dist <= 0) return;
+          cadStepRef.current = { kind: "offset-hint", lineId: ln.id, dist };
+          setToast(
+            `Offset ${dist} m — klik aan de zijde waar de kopie moet komen`,
+          );
+          setTimeout(() => setToast(null), 3500);
+          return;
+        }
+        // Default-gedrag: selecteer de lijn (i.p.v. direct verwijderen
+        // — Delete-toets / ribbon-knop wist 'm). Komt overeen met hoe
+        // markers / rasters reageren.
+        setSelection({ kind: "line", id: ln.id });
       });
       layer.addLayer(line);
       if (ln.kind === "dimension") {
@@ -602,6 +797,238 @@ export default function SonderingstekeningView() {
         }
       }
     }
+  }, [drawnLines, selection]);
+
+  // ── CAD line-click bridge ────────────────────────────────────
+  // De lijn-render-effect maakt per render een verse `line.on("click")`
+  // closure. Om de trim/extend-logica (die afhangt van actuele state)
+  // niet bij elke render opnieuw te hoeven schrijven, parkeren we de
+  // handler in een ref. Het render-effect leest `handleCadLineClickRef.current`
+  // op event-time, dus de laatst-gezette closure wint.
+  const handleCadLineClickRef = useRef<
+    | ((mode: "trim" | "extend", lineId: string, clickLat: number, clickLon: number) => void)
+    | null
+  >(null);
+  useEffect(() => {
+    handleCadLineClickRef.current = (mode, lineId, clickLat, clickLon) => {
+      const step = cadStepRef.current;
+      // Stap 1 — referentielijn kiezen.
+      if (!step || (step.kind !== "trim-ref" && step.kind !== "extend-ref")) {
+        cadStepRef.current =
+          mode === "trim"
+            ? { kind: "trim-ref", refLineId: lineId }
+            : { kind: "extend-ref", refLineId: lineId };
+        setToast(
+          mode === "trim"
+            ? "Trim — klik nu de lijn die geknipt moet worden (het deel waar je klikt valt weg)"
+            : "Extend — klik nu het uiteinde van de lijn dat verlengd moet worden",
+        );
+        setTimeout(() => setToast(null), 4500);
+        return;
+      }
+      // Stap 2 — doel-lijn kiezen. Mag niet dezelfde zijn als de
+      // referentielijn (anders snijdt hij met zichzelf en krijg je
+      // geen zinvol resultaat).
+      const refId = step.refLineId;
+      if (lineId === refId) {
+        setToast("Kies een andere lijn dan de referentielijn");
+        setTimeout(() => setToast(null), 2400);
+        return;
+      }
+      const refLine = drawnLines.find((l) => l.id === refId);
+      const tgtLine = drawnLines.find((l) => l.id === lineId);
+      if (!refLine || !tgtLine) {
+        cadStepRef.current = null;
+        return;
+      }
+      const refA = llToRd(refLine.lat1, refLine.lon1);
+      const refB = llToRd(refLine.lat2, refLine.lon2);
+      const tgtA = llToRd(tgtLine.lat1, tgtLine.lon1);
+      const tgtB = llToRd(tgtLine.lat2, tgtLine.lon2);
+      const inter = lineIntersectionRd(refA, refB, tgtA, tgtB);
+      if (!inter) {
+        setToast("Lijnen zijn parallel — geen snijpunt");
+        setTimeout(() => setToast(null), 2800);
+        cadStepRef.current = null;
+        setCadMode(null);
+        return;
+      }
+      const clickRd = llToRd(clickLat, clickLon);
+      if (mode === "trim") {
+        // Knip op het snijpunt. Twee scenario's:
+        //  (a) snijpunt valt BINNEN het target-segment (0 ≤ u ≤ 1)
+        //      → splits het in twee delen, gooi het deel weg waar
+        //      de gebruiker klikte.
+        //  (b) snijpunt valt BUITEN het target-segment → niets te
+        //      knippen (trim doet niets als de lijnen elkaar niet
+        //      écht raken). Toast + reset.
+        if (inter.u < 0.001 || inter.u > 0.999) {
+          setToast(
+            "Snijpunt ligt buiten de lijn — trim doet hier niets (gebruik Extend om eerst te verlengen)",
+          );
+          setTimeout(() => setToast(null), 4200);
+          cadStepRef.current = null;
+          setCadMode(null);
+          return;
+        }
+        // Bepaal welke kant van het snijpunt de gebruiker aanklikte.
+        // Projecteer de klik op de target-lijn (param tHit langs
+        // tgtA→tgtB) en vergelijk met inter.u.
+        const tgtDx = tgtB[0] - tgtA[0];
+        const tgtDy = tgtB[1] - tgtA[1];
+        const tgtLen2 = tgtDx * tgtDx + tgtDy * tgtDy;
+        const tHitNum = tgtLen2 > 0
+          ? ((clickRd[0] - tgtA[0]) * tgtDx + (clickRd[1] - tgtA[1]) * tgtDy) /
+            tgtLen2
+          : 0;
+        const interLL = rdToLl(inter.p);
+        // Houd het deel ZONDER de klik. Als de klik vóór het snijpunt
+        // ligt (tHit < u) blijft het deel ná het snijpunt (u → 1)
+        // bestaan; anders andersom.
+        const replacement: DrawnLine =
+          tHitNum < inter.u
+            ? { ...tgtLine, lat1: interLL.lat, lon1: interLL.lon }
+            : { ...tgtLine, lat2: interLL.lat, lon2: interLL.lon };
+        setDrawnLines((prev) =>
+          prev.map((l) => (l.id === tgtLine.id ? replacement : l)),
+        );
+        setToast("Lijn getrimd");
+        setTimeout(() => setToast(null), 1800);
+      } else {
+        // EXTEND — verleng het endpoint van de target dat het dichtst
+        // bij de klik ligt, tot aan de oneindige referentielijn. Het
+        // snijpunt zit per definitie op de referentie-lijn; we passen
+        // alleen het endpoint aan dat verlengd moet worden.
+        const distA = Math.hypot(clickRd[0] - tgtA[0], clickRd[1] - tgtA[1]);
+        const distB = Math.hypot(clickRd[0] - tgtB[0], clickRd[1] - tgtB[1]);
+        const interLL = rdToLl(inter.p);
+        const patch: Partial<DrawnLine> =
+          distA < distB
+            ? { lat1: interLL.lat, lon1: interLL.lon }
+            : { lat2: interLL.lat, lon2: interLL.lon };
+        setDrawnLines((prev) =>
+          prev.map((l) => (l.id === tgtLine.id ? { ...l, ...patch } : l)),
+        );
+        setToast("Lijn verlengd tot referentielijn");
+        setTimeout(() => setToast(null), 1800);
+      }
+      // Tool reset — gebruiker moet voor een volgende trim/extend
+      // opnieuw de knop indrukken. Voorkomt per-ongeluk-knippen.
+      cadStepRef.current = null;
+      setCadMode(null);
+    };
+  }, [drawnLines]);
+
+  // Bridge voor mirror + offset-hint, beide click op de map (geen
+  // specifieke lijn). Net als de line-click-bridge in een ref zodat
+  // de map.on("click") closure de actuele state ziet.
+  const handleCadMapClickRef = useRef<
+    | ((mode: "mirror" | "offset", lat: number, lon: number) => void)
+    | null
+  >(null);
+  useEffect(() => {
+    handleCadMapClickRef.current = (mode, lat, lon) => {
+      if (mode === "mirror") {
+        // Vereist een geselecteerde lijn als bron — anders heeft
+        // spiegelen geen object om op te werken (markers / rasters
+        // worden niet ondersteund in v1, voorkomt extra UX-complexiteit).
+        const sel = selectionRef.current;
+        if (!sel || sel.kind !== "line") {
+          setToast(
+            "Selecteer eerst een lijn (klik er op) voordat je Mirror gebruikt",
+          );
+          setTimeout(() => setToast(null), 3500);
+          return;
+        }
+        const step = cadStepRef.current;
+        if (!step || step.kind !== "mirror-axis") {
+          // Eerste klik — zet eerste-aspunt.
+          cadStepRef.current = { kind: "mirror-axis", lat, lon };
+          setToast("Mirror — klik nu het tweede punt van de spiegelas");
+          setTimeout(() => setToast(null), 3000);
+          return;
+        }
+        // Tweede klik — completeer de as en spiegel de geselecteerde
+        // lijn. Beide endpoints worden via mirrorPointRd over de as
+        // (in RD) gereflecteerd; resultaat overschrijft de oude lijn
+        // (in v1; voor een kopie kan de gebruiker eerst Kopiëren
+        // gebruiken en daarna Mirror).
+        const line = drawnLines.find((l) => l.id === sel.id);
+        if (!line) {
+          cadStepRef.current = null;
+          setCadMode(null);
+          return;
+        }
+        const axisA = llToRd(step.lat, step.lon);
+        const axisB = llToRd(lat, lon);
+        const p1 = mirrorPointRd(llToRd(line.lat1, line.lon1), axisA, axisB);
+        const p2 = mirrorPointRd(llToRd(line.lat2, line.lon2), axisA, axisB);
+        const p1LL = rdToLl(p1);
+        const p2LL = rdToLl(p2);
+        setDrawnLines((prev) =>
+          prev.map((l) =>
+            l.id === line.id
+              ? {
+                  ...l,
+                  lat1: p1LL.lat, lon1: p1LL.lon,
+                  lat2: p2LL.lat, lon2: p2LL.lon,
+                }
+              : l,
+          ),
+        );
+        setToast("Lijn gespiegeld over de as");
+        setTimeout(() => setToast(null), 1800);
+        cadStepRef.current = null;
+        setCadMode(null);
+        return;
+      }
+      // OFFSET hint-klik — zoek de eerder gekozen bron-lijn op,
+      // bepaal de zijde door het kruisproduct met de klikpositie,
+      // en maak een nieuwe parallel-lijn met een verse id.
+      if (mode === "offset") {
+        const step = cadStepRef.current;
+        if (!step || step.kind !== "offset-hint") {
+          setToast("Offset — klik eerst op een lijn om de bron te kiezen");
+          setTimeout(() => setToast(null), 3000);
+          return;
+        }
+        const src = drawnLines.find((l) => l.id === step.lineId);
+        if (!src) {
+          cadStepRef.current = null;
+          setCadMode(null);
+          return;
+        }
+        const a = llToRd(src.lat1, src.lon1);
+        const b = llToRd(src.lat2, src.lon2);
+        const click = llToRd(lat, lon);
+        const side = sideOfLineRd(click, a, b);
+        // sideOfLineRd geeft 0 als de klik exact op de lijn ligt —
+        // val terug op +1 (links) zodat er ALTIJD een resultaat komt
+        // in plaats van een ongedefinieerde no-op.
+        const dir: 1 | -1 = side === -1 ? -1 : 1;
+        const off = offsetLineRd(a, b, step.dist, dir);
+        const aLL = rdToLl(off.a);
+        const bLL = rdToLl(off.b);
+        setDrawnLines((prev) => {
+          const sameKindCount = prev.filter((p) => p.kind === src.kind).length;
+          const prefix = src.kind === "dimension" ? "D" : "L";
+          const newId = `${prefix}${String(sameKindCount + 1).padStart(2, "0")}`;
+          return [
+            ...prev,
+            {
+              id: newId,
+              kind: src.kind,
+              lat1: aLL.lat, lon1: aLL.lon,
+              lat2: bLL.lat, lon2: bLL.lon,
+            },
+          ];
+        });
+        setToast(`Parallel-lijn op ${step.dist} m geplaatst`);
+        setTimeout(() => setToast(null), 1800);
+        cadStepRef.current = null;
+        setCadMode(null);
+      }
+    };
   }, [drawnLines]);
 
   // ── PDOK overlays ────────────────────────────────────────────
@@ -837,7 +1264,12 @@ export default function SonderingstekeningView() {
       const inPlaceMode =
         !!placeModeRef.current ||
         !!coordModeRef.current ||
-        !!drawModeRef.current;
+        !!drawModeRef.current ||
+        // CAD-tools die op de map klikken — mirror-asklik en offset-
+        // hint-klik — profiteren ook van WFS-snap zodat een
+        // spiegelas perfect op een perceel-hoek kan eindigen.
+        cadModeRef.current === "mirror" ||
+        cadModeRef.current === "offset";
       if (!inPlaceMode) {
         if (activeSnapRef.current) clearSnap();
         return;
@@ -1388,6 +1820,15 @@ export default function SonderingstekeningView() {
       const snapped = activeSnapRef.current;
       const effLat = snapped ? snapped.lat : e.latlng.lat;
       const effLon = snapped ? snapped.lng : e.latlng.lng;
+      // CAD-tools die op de MAP klikken (mirror, offset-hint) ipv op
+      // een lijn. Lijn-gebaseerde CAD-clicks (trim/extend/offset-source)
+      // worden al door line.on("click") afgehandeld en stoppen daar
+      // de propagatie, dus dit pad ziet alleen de "lege" klikken.
+      const cad = cadModeRef.current;
+      if (cad === "mirror" || cad === "offset") {
+        handleCadMapClickRef.current?.(cad, effLat, effLon);
+        return;
+      }
       if (drawModeRef.current) {
         if (!drawStartRef.current) {
           drawStartRef.current = { lat: effLat, lon: effLon };
@@ -2075,6 +2516,12 @@ export default function SonderingstekeningView() {
         setRasters((prev) => prev.filter((r) => r.id !== sel.id));
       } else if (sel.kind === "overlay") {
         setOverlay(null);
+      } else if (sel.kind === "line") {
+        // Lijn-selectie is nieuw (kwam vroeger niet voor in deze
+        // switch omdat lijnen direct werden verwijderd op klik);
+        // nu moeten Delete-toets en ribbon-knop de geselecteerde
+        // lijn netjes uit drawnLines halen.
+        setDrawnLines((prev) => prev.filter((l) => l.id !== sel.id));
       }
       return null;
     });
@@ -2108,7 +2555,29 @@ export default function SonderingstekeningView() {
       const copy: PlacedRaster = { ...src, id: nextId, centerLat: ll[1], centerLon: ll[0] };
       setRasters((prev) => [...prev, copy]);
       setSelection({ kind: "raster", id: nextId });
-    } else {
+    } else if (selection.kind === "line") {
+      // Lijn-kopie: schuif beide endpoints 10 m oost + 10 m zuid op
+      // (zelfde offset-conventie als raster/marker zodat de UX
+      // consistent voelt) en geef de kopie een nieuwe id binnen
+      // de juiste prefix-reeks (L of D).
+      const src = drawnLines.find((l) => l.id === selection.id);
+      if (!src) return;
+      const a = llToRd(src.lat1, src.lon1);
+      const b = llToRd(src.lat2, src.lon2);
+      const a2 = rdToLl([a[0] + 10, a[1] - 10]);
+      const b2 = rdToLl([b[0] + 10, b[1] - 10]);
+      const prefix = src.kind === "dimension" ? "D" : "L";
+      const sameKindCount = drawnLines.filter((l) => l.kind === src.kind).length;
+      const nextId = `${prefix}${String(sameKindCount + 1).padStart(2, "0")}`;
+      const copy: DrawnLine = {
+        id: nextId,
+        kind: src.kind,
+        lat1: a2.lat, lon1: a2.lon,
+        lat2: b2.lat, lon2: b2.lon,
+      };
+      setDrawnLines((prev) => [...prev, copy]);
+      setSelection({ kind: "line", id: nextId });
+    } else if (selection.kind === "marker") {
       const src = placed.find((p) => p.id === selection.id);
       if (!src) return;
       const [cx, cy] = WGS84_TO_RD.forward([src.lon, src.lat]);
@@ -2118,7 +2587,9 @@ export default function SonderingstekeningView() {
       setPlaced((prev) => [...prev, copy]);
       setSelection({ kind: "marker", id: nextId });
     }
-  }, [selection, rasters, placed]);
+    // overlay-selectie heeft geen Copy in v1 — alleen één overlay
+    // ondersteund, dus dupliceren overschrijft de bestaande.
+  }, [selection, rasters, placed, drawnLines]);
 
   /** Move the currently selected object by (dxMeters, dyMeters) in RD
    *  space. Positive dx = east, positive dy = north. Used by the move
@@ -2136,7 +2607,24 @@ export default function SonderingstekeningView() {
             return { ...r, centerLat: ll[1], centerLon: ll[0] };
           }),
         );
-      } else {
+      } else if (selection.kind === "line") {
+        // Beide endpoints met dezelfde RD-delta verschuiven — equivalent
+        // van "lijn translaten" zonder rotatie.
+        setDrawnLines((prev) =>
+          prev.map((l) => {
+            if (l.id !== selection.id) return l;
+            const a = llToRd(l.lat1, l.lon1);
+            const b = llToRd(l.lat2, l.lon2);
+            const a2 = rdToLl([a[0] + dxMeters, a[1] + dyMeters]);
+            const b2 = rdToLl([b[0] + dxMeters, b[1] + dyMeters]);
+            return {
+              ...l,
+              lat1: a2.lat, lon1: a2.lon,
+              lat2: b2.lat, lon2: b2.lon,
+            };
+          }),
+        );
+      } else if (selection.kind === "marker") {
         setPlaced((prev) =>
           prev.map((p) => {
             if (p.id !== selection.id) return p;
@@ -2173,6 +2661,7 @@ export default function SonderingstekeningView() {
         setDrawMode(null); drawModeRef.current = null; drawStartRef.current = null;
         setPlaceMode(null); placeModeRef.current = null;
         setCoordMode(false); coordModeRef.current = false;
+        setCadMode(null); cadModeRef.current = null; cadStepRef.current = null;
         return;
       }
 
@@ -2405,12 +2894,41 @@ export default function SonderingstekeningView() {
     const onClearAll = () => { clearPlaced(); setDrawnLines([]); setCoordTags([]); };
     const onDrawLine = () => { setDrawMode("line"); drawModeRef.current = "line"; drawStartRef.current = null; };
     const onDrawDim = () => { setDrawMode("dimension"); drawModeRef.current = "dimension"; drawStartRef.current = null; };
-    // Select-tool: cancel any active draw/place/coord mode so the
-    // cursor reverts to plain pick-and-edit.
+    // CAD-edit-tools — schakelen elkaar uit (één actieve tool tegelijk)
+    // en wissen alle andere placement-modes zodat de eerste klik
+    // gegarandeerd naar de juiste CAD-handler gaat. cadStepRef wordt
+    // expliciet gereset; de cadMode-useEffect doet dat ook bij elk
+    // wisselen van mode, maar hier wissen we 'm vooraf voor de zekerheid.
+    const startCadMode = (m: "trim" | "extend" | "mirror" | "offset") => {
+      setDrawMode(null); drawModeRef.current = null; drawStartRef.current = null;
+      setPlaceMode(null); placeModeRef.current = null;
+      setCoordMode(false); coordModeRef.current = false;
+      cadStepRef.current = null;
+      setCadMode(m); cadModeRef.current = m;
+      // Korte hint per tool — vertelt wat de volgende klik doet.
+      const hints: Record<typeof m, string> = {
+        trim: "Trim — klik eerst op de referentielijn (snij-rand)",
+        extend: "Extend — klik eerst op de referentielijn (waar tot verlengd wordt)",
+        mirror: "Mirror — selecteer eerst een lijn (klik er op), klik dan twee punten voor de spiegelas",
+        offset: "Offset — klik een lijn om de bron te kiezen (afstand wordt daarna gevraagd)",
+      };
+      setToast(hints[m]);
+      setTimeout(() => setToast(null), 4500);
+    };
+    const onCadTrim = () => startCadMode("trim");
+    const onCadExtend = () => startCadMode("extend");
+    const onCadMirror = () => startCadMode("mirror");
+    const onCadOffset = () => startCadMode("offset");
+    // Select-tool: cancel any active draw/place/coord/cad mode + zet
+    // selectMode aan zodat plain drag op het papier een selectie-
+    // rechthoek tekent (zonder Shift te hoeven indrukken). Toggle:
+    // tweede klik op Selecteren zet de mode weer uit.
     const onSelectMode = () => {
       setDrawMode(null); drawModeRef.current = null; drawStartRef.current = null;
       setPlaceMode(null); placeModeRef.current = null;
       setCoordMode(false); coordModeRef.current = false;
+      setCadMode(null); cadModeRef.current = null; cadStepRef.current = null;
+      setSelectMode((m) => !m);
     };
     // Freeze toggle from the ribbon. We flip the state here; a separate
     // effect (below) handles enabling/disabling the actual Leaflet
@@ -2463,6 +2981,10 @@ export default function SonderingstekeningView() {
     window.addEventListener("ogs:tekening-set-placed-id", onSetPlacedId as EventListener);
     window.addEventListener("ogs:tekening-draw-line", onDrawLine);
     window.addEventListener("ogs:tekening-draw-dimension", onDrawDim);
+    window.addEventListener("ogs:tekening-cad-trim", onCadTrim);
+    window.addEventListener("ogs:tekening-cad-extend", onCadExtend);
+    window.addEventListener("ogs:tekening-cad-mirror", onCadMirror);
+    window.addEventListener("ogs:tekening-cad-offset", onCadOffset);
     window.addEventListener("ogs:tekening-select-mode", onSelectMode);
     window.addEventListener("ogs:tekening-set-kleefmeting", onSetKleefmeting as EventListener);
     window.addEventListener("ogs:tekening-toggle-freeze", onToggleFreeze);
@@ -2511,6 +3033,10 @@ export default function SonderingstekeningView() {
       window.removeEventListener("ogs:tekening-set-placed-id", onSetPlacedId as EventListener);
       window.removeEventListener("ogs:tekening-draw-line", onDrawLine);
       window.removeEventListener("ogs:tekening-draw-dimension", onDrawDim);
+      window.removeEventListener("ogs:tekening-cad-trim", onCadTrim);
+      window.removeEventListener("ogs:tekening-cad-extend", onCadExtend);
+      window.removeEventListener("ogs:tekening-cad-mirror", onCadMirror);
+      window.removeEventListener("ogs:tekening-cad-offset", onCadOffset);
       window.removeEventListener("ogs:tekening-select-mode", onSelectMode);
       window.removeEventListener("ogs:tekening-set-kleefmeting", onSetKleefmeting as EventListener);
       window.removeEventListener("ogs:tekening-toggle-freeze", onToggleFreeze);
@@ -2661,7 +3187,16 @@ export default function SonderingstekeningView() {
   // het mapView-center via useEffect-volgorde NIET, dus we doen
   // het via een setView na een korte tick zodra de map bestaat.
   useEffect(() => {
-    const pending = consumePendingTekeningRestore();
+    // Twee restore-bronnen:
+    //  1. pendingTekeningRestore — gevuld door openProjectIfcgisFull
+    //     bij het laden van een .ifcgis. Eenmalig per open-actie.
+    //  2. latestTekening singleton — gevuld door deze view zelf op
+    //     iedere state-mutatie. Bij tab-switch unmount de view, maar
+    //     de singleton blijft staan. Bij re-mount herstellen we het
+    //     zodat scale/paperSize/markers niet weg zijn.
+    // Pending wint (expliciete open-actie). Anders val terug op
+    // latest zodat tab-switch geen state wist.
+    const pending = consumePendingTekeningRestore() ?? getLatestTekening();
     if (!pending) return;
     setPaperSize(pending.paperSize);
     setScale(pending.scale);
@@ -2800,7 +3335,9 @@ export default function SonderingstekeningView() {
     let rect: L.Rectangle | null = null;
 
     const onMouseDown = (e: MouseEvent) => {
-      if (!e.shiftKey) return;
+      // Trigger op Shift+drag (oude gedrag) OF wanneer selectMode
+      // aan staat via de Selecteren-knop (plain drag = rechthoek).
+      if (!e.shiftKey && !selectModeRef.current) return;
       if (placeModeRef.current || drawModeRef.current || coordModeRef.current) return;
       e.preventDefault();
       e.stopPropagation();
@@ -3061,23 +3598,76 @@ export default function SonderingstekeningView() {
           <div className="tek-titleblock-db">
             {/* Project bar — full width */}
             <div className="tek-db-project-bar">
-              <span className="tek-dbp-title">{titleBlock.project || "Projectnaam"}</span>
-              <span className="tek-dbp-address">{titleBlock.address || "Straatnaam, huisnummer, projectplaats"}</span>
+              {/* Klikbare projectnaam — opens inline edit. Werkt
+                  zelfde als de schaal-cel: klik = focus, Enter/blur
+                  = commit, Escape = cancel. Pointer-events: auto
+                  via titleblock-classes. */}
+              <input
+                className="tek-dbp-title tek-dbp-edit"
+                type="text"
+                value={titleBlock.project}
+                placeholder="Projectnaam"
+                onChange={(e) =>
+                  setTitleBlock((tb) => ({ ...tb, project: e.target.value }))
+                }
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === "Escape") {
+                    e.currentTarget.blur();
+                  }
+                }}
+                title="Klik om de projectnaam aan te passen"
+              />
+              <input
+                className="tek-dbp-address tek-dbp-edit"
+                type="text"
+                value={titleBlock.address}
+                placeholder="Straatnaam, huisnummer, projectplaats"
+                onChange={(e) =>
+                  setTitleBlock((tb) => ({ ...tb, address: e.target.value }))
+                }
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === "Escape") {
+                    e.currentTarget.blur();
+                  }
+                }}
+                title="Klik om het adres aan te passen"
+              />
               <span className="tek-dbp-type">Situatietekening</span>
             </div>
             {/* Body grid: logo | metadata cells | format corner */}
             <div className="tek-db-body">
-              <div className="tek-db-logo-cell">
-                <svg width="34" height="38" viewBox="0 0 80 88" fill="none" aria-hidden>
-                  <g transform="translate(40, 12)">
-                    <polygon points="0,0 -30,17 0,34 30,17" fill="none" stroke="#D97706" strokeWidth="2.5" strokeLinejoin="round" />
-                    <polygon points="-30,17 -30,56 0,73 0,34" fill="none" stroke="#D97706" strokeWidth="2" strokeLinejoin="round" />
-                    <polygon points="30,17 30,56 0,73 0,34" fill="none" stroke="#A1A1AA" strokeWidth="1.5" strokeLinejoin="round" opacity="0.5" />
-                  </g>
-                </svg>
-                <div className="tek-db-logo-text">Open<span>AEC</span></div>
-                <div className="tek-db-logo-sub">Geotechniek</div>
-              </div>
+              {/* Klikbare logo-cel. Toont default OpenAEC-driehoek
+                  of een custom geüpload logo (image/svg data-URL).
+                  Klik = open file picker; bij selectie wordt het
+                  bestand als data-URL bewaard en hier gerenderd. */}
+              <button
+                type="button"
+                className="tek-db-logo-cell tek-db-logo-clickable"
+                onClick={() => logoInputRef.current?.click()}
+                title="Klik om je eigen logo te kiezen (PNG / JPG / SVG)"
+              >
+                {customLogo ? (
+                  <img
+                    src={customLogo}
+                    alt="Bedrijfslogo"
+                    className="tek-db-logo-custom"
+                  />
+                ) : (
+                  <>
+                    <svg width="34" height="38" viewBox="0 0 80 88" fill="none" aria-hidden>
+                      <g transform="translate(40, 12)">
+                        <polygon points="0,0 -30,17 0,34 30,17" fill="none" stroke="#D97706" strokeWidth="2.5" strokeLinejoin="round" />
+                        <polygon points="-30,17 -30,56 0,73 0,34" fill="none" stroke="#D97706" strokeWidth="2" strokeLinejoin="round" />
+                        <polygon points="30,17 30,56 0,73 0,34" fill="none" stroke="#A1A1AA" strokeWidth="1.5" strokeLinejoin="round" opacity="0.5" />
+                      </g>
+                    </svg>
+                    <div className="tek-db-logo-text">Open<span>AEC</span></div>
+                    <div className="tek-db-logo-sub">Geotechniek</div>
+                  </>
+                )}
+              </button>
               <div className="tek-db-cells">
                 <div className="tek-db-cell">
                   <div className="tek-db-cell-label">1e Datum</div>
@@ -3153,6 +3743,30 @@ export default function SonderingstekeningView() {
               const f = e.target.files?.[0];
               if (f) void handleFrameFile(f);
               e.target.value = "";
+            }}
+          />
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (!f) return;
+              // FileReader → data-URL zodat het logo zelfcontained
+              // in state staat (overleeft een tab-switch + komt
+              // mee in een .ifcgis title-block).
+              const reader = new FileReader();
+              reader.onload = () => {
+                if (typeof reader.result === "string") {
+                  setCustomLogo(reader.result);
+                }
+              };
+              reader.onerror = () => {
+                setToast("Kon logo niet lezen");
+                setTimeout(() => setToast(null), 2200);
+              };
+              reader.readAsDataURL(f);
             }}
           />
         </div>
@@ -3371,21 +3985,21 @@ function ScaleBar({
   const MM_TO_PX = 96 / 25.4;
   const printN = mPerPx * MM_TO_PX * 1000;
 
-  // Vaste bar-meters per scale-range. Binnen elke range groeit/krimpt
-  // de bar visueel mee met de schaal (1:500 → 1:1000 = bar visueel
-  // half zo breed). Op de range-grens springt de bar naar een volgende
-  // ronde-meterwaarde zodat hij niet onleesbaar klein wordt.
+  // Vaste bar-meters per scale-range. Cap op 100m voor alle scales
+  // ≥ 1:1000 (gebruiker-verzoek "schaalstok mag naar 100 meter").
   //
-  // Voorbeeld: 1:500 → 10m bar = 20mm op papier. 1:1000 → springt
-  // naar 50m bar = 50mm op papier. 1:2000 → nog steeds 50m bar maar
-  // nu 25mm op papier. 1:4000 → springt naar 250m = 62.5mm.
+  //   1:200  →  5m bar  = 25mm op papier
+  //   1:500  → 25m bar  = 50mm op papier
+  //   1:999  → 25m bar  = 25mm op papier
+  //   1:1000 → 100m bar = 100mm op papier (sprong naar de 100m-cap)
+  //   1:2000 → 100m bar = 50mm op papier
+  //   1:5000 → 100m bar = 20mm op papier (klein maar leesbaar)
   let totalM: number;
-  if (printN < 200) totalM = 2;
-  else if (printN < 500) totalM = 5;
-  else if (printN < 1000) totalM = 10;       // 1:500-1:999 → 10m
-  else if (printN < 4000) totalM = 50;       // 1:1000-1:3999 → 50m
-  else if (printN < 15000) totalM = 250;     // 1:4000-1:14999 → 250m
-  else totalM = 1000;
+  if (printN < 100) totalM = 2;
+  else if (printN < 250) totalM = 5;
+  else if (printN < 600) totalM = 10;
+  else if (printN < 1000) totalM = 25;
+  else totalM = 100;
   // Safety-net: als bar buitenproportioneel breed wordt (extreme
   // zoom-in op het papier), val terug op de oude auto-fit-logica.
   const proposedPx = totalM / mPerPx;

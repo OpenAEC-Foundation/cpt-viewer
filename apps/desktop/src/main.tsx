@@ -31,6 +31,31 @@ function showError(label: string, err: unknown) {
 window.addEventListener("error", (e) => showError("window.error", e.error ?? e.message));
 window.addEventListener("unhandledrejection", (e) => showError("unhandledrejection", e.reason));
 
+// ── Leaflet null-parent defensive patch ────────────────────────
+// Leaflet's L.DomUtil.getSizedParentNode walkt parent.parentNode
+// totdat het een element met clientHeight > 0 vindt. Tijdens een
+// snelle map-unmount mid-mouseevent kan parent halverwege null
+// worden — dan crasht het op `parent.offsetWidth`. Wrap de functie
+// met een try/catch zodat dat oude-DOM-event-residue geen
+// app-wide crash veroorzaakt.
+import * as L from "leaflet";
+const _domUtil = L.DomUtil as unknown as {
+  getSizedParentNode?: (el: HTMLElement) => HTMLElement | null;
+};
+if (_domUtil.getSizedParentNode) {
+  const orig = _domUtil.getSizedParentNode;
+  _domUtil.getSizedParentNode = function (el: HTMLElement): HTMLElement | null {
+    try {
+      return orig.call(this, el);
+    } catch {
+      // Origineel crasht alleen wanneer parent === null in de loop.
+      // We geven null terug; Leaflet kan dat aan (drag-start wordt
+      // dan een no-op, geen verdere fallout).
+      return null;
+    }
+  };
+}
+
 import "./i18n/config";
 import App from "./App";
 

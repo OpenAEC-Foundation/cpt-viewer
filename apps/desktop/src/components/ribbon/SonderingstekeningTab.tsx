@@ -89,6 +89,47 @@ const dimensionIcon =
   `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
   `<path stroke-linecap="round" stroke-width="2" d="M3 12h18M5 8v8M19 8v8"/></svg>`;
 
+// ── CAD-edit-icons ───────────────────────────────────────────────
+// Klassieke tekenprogramma-symbolen (Trim / Extend / Mirror / Offset).
+// Bewust simpel: één bestaande lijn + een schaartje / verlengpijl /
+// spiegelglyf / parallel-streep. Visueel onderscheidbaar in een
+// gestackte ribbon-kolom van 22px hoog.
+
+// Trim — schaartje door een lijn. Twee handvatten + middendiagonaal
+// "knip"-streep zodat het op het eerste oog leest als een knipgebaar.
+const trimIcon =
+  `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
+  `<g stroke-linecap="round" stroke-linejoin="round" stroke-width="2">` +
+  `<path d="M4 20L20 4"/>` +
+  `<circle cx="6" cy="18" r="2"/><circle cx="11" cy="18" r="2"/>` +
+  `<path d="M8 16L13 11"/></g></svg>`;
+
+// Extend — een korte lijn met een pijlkop die naar een verticale
+// referentiestreep wijst (rechts). Suggesties: "trek door tot dáár".
+const extendIcon =
+  `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
+  `<g stroke-linecap="round" stroke-linejoin="round" stroke-width="2">` +
+  `<path d="M3 12h13"/>` +
+  `<path d="M12 8l4 4-4 4"/>` +
+  `<path d="M20 4v16"/></g></svg>`;
+
+// Mirror — twee tegenovergestelde driehoekjes met een verticale
+// spiegelas ertussen. Klassiek CAD-symbool.
+const mirrorIcon =
+  `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
+  `<g stroke-linecap="round" stroke-linejoin="round" stroke-width="2">` +
+  `<path d="M12 3v18" stroke-dasharray="2 2"/>` +
+  `<path d="M3 6l7 6-7 6V6z"/>` +
+  `<path d="M21 6l-7 6 7 6V6z"/></g></svg>`;
+
+// Offset — twee parallelle lijnen met een pijltje tussen.
+const offsetIcon =
+  `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
+  `<g stroke-linecap="round" stroke-linejoin="round" stroke-width="2">` +
+  `<path d="M4 7h16"/><path d="M4 17h16"/>` +
+  `<path d="M12 10v4"/><path d="M10 12l2-2 2 2"/>` +
+  `<path d="M10 14l2 2 2-2"/></g></svg>`;
+
 // Freeze viewport heeft geen ribbon-knop meer — alleen het vinkje in
 // TekeningProperties (rechter eigenschappen-paneel) bedient hem nu.
 
@@ -198,6 +239,56 @@ export default function SonderingstekeningTab() {
             size="large"
             onClick={() => dispatch("ogs:tekening-coord-tag")}
           />
+        </RibbonGroup>
+
+        {/* CAD-edit-tools: trim, extend, mirror, offset. Verticaal
+            gestackt zodat ze in één smalle kolom passen — komt overeen
+            met hoe Open PDF Studio en Open 2D Studio deze acties
+            groeperen ("Modify"-tab). De handlers zitten in de view
+            (zie ogs:tekening-cad-* events). */}
+        <RibbonGroup label={t("tekening.cadGroup", "Tekenen")}>
+          <RibbonButtonStack>
+            <RibbonButton
+              icon={trimIcon}
+              label={t("tekening.cadTrim", "Trim")}
+              size="small"
+              title={t(
+                "tekening.cadTrimHint",
+                "Klik eerst een referentielijn, dan het deel van een andere lijn dat WEG moet (op het snijpunt geknipt).",
+              )}
+              onClick={() => dispatch("ogs:tekening-cad-trim")}
+            />
+            <RibbonButton
+              icon={extendIcon}
+              label={t("tekening.cadExtend", "Extend")}
+              size="small"
+              title={t(
+                "tekening.cadExtendHint",
+                "Klik eerst een referentielijn, dan het uiteinde van de lijn dat verlengd moet worden.",
+              )}
+              onClick={() => dispatch("ogs:tekening-cad-extend")}
+            />
+            <RibbonButton
+              icon={mirrorIcon}
+              label={t("tekening.cadMirror", "Mirror")}
+              size="small"
+              title={t(
+                "tekening.cadMirrorHint",
+                "Selecteer eerst een lijn, klik dan twee punten op de kaart om de spiegelas vast te zetten.",
+              )}
+              onClick={() => dispatch("ogs:tekening-cad-mirror")}
+            />
+            <RibbonButton
+              icon={offsetIcon}
+              label={t("tekening.cadOffset", "Offset")}
+              size="small"
+              title={t(
+                "tekening.cadOffsetHint",
+                "Klik een lijn, geef de afstand in m, klik aan de zijde waar de parallel-kopie moet komen.",
+              )}
+              onClick={() => dispatch("ogs:tekening-cad-offset")}
+            />
+          </RibbonButtonStack>
         </RibbonGroup>
 
         <RibbonGroup label={t("tekening.overlayGroup", "Overlay")}>
