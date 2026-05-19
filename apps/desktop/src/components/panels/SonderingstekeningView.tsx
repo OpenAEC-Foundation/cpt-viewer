@@ -4,6 +4,7 @@ import "leaflet/dist/leaflet.css";
 import { invoke } from "@tauri-apps/api/core";
 import proj4 from "proj4";
 import { useCptStore } from "../../store/useCptStore";
+import type { Cpt } from "../../types/cpt";
 import {
   consumePendingTekeningRestore,
   getLatestTekening,
@@ -468,6 +469,19 @@ export default function SonderingstekeningView() {
   // Live snapshot of the latest rasters list, so drag-handler closures
   // (registered once per render) always read the fresh value when fired.
   const rastersRef = useRef<PlacedRaster[]>([]);
+  // Refs voor snap-handler: read live state zonder de mousemove-closure
+  // bij elke render opnieuw te binden. Gevuld door synchroniserende
+  // useEffects verderop in de file.
+  const placedRef = useRef<PlacedSondering[]>([]);
+  const drawnLinesRef = useRef<DrawnLine[]>([]);
+  const coordTagsRef = useRef<CoordTag[]>([]);
+  const projectRef = useRef<{ cpts: Cpt[] } | null>(null);
+  // Sync de refs bij elke render — closure-captures in de mousemove-
+  // snap-handler kunnen zo de live waarden lezen zonder dat ze
+  // opnieuw gebound hoeven te worden (handler zit in [] deps init-
+  // effect).
+  // NB: dit gebruikt geen useEffect zodat de update synchroon met
+  // de render meekomt — useEffect heeft een frame-vertraging.
   /**
    * True while the user is mid-drag on any raster handle. Used by the
    * handle-render effect to skip rebuilding the handle markers — otherwise
@@ -718,6 +732,21 @@ export default function SonderingstekeningView() {
     // Reset the in-flight start point whenever the tool toggles off.
     if (!drawMode) drawStartRef.current = null;
   }, [drawMode]);
+
+  // Sync snap-target refs zodat de mousemove-snap-handler altijd live
+  // state ziet (handler zit in een [] -deps init-effect closure).
+  useEffect(() => {
+    placedRef.current = placed;
+  }, [placed]);
+  useEffect(() => {
+    drawnLinesRef.current = drawnLines;
+  }, [drawnLines]);
+  useEffect(() => {
+    coordTagsRef.current = coordTags;
+  }, [coordTags]);
+  useEffect(() => {
+    projectRef.current = project ? { cpts: project.cpts } : null;
+  }, [project]);
 
   // Mirror cadMode → ref zodat de map-click handler (in mapInitEffect
   // met [] deps) altijd de actuele tool kent. Bij uitschakelen ook de
@@ -1305,22 +1334,63 @@ export default function SonderingstekeningView() {
       const bagOn = !!bagLayerRef.current && map.hasLayer(bagLayerRef.current);
       const kadOn =
         !!kadasterLayerRef.current && map.hasLayer(kadasterLayerRef.current);
-      if (!bagOn && !kadOn) {
-        if (activeSnapRef.current) clearSnap();
-        return;
-      }
+      // GEEN early-return meer wanneer BAG/Kadaster uit zijn — we
+      // willen óók snappen aan geplaatste sonderingen + line-endpoints
+      // zelfs zonder WFS-overlay aan.
 
       const candidates: GeoJSON.Feature[] = [];
       if (bagOn) candidates.push(...snapBagFeaturesRef.current);
       if (kadOn) candidates.push(...snapKadasterFeaturesRef.current);
-      if (candidates.length === 0) {
-        if (activeSnapRef.current) clearSnap();
-        return;
-      }
+      // GEEN early-return meer wanneer er geen BAG/Kadaster features
+      // zijn — we willen ook snappen aan geplaatste sonderingen/
+      // boringen, project-CPTs en line-endpoints (gebruiker-verzoek).
 
       const cursor = ev.containerPoint;
       const bounds = map.getBounds();
       let best: { latlng: L.LatLng; dist: number } | null = null;
+
+      // ── EXTRA snap-targets: geplaatste sonderingen + project-CPTs +
+      //    lijn-endpoints. Gebruiker wil dat een RD-coord-klik op een
+      //    sondering exact naar die sondering-positie snapt, en dat
+      //    lijnen aan elkaar (en aan sonderingen) snappen.
+      const considerPoint = (lat: number, lon: number) => {
+        // Skip duidelijk buiten viewport — bespaart pixel-converts.
+        if (
+          lon < bounds.getWest() - 0.001 ||
+          lon > bounds.getEast() + 0.001 ||
+          lat < bounds.getSouth() - 0.001 ||
+          lat > bounds.getNorth() + 0.001
+        ) {
+          return;
+        }
+        const ll = L.latLng(lat, lon);
+        const px = map.latLngToContainerPoint(ll);
+        const d = Math.hypot(px.x - cursor.x, px.y - cursor.y);
+        if (d < SNAP_THRESHOLD_PX && (!best || d < best.dist)) {
+          best = { latlng: ll, dist: d };
+        }
+      };
+      // Geplaatste sonderingen + boringen
+      for (const p of placedRef.current ?? []) {
+        considerPoint(p.lat, p.lon);
+      }
+      // Project-CPT-markers (uit de actieve project-tab; via ref zodat
+      // de [] -deps closure live waarden ziet).
+      for (const cpt of projectRef.current?.cpts ?? []) {
+        if (!cpt.position) continue;
+        const ll = WGS84_TO_RD.inverse([cpt.position.x_rd, cpt.position.y_rd]);
+        considerPoint(ll[1], ll[0]);
+      }
+      // Lijn-endpoints (zowel start- als eindpunt van elke getrokken lijn)
+      for (const l of drawnLinesRef.current ?? []) {
+        considerPoint(l.lat1, l.lon1);
+        considerPoint(l.lat2, l.lon2);
+      }
+      // Coord-tag-posities — ook handig om RD-tags op exact dezelfde
+      // plek te kunnen herplaatsen.
+      for (const c of coordTagsRef.current ?? []) {
+        considerPoint(c.lat, c.lon);
+      }
 
       for (const feat of candidates) {
         for (const ring of collectRings(feat)) {
@@ -1995,6 +2065,32 @@ export default function SonderingstekeningView() {
         drawStartRef.current = null;
         setDrawMode(null);
         drawModeRef.current = null;
+        // Ortho-mode: bij Shift-vasthouden tijdens de 2e klik snappen
+        // we de lijn-hoek naar de dichtsbijzijnde 45°-veelvoud (0°, 45°,
+        // 90°, …) berekend in RD-meters t.o.v. het startpunt. Resultaat:
+        // horizontale/verticale of mooie diagonale lijnen zonder dat de
+        // gebruiker zijn cursor precies moet uitlijnen. Gebruiker-
+        // verzoek: ortho-tekenfunctionaliteit.
+        let snapLat = effLat;
+        let snapLon = effLon;
+        if (e.originalEvent && (e.originalEvent as MouseEvent).shiftKey) {
+          const [sxRd, syRd] = WGS84_TO_RD.forward([start.lon, start.lat]);
+          const [exRd, eyRd] = WGS84_TO_RD.forward([effLon, effLat]);
+          const dx = exRd - sxRd;
+          const dy = eyRd - syRd;
+          const dist = Math.hypot(dx, dy);
+          if (dist > 0) {
+            const ang = Math.atan2(dy, dx);
+            // Snap-stap = 45° (PI/4). Voor 30°/15° kan dit later.
+            const STEP = Math.PI / 4;
+            const snappedAng = Math.round(ang / STEP) * STEP;
+            const newX = sxRd + dist * Math.cos(snappedAng);
+            const newY = syRd + dist * Math.sin(snappedAng);
+            const ll = WGS84_TO_RD.inverse([newX, newY]);
+            snapLon = ll[0];
+            snapLat = ll[1];
+          }
+        }
         setDrawnLines((prev) => [
           ...prev,
           {
@@ -2002,8 +2098,8 @@ export default function SonderingstekeningView() {
             kind,
             lat1: start.lat,
             lon1: start.lon,
-            lat2: effLat,
-            lon2: effLon,
+            lat2: snapLat,
+            lon2: snapLon,
           },
         ]);
         return;
@@ -2215,8 +2311,8 @@ export default function SonderingstekeningView() {
                    <svg viewBox="0 0 12 12"><polygon points="1,1 11,1 6,11"
                      fill="#d97706" stroke="#7c2d12" stroke-width="1" /></svg>
                  </div>`,
-          iconSize: [24, 24], /* 2× — gebruiker-verzoek */
-          iconAnchor: [12, 22],
+          iconSize: [48, 48], /* 4× origineel — gebruiker-verzoek nogmaals 2x */
+          iconAnchor: [24, 44],
         }),
       });
       marker.bindTooltip(cpt.metadata.source_file || cpt.id, { permanent: false });
@@ -2259,11 +2355,11 @@ export default function SonderingstekeningView() {
                  : ""
              }
            </svg>`;
-      /* 2× — gebruiker-verzoek: sondering/boring symbolen 2x zo groot */
-      const iconSize: [number, number] = isBore ? [28, 28] : [24, 28];
+      /* 4× origineel — gebruiker wil markers nog 2x groter dan vorige fix */
+      const iconSize: [number, number] = isBore ? [56, 56] : [48, 56];
       const iconAnchor: [number, number] = isBore
-        ? [14, 14]
-        : [12, p.kleefmeting ? 24 : 22];
+        ? [28, 28]
+        : [24, p.kleefmeting ? 48 : 44];
       const m = L.marker([p.lat, p.lon], {
         icon: L.divIcon({
           className: isBore ? "tek-placed-bore-marker" : "tek-placed-marker",
@@ -2314,8 +2410,8 @@ export default function SonderingstekeningView() {
                        fill="${fill}" stroke="${stroke}" stroke-width="0.8" /></svg>
                      <span class="tek-marker-label tek-raster-cell-label">${cellLabel}</span>
                    </div>`,
-            iconSize: [20, 20], /* 2× */
-            iconAnchor: [10, 18],
+            iconSize: [40, 40], /* 4× origineel */
+            iconAnchor: [20, 36],
           }),
           interactive: false,
         });

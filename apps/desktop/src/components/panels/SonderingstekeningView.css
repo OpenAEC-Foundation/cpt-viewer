@@ -348,15 +348,18 @@
   position: relative;
 }
 .tek-marker svg {
-  width: 24px; /* 2× — gebruiker-verzoek: sondering/boring symbolen 2x */
-  height: 24px;
+  width: 48px; /* 2× nogmaals — gebruiker-verzoek: sondering/boring symbolen nog 2x groter */
+  height: 48px;
   overflow: visible;
+  /* Anti-aliasing op de driehoek-polygon zodat hij niet gekarteld
+     overkomt bij grotere zoom-niveaus van het papier. */
+  shape-rendering: geometricPrecision;
 }
 .tek-marker-label {
   position: absolute;
-  left: 26px; /* mee-geschaald met de 2× icon (was 14px = 12px icon + 2px gap) */
+  left: 52px; /* mee-geschaald (was 26px voor 24px icon) */
   top: -2px;
-  font: 700 11px 'Inter', sans-serif; /* iets groter zodat het bij het grotere icoon past */
+  font: 700 13px 'Inter', sans-serif;
   color: #1e3a8a;
   text-shadow: 0 0 2px white, 0 0 2px white;
   white-space: nowrap;
@@ -465,8 +468,8 @@
 /* ── Raster object: derived markers, label pill, edit handles ── */
 
 .tek-marker-raster {
-  width: 20px; /* 2× — gebruiker-verzoek */
-  height: 20px;
+  width: 40px; /* 2× nogmaals (was 20px) */
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
