@@ -234,6 +234,7 @@ pub fn run() {
             commands::project::open_project_ifcgis,
             commands::project::save_project_ifcgis_full,
             commands::project::open_project_ifcgis_full,
+            commands::project::preview_project_ifcx,
             commands::ifc::generate_ifc,
             commands::ifc::list_generated_ifc,
             commands::ifc::read_generated_ifc,

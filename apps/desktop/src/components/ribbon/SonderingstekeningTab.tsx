@@ -233,6 +233,19 @@ export default function SonderingstekeningTab() {
             onClick={() => dispatch("ogs:tekening-request-quotes")}
           />
         </RibbonGroup>
+
+        <RibbonGroup label={t("tekening.previewGroup", "Preview")}>
+          <RibbonButton
+            icon={overlayIcon}
+            label={t("tekening.ifcxPreview", "IFCX preview")}
+            size="large"
+            title={t(
+              "tekening.ifcxPreviewHint",
+              "Toon de IFCX-JSON die in het .ifcgis bestand komt te staan bij opslaan",
+            )}
+            onClick={() => dispatch("ogs:tekening-ifcx-preview")}
+          />
+        </RibbonGroup>
       </div>
     </div>
   );

@@ -14,6 +14,7 @@ import { AdressenLayer } from "../../utils/adressenLayer";
 import ImageCropDialog from "./ImageCropDialog";
 import PdfCropDialog from "./PdfCropDialog";
 import OffertesDialog from "./OffertesDialog";
+import IfcxPreviewDialog from "./IfcxPreviewDialog";
 import "./SonderingstekeningView.css";
 
 /**
@@ -442,6 +443,8 @@ export default function SonderingstekeningView() {
   // Open-state voor de "Vraag 3 offertes"-dialog. Wordt getriggerd
   // door het `ogs:tekening-request-quotes` event vanuit de ribbon.
   const [offertesOpen, setOffertesOpen] = useState(false);
+  // Open-state voor de IFCX-preview dialog (read-only viewer).
+  const [ifcxPreviewOpen, setIfcxPreviewOpen] = useState(false);
   const [frame, setFrame] = useState<FrameSvg | null>(null);
   // Live "meters per CSS pixel" for the visible map — keeps the scale
   // bar correct even when the Leaflet view doesn't exactly match the
@@ -2233,6 +2236,9 @@ export default function SonderingstekeningView() {
     const onRequestQuotes = () => {
       setOffertesOpen(true);
     };
+    const onIfcxPreview = () => {
+      setIfcxPreviewOpen(true);
+    };
     const onPrint = () => {
       const isA2 = paperSize === "A2";
       const pageW = isA2 ? "594mm" : "420mm";
@@ -2450,6 +2456,7 @@ export default function SonderingstekeningView() {
     window.addEventListener("ogs:tekening-add-overlay", onAddOverlay);
     window.addEventListener("ogs:tekening-print", onPrint);
     window.addEventListener("ogs:tekening-request-quotes", onRequestQuotes);
+    window.addEventListener("ogs:tekening-ifcx-preview", onIfcxPreview);
     window.addEventListener("ogs:tekening-place-raster", onPlaceRaster);
     window.addEventListener("ogs:tekening-coord-tag", onCoordTag);
     window.addEventListener("ogs:tekening-copy", onCopy);
@@ -2468,6 +2475,7 @@ export default function SonderingstekeningView() {
       window.removeEventListener("ogs:tekening-add-overlay", onAddOverlay);
       window.removeEventListener("ogs:tekening-print", onPrint);
       window.removeEventListener("ogs:tekening-request-quotes", onRequestQuotes);
+      window.removeEventListener("ogs:tekening-ifcx-preview", onIfcxPreview);
       window.removeEventListener("ogs:tekening-place-raster", onPlaceRaster);
       window.removeEventListener("ogs:tekening-coord-tag", onCoordTag);
       window.removeEventListener("ogs:tekening-copy", onCopy);
@@ -3199,6 +3207,14 @@ export default function SonderingstekeningView() {
         aantalSonderingen={
           placed.length + rasters.reduce((s, r) => s + r.rows * r.cols, 0)
         }
+      />
+
+      {/* IFCX preview — leest dezelfde payload als de save-flow en
+          laat de gebruiker zien welke IFC-entities er in het
+          .ifcgis bestand komen wanneer ze opslaan. */}
+      <IfcxPreviewDialog
+        open={ifcxPreviewOpen}
+        onClose={() => setIfcxPreviewOpen(false)}
       />
     </div>
   );

@@ -88,11 +88,14 @@ pub fn open_project_ifcgis(
     })
 }
 
-/// Full-fidelity save — frontend bouwt het complete ifcgis-0.2 JSON
-/// (inclusief bores, tekening-layout, title-block, crs) en wij valideren
-/// het tegen het schema voordat het naar schijf gaat. Geeft een
-/// duidelijke fout terug als het schema niet klopt zodat de frontend
-/// de gebruiker iets zinnigs kan tonen.
+/// Full-fidelity save — frontend bouwt het complete ifcgis JSON payload
+/// (inclusief bores, tekening-layout, title-block, crs, gis,
+/// deliverable). De Rust-side valideert het tegen het ProjectFile
+/// schema en converteert het naar **strict IFCX (IFC5 alpha) JSON**
+/// voordat het naar schijf gaat — de wire-format van `.ifcgis` is dus
+/// echte IFC4X3-stijl `header + data[]`. Geeft een duidelijke fout
+/// terug als het schema niet klopt zodat de frontend de gebruiker iets
+/// zinnigs kan tonen.
 #[tauri::command]
 pub fn save_project_ifcgis_full(
     payload: serde_json::Value,
@@ -100,9 +103,20 @@ pub fn save_project_ifcgis_full(
 ) -> Result<(), String> {
     let file: ifcgis::ProjectFile = serde_json::from_value(payload)
         .map_err(|e| format!("invalid ifcgis payload: {e}"))?;
-    let text = serde_json::to_string_pretty(&file)
+    let text = ifcgis::to_ifcx_json(&file)
         .map_err(|e| format!("ifcgis serialize: {e}"))?;
     std::fs::write(PathBuf::from(path), text).map_err(|e| e.to_string())
+}
+
+/// IFCX-preview: convert dezelfde payload als save naar de strict
+/// IFCX-JSON representatie (IFC5 alpha) zonder naar schijf te
+/// schrijven. Wordt door de Situatietekening gebruikt om de gebruiker
+/// live te tonen welke IFC-entities er in het .ifcgis-bestand komen.
+#[tauri::command]
+pub fn preview_project_ifcx(payload: serde_json::Value) -> Result<String, String> {
+    let file: ifcgis::ProjectFile = serde_json::from_value(payload)
+        .map_err(|e| format!("invalid ifcgis payload: {e}"))?;
+    ifcgis::to_ifcx_json(&file).map_err(|e| format!("ifcgis serialize: {e}"))
 }
 
 /// Full-fidelity open — leest een `.ifcgis` van schijf, valideert tegen

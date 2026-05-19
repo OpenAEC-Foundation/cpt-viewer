@@ -1,0 +1,100 @@
+/* IfcxPreviewDialog — large read-only viewer voor de IFCX-JSON die
+   in het .ifcgis bestand komt te staan. Stijl matcht de overige
+   Modal-dialogs (Offertes, ImageCrop) — witte body, amber accent,
+   mono voor de JSON. */
+
+.ifcx-preview-hint {
+  margin: 0 0 12px;
+  padding: 0 4px;
+  font: 400 0.8rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+  line-height: 1.45;
+}
+.ifcx-preview-hint code {
+  font-family: var(--font-code, 'JetBrains Mono'), monospace;
+  font-size: 0.92em;
+  background: var(--theme-bg-lighter, #f4f4f3);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.ifcx-preview-status {
+  padding: 24px;
+  text-align: center;
+  font: 500 0.85rem 'Inter', sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+}
+
+.ifcx-preview-error {
+  padding: 16px;
+  border: 1px solid #f3a4a4;
+  background: #fff5f5;
+  border-radius: 6px;
+  color: #7a1e1e;
+  font: 400 0.8rem 'Inter', sans-serif;
+}
+.ifcx-preview-error pre {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  font: 500 0.72rem 'JetBrains Mono', monospace;
+  background: #ffe7e7;
+  padding: 8px;
+  border-radius: 4px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.ifcx-preview-content {
+  margin: 0;
+  padding: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #1a1a1f;
+  color: #e7e5e4;
+  border: 1px solid #36363e;
+  border-radius: 6px;
+  font: 500 0.74rem var(--font-code, 'JetBrains Mono'), monospace;
+  line-height: 1.45;
+  white-space: pre;
+  tab-size: 2;
+  max-height: 56vh;
+}
+
+.ifcx-preview-footer {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+}
+.ifcx-preview-info {
+  flex: 1;
+  font: 500 0.75rem var(--font-code, 'JetBrains Mono'), monospace;
+  color: var(--theme-text-secondary, #71717a);
+}
+.ifcx-preview-btn-secondary,
+.ifcx-preview-btn-primary {
+  appearance: none;
+  border: 1px solid var(--theme-border, #d4d4d4);
+  background: var(--theme-bg, #fafaf9);
+  color: var(--theme-text, #36363e);
+  font: 600 0.8rem 'Inter', sans-serif;
+  padding: 7px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ifcx-preview-btn-secondary:hover {
+  background: var(--theme-bg-lighter, #f4f4f3);
+}
+.ifcx-preview-btn-primary {
+  background: var(--amber, #d97706);
+  color: white;
+  border-color: var(--amber, #d97706);
+}
+.ifcx-preview-btn-primary:hover:not(:disabled) {
+  background: var(--signal-orange, #ea580c);
+}
+.ifcx-preview-btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
