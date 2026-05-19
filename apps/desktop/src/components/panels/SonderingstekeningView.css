@@ -206,13 +206,17 @@
    gebruiker dat de klik niet werkte. */
 .tek-overlay-img {
   cursor: pointer;
-  /* Leaflet plaatst de image-overlay default op z-index:1 binnen de
-     overlay-pane, maar omdat de map met `preferCanvas: true` draait
-     zit er óók een CANVAS in dezelfde pane op z-index:100 — die staat
-     boven de afbeelding en steelt elke klik. Bump de IMG naar 250
-     zodat klikken op de afbeelding terechtkomen i.p.v. op de canvas-
-     renderer. Markers/handles zitten in marker-pane (z-index 600) en
-     blijven dus nog steeds boven de overlay. */
+  /* Sinds we `preferCanvas: false` zetten op de tekening-map gebruiken
+     polylines SVG-rendering met eigen <path>-elementen + hit-detect
+     op de stroke. Geen canvas meer in de overlay-pane dat alle klikken
+     vangt → de IMG is automatisch klikbaar als gewoon DOM-element op
+     z-index:1, lijnen op z-index:200 (svg-pane), markers in marker-
+     pane (z-index:600). Alle drie tegelijkertijd selecteerbaar. */
+}
+/* "Naar voren brengen" toggle in TekeningProperties zet deze klasse
+   zodat de overlay boven andere lagen komt — handig wanneer de user
+   tijdelijk de underlay als hoofd-content wil. */
+.tek-overlay-img.tek-overlay-foreground {
   z-index: 250 !important;
 }
 .tek-overlay-img.selected {

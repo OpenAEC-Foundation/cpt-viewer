@@ -45,6 +45,10 @@ interface OverlaySnapshot {
   id: string;
   name: string;
   widthMeters: number;
+  /** True = overlay krijgt z-index 250 (boven lijnen/markers).
+   *  False/undefined = default z-index 1 (achtergrond, klik valt door
+   *  op leeg deel naar lijnen/markers). */
+  foreground?: boolean;
 }
 
 interface Snapshot {
@@ -423,6 +427,26 @@ export default function TekeningProperties() {
                 }
               />
             </label>
+            <label className="tekprops-field tekprops-field-wide">
+              <span>Laag</span>
+              <select
+                value={snap.selectedOverlay.foreground ? "foreground" : "background"}
+                onChange={(e) =>
+                  window.dispatchEvent(
+                    new CustomEvent("ogs:tekening-set-overlay-layer", {
+                      detail: { foreground: e.target.value === "foreground" },
+                    }),
+                  )
+                }
+              >
+                <option value="background">Achtergrond (onder lijnen/markers)</option>
+                <option value="foreground">Voorgrond (boven alles)</option>
+              </select>
+            </label>
+            <p className="tekprops-hint">
+              Tip: druk <kbd>M</kbd> of <kbd>G</kbd> om te verplaatsen (cursor volgt; klik commit, Esc cancelt).
+              Sleep aan een hoek-handle om te schalen.
+            </p>
             <button
               type="button"
               className="tekprops-btn tekprops-btn-danger"

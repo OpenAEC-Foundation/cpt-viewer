@@ -481,6 +481,11 @@ export default function SonderingstekeningView() {
   const drawnLinesRef = useRef<DrawnLine[]>([]);
   const coordTagsRef = useRef<CoordTag[]>([]);
   const projectRef = useRef<{ cpts: Cpt[] } | null>(null);
+  // Laatste cursor-positie op de tekening (in lat/lng). Wordt door
+  // de map-mousemove gevuld zodat de M/G-sneltoets de huidige cursor-
+  // positie als anchor kan gebruiken zonder dat de gebruiker eerst
+  // hoeft te bewegen.
+  const lastMouseLLRef = useRef<{ lat: number; lng: number } | null>(null);
   // Sync de refs bij elke render — closure-captures in de mousemove-
   // snap-handler kunnen zo de live waarden lezen zonder dat ze
   // opnieuw gebound hoeven te worden (handler zit in [] deps init-
@@ -649,6 +654,35 @@ export default function SonderingstekeningView() {
   // `ogs:tekening-freeze-changed` so the ribbon button can show its
   // active state.
   const [frozen, setFrozen] = useState(false);
+  // Move-modus (Revit "MV" / Blender "G"-style): wanneer aan staat,
+  // volgt het geselecteerde object de cursor — een klik commit, Esc
+  // cancelt. Gestart door de keyboard-shortcut, niet door een ribbon-
+  // knop (zelfde idee als CAD-software).
+  const [moveMode, setMoveMode] = useState<
+    | { kind: "overlay"; id: string }
+    | { kind: "marker"; id: string }
+    | { kind: "line"; id: string }
+    | { kind: "raster"; id: string }
+    | null
+  >(null);
+  const moveModeRef = useRef<typeof moveMode>(null);
+  useEffect(() => { moveModeRef.current = moveMode; }, [moveMode]);
+  // Snapshot van de originele posities + anchor-cursor op het moment
+  // dat move-modus startte. Tijdens mousemove berekenen we cursor-delta
+  // en passen die toe op de oorspronkelijke posities — zodat een
+  // geselecteerde lijn (2 endpoints) als geheel meebeweegt en niet één
+  // endpoint elke frame opnieuw wordt verlegd.
+  const moveAnchorRef = useRef<{
+    anchorLat: number;
+    anchorLon: number;
+    // overlay: center / marker: lat,lon / line: lat1,lon1,lat2,lon2 /
+    // raster: centerLat,centerLon
+    origin: Record<string, number>;
+  } | null>(null);
+  // Image-overlay z-index toggle: false = onder lijnen/markers (default,
+  // achtergrond) / true = boven alles (handig om de afbeelding kort als
+  // hoofd-content te zien). Geforceerd via CSS-klasse op het IMG.
+  const [overlayInForeground, setOverlayInForeground] = useState(false);
   // CSS-zoom op het hele papier wanneer frozen aanstaat — gebruiker-
   // verzoek: bij freeze mag je wél in/uitzoomen op de tekening (incl.
   // kader) zonder dat de Leaflet-map zelf reageert. Vermenigvuldigt
@@ -707,6 +741,92 @@ export default function SonderingstekeningView() {
     };
   }, [activeDocId, documents]);
 
+  // ── Move-mode keyboard-shortcuts (M = MV in Revit, G in Blender) ─
+  // Start een vrije verplaatsing van het geselecteerde object: cursor
+  // volgt het object, een klik commit, Esc cancelt (en herstelt de
+  // originele positie). Geeft de gebruiker zonder ribbon-tussenstap
+  // een snelle "move-grip" zoals in CAD/3D-software.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Sneltoets alleen op M/m of G/g, en niet wanneer focus op een
+      // input/textarea zit (anders kan de gebruiker geen "G" typen in
+      // een tekstveld).
+      if (e.key !== "m" && e.key !== "M" && e.key !== "g" && e.key !== "G") return;
+      const tgt = e.target as HTMLElement | null;
+      const tag = tgt?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tgt?.isContentEditable) return;
+      if (!selection) return;
+      const map = mapRef.current;
+      if (!map) return;
+      // Bepaal originele positie + bouw delta-base
+      const cursorLL = lastMouseLLRef.current;
+      if (!cursorLL) return;
+      let origin: Record<string, number> | null = null;
+      if (selection.kind === "overlay" && overlay && overlay.id === selection.id) {
+        const cLat = overlay.centerLat ?? map.getCenter().lat;
+        const cLon = overlay.centerLon ?? map.getCenter().lng;
+        origin = { centerLat: cLat, centerLon: cLon };
+      } else if (selection.kind === "marker") {
+        const m = placed.find((p) => p.id === selection.id);
+        if (m) origin = { lat: m.lat, lon: m.lon };
+      } else if (selection.kind === "line") {
+        const l = drawnLines.find((x) => x.id === selection.id);
+        if (l) origin = { lat1: l.lat1, lon1: l.lon1, lat2: l.lat2, lon2: l.lon2 };
+      } else if (selection.kind === "raster") {
+        const r = rasters.find((x) => x.id === selection.id);
+        if (r) origin = { centerLat: r.centerLat, centerLon: r.centerLon };
+      }
+      if (!origin) return;
+      e.preventDefault();
+      moveAnchorRef.current = {
+        anchorLat: cursorLL.lat,
+        anchorLon: cursorLL.lng,
+        origin,
+      };
+      setMoveMode(selection);
+    };
+    const onKeyCancel = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (!moveModeRef.current) return;
+      // Restore originele positie + clear move-modus
+      const anchor = moveAnchorRef.current;
+      const mm = moveModeRef.current;
+      if (anchor && mm) {
+        if (mm.kind === "overlay") {
+          setOverlay((ov) =>
+            ov && ov.id === mm.id
+              ? { ...ov, centerLat: anchor.origin.centerLat, centerLon: anchor.origin.centerLon }
+              : ov,
+          );
+        } else if (mm.kind === "marker") {
+          setPlaced((prev) => prev.map((p) =>
+            p.id === mm.id ? { ...p, lat: anchor.origin.lat, lon: anchor.origin.lon } : p,
+          ));
+        } else if (mm.kind === "line") {
+          setDrawnLines((prev) => prev.map((l) =>
+            l.id === mm.id
+              ? { ...l, lat1: anchor.origin.lat1, lon1: anchor.origin.lon1, lat2: anchor.origin.lat2, lon2: anchor.origin.lon2 }
+              : l,
+          ));
+        } else if (mm.kind === "raster") {
+          setRasters((prev) => prev.map((r) =>
+            r.id === mm.id
+              ? { ...r, centerLat: anchor.origin.centerLat, centerLon: anchor.origin.centerLon }
+              : r,
+          ));
+        }
+      }
+      moveAnchorRef.current = null;
+      setMoveMode(null);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKeyCancel);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKeyCancel);
+    };
+  }, [selection, overlay, placed, drawnLines, rasters]);
+
   // Auto-seed title block from active doc the first time the project changes.
   useEffect(() => {
     if (!project) return;
@@ -737,6 +857,63 @@ export default function SonderingstekeningView() {
     // Reset the in-flight start point whenever the tool toggles off.
     if (!drawMode) drawStartRef.current = null;
   }, [drawMode]);
+
+  // Map-mousemove handler: registreert cursor-positie + verzorgt move-
+  // mode (M/G-shortcut). De handler zit in een afzonderlijke useEffect
+  // op mapRef + moveMode zodat hij her-binden niet de hele map opnieuw
+  // initialiseert.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const onMM = (e: L.LeafletMouseEvent) => {
+      lastMouseLLRef.current = { lat: e.latlng.lat, lng: e.latlng.lng };
+      const mm = moveModeRef.current;
+      const anchor = moveAnchorRef.current;
+      if (!mm || !anchor) return;
+      const dLat = e.latlng.lat - anchor.anchorLat;
+      const dLon = e.latlng.lng - anchor.anchorLon;
+      if (mm.kind === "overlay") {
+        setOverlay((ov) =>
+          ov && ov.id === mm.id
+            ? { ...ov, centerLat: anchor.origin.centerLat + dLat, centerLon: anchor.origin.centerLon + dLon }
+            : ov,
+        );
+      } else if (mm.kind === "marker") {
+        setPlaced((prev) => prev.map((p) =>
+          p.id === mm.id ? { ...p, lat: anchor.origin.lat + dLat, lon: anchor.origin.lon + dLon } : p,
+        ));
+      } else if (mm.kind === "line") {
+        setDrawnLines((prev) => prev.map((l) =>
+          l.id === mm.id
+            ? {
+                ...l,
+                lat1: anchor.origin.lat1 + dLat, lon1: anchor.origin.lon1 + dLon,
+                lat2: anchor.origin.lat2 + dLat, lon2: anchor.origin.lon2 + dLon,
+              }
+            : l,
+        ));
+      } else if (mm.kind === "raster") {
+        setRasters((prev) => prev.map((r) =>
+          r.id === mm.id
+            ? { ...r, centerLat: anchor.origin.centerLat + dLat, centerLon: anchor.origin.centerLon + dLon }
+            : r,
+        ));
+      }
+    };
+    const onClick = () => {
+      // Klik in move-modus = commit (positie blijft staan zoals nu).
+      if (moveModeRef.current) {
+        moveAnchorRef.current = null;
+        setMoveMode(null);
+      }
+    };
+    map.on("mousemove", onMM);
+    map.on("click", onClick);
+    return () => {
+      map.off("mousemove", onMM);
+      map.off("click", onClick);
+    };
+  }, [mapReady]);
 
   // Sync snap-target refs zodat de mousemove-snap-handler altijd live
   // state ziet (handler zit in een [] -deps init-effect closure).
@@ -1605,10 +1782,11 @@ export default function SonderingstekeningView() {
       );
       const isSelected =
         selection?.kind === "overlay" && selection.id === overlay.id;
+      const fgClass = overlayInForeground ? " tek-overlay-foreground" : "";
       const ov = L.imageOverlay(overlay.src!, bounds, {
         opacity: 0.92,
         interactive: true,
-        className: isSelected ? "tek-overlay-img selected" : "tek-overlay-img",
+        className: (isSelected ? "tek-overlay-img selected" : "tek-overlay-img") + fgClass,
       });
       ov.on("click", (e) => {
         // While the user is in a draw / place / coord mode, the click
@@ -1625,7 +1803,7 @@ export default function SonderingstekeningView() {
       overlayLayerRef.current = ov;
     };
     img.src = overlay.src;
-  }, [overlay, selection]);
+  }, [overlay, selection, overlayInForeground]);
 
   // Reset overlay-rotatie wanneer de gebruiker een NIEUWE overlay
   // importeert (anders zou de volgende image meteen op de oude hoek
@@ -1785,7 +1963,17 @@ export default function SonderingstekeningView() {
     const map = L.map(paperRef.current, {
       zoomControl: false,
       attributionControl: false,
-      preferCanvas: true,
+      // preferCanvas: FALSE op de Situatietekening — anders worden
+      // alle polylines op een groot DOM-canvas getekend dat in dezelfde
+      // overlay-pane zit als de image-underlay. Dat canvas vangt elke
+      // klik via z-index, waardoor: (a) image-overlay onder canvas niet
+      // selecteerbaar is, of (b) als we de image z-index bumpen,
+      // polylines onder de image niet meer selecteerbaar zijn. Met SVG-
+      // rendering (`preferCanvas: false`) krijgt elke polyline een eigen
+      // <path> element met hit-detection op de stroke, zodat clicks op
+      // een lijn de lijn raken en clicks naast de lijn doorvallen naar
+      // de image. Beide tegelijk selecteerbaar zonder z-index-strijd.
+      preferCanvas: false,
       // Vloeiende muiswiel-zoom: `zoomSnap: 0` zet de snap-stepping uit
       // zodat fractionele zoom-niveaus worden bewaard. `wheelDebounceTime`
       // accumuleert wheel-events kort zodat een trackpad-zwiep één
@@ -3251,6 +3439,12 @@ export default function SonderingstekeningView() {
         ),
       );
     };
+    // Toggle de image-overlay's z-stack-positie: foreground = boven
+    // alles (z-index 250), background = onder lijnen/markers (default).
+    const onSetOverlayLayer = (e: Event) => {
+      const ce = e as CustomEvent<{ foreground: boolean }>;
+      setOverlayInForeground(!!ce.detail.foreground);
+    };
     // Wijzig de override-kleur van een geselecteerde lijn (via de
     // kleur-picker in TekeningProperties). Kleur null = terug naar de
     // kind-default (dimension=amber, line=donkergrijs).
@@ -3298,6 +3492,7 @@ export default function SonderingstekeningView() {
     window.addEventListener("ogs:tekening-select-mode", onSelectMode);
     window.addEventListener("ogs:tekening-set-kleefmeting", onSetKleefmeting as EventListener);
     window.addEventListener("ogs:tekening-set-line-color", onSetLineColor as EventListener);
+    window.addEventListener("ogs:tekening-set-overlay-layer", onSetOverlayLayer as EventListener);
     window.addEventListener("ogs:tekening-toggle-freeze", onToggleFreeze);
     window.addEventListener("ogs:tekening-update-selected-overlay", onUpdateOverlay as EventListener);
     window.addEventListener("ogs:tekening-toggle-place", onTogglePlace);
@@ -3351,6 +3546,7 @@ export default function SonderingstekeningView() {
       window.removeEventListener("ogs:tekening-select-mode", onSelectMode);
       window.removeEventListener("ogs:tekening-set-kleefmeting", onSetKleefmeting as EventListener);
       window.removeEventListener("ogs:tekening-set-line-color", onSetLineColor as EventListener);
+      window.removeEventListener("ogs:tekening-set-overlay-layer", onSetOverlayLayer as EventListener);
       window.removeEventListener("ogs:tekening-toggle-freeze", onToggleFreeze);
       window.removeEventListener("ogs:tekening-update-selected-overlay", onUpdateOverlay as EventListener);
     };
@@ -3418,6 +3614,7 @@ export default function SonderingstekeningView() {
             id: selectedOverlay.id,
             name: selectedOverlay.name,
             widthMeters: selectedOverlay.widthMeters ?? 100,
+            foreground: overlayInForeground,
           }
         : null,
       selectedLine: selectedLine
@@ -3434,7 +3631,7 @@ export default function SonderingstekeningView() {
       );
     };
     publishSnapshotRef.current();
-  }, [titleBlock, selection, rasters, placed, paperSize, scale, frozen, overlay, mPerPx, drawnLines]);
+  }, [titleBlock, selection, rasters, placed, paperSize, scale, frozen, overlay, mPerPx, drawnLines, overlayInForeground]);
 
   // ── Mirror complete tekening-state naar de module-level singleton ─
   // Aparte effect (los van het snapshot event boven) zodat we ALLE
