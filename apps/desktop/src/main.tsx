@@ -32,33 +32,100 @@ window.addEventListener("error", (e) => showError("window.error", e.error ?? e.m
 window.addEventListener("unhandledrejection", (e) => showError("unhandledrejection", e.reason));
 
 // ── Leaflet null-parent defensive patch ────────────────────────
-// Leaflet's L.DomUtil.getSizedParentNode walkt parent.parentNode
-// totdat het een element met clientHeight > 0 vindt. Tijdens een
-// snelle map-unmount mid-mouseevent kan parent halverwege null
-// worden — dan crasht het op `parent.offsetWidth`. Wrap de functie
-// met een try/catch zodat dat oude-DOM-event-residue geen
-// app-wide crash veroorzaakt.
+// PROBLEEM: Leaflet's bundled `_onDown` (in L.Draggable.prototype)
+// roept een LOCAL CLOSURE `getSizedParentNode` aan — niet de
+// versie op `L.DomUtil`. Die local closure crasht op `null.offsetWidth`
+// wanneer de parent-chain van het element ergens een null bevat.
+// Een patch op `L.DomUtil.getSizedParentNode` alleen heeft GEEN effect
+// op die interne call → drag-init throwt halverwege → `_parentScale`
+// wordt nooit gezet → `_onMove` faalt onmiddellijk op
+// `_parentScale.x` is undefined → pannen werkt niet meer.
 //
-// CRITICAL: bij crash MOETEN we een geldige HTMLElement teruggeven
-// (niet null), anders crasht Leaflet's `_onDown` op `getScale(null)`
-// → drag-start faalt → pan werkt niet meer. document.body is altijd
-// safe (offsetWidth/Height > 0) en geeft scale {x:1, y:1}.
+// OPLOSSING: vervang `L.Draggable.prototype._onDown` met een eigen
+// implementatie die exact hetzelfde doet als Leaflet's origineel maar
+// met een veilige `getSizedParentNode` die nooit crasht (fallback
+// naar document.body bij een gebroken parent-chain). De rest van de
+// Leaflet helpers (preventOutline, disableImageDrag, etc.) zijn wél
+// op `L.DomUtil` gepubliceerd dus die hergebruiken we.
 import * as L from "leaflet";
-const _domUtil = L.DomUtil as unknown as {
-  getSizedParentNode?: (el: HTMLElement) => HTMLElement | null;
+
+const safeGetSizedParentNode = (start: HTMLElement | null): HTMLElement => {
+  let element: HTMLElement | Node | null = start;
+  for (let safety = 0; safety < 50; safety++) {
+    const next: Node | null = element?.parentNode ?? null;
+    if (!next) return document.body;
+    element = next;
+    const el = element as HTMLElement;
+    if (el.offsetWidth && el.offsetHeight) return el;
+    if (el === document.body) return el;
+  }
+  return document.body;
 };
-if (_domUtil.getSizedParentNode) {
-  const orig = _domUtil.getSizedParentNode;
-  _domUtil.getSizedParentNode = function (el: HTMLElement): HTMLElement {
-    try {
-      const result = orig.call(this, el);
-      // Origineel kan tegen verwachting null teruggeven als el losgekoppeld
-      // is van de DOM-tree — fallback naar document.body zodat downstream
-      // getScale niet crasht.
-      return result ?? document.body;
-    } catch {
-      return document.body;
+
+interface DraggableProto {
+  _enabled: boolean;
+  _moved: boolean;
+  _moving: boolean;
+  _element: HTMLElement;
+  _preventOutline?: boolean;
+  _startPoint?: L.Point;
+  _startPos?: L.Point;
+  _parentScale?: { x: number; y: number };
+  _onMove: (e: Event) => void;
+  _onUp: (e: Event) => void;
+  fire: (event: string) => void;
+  finishDrag?: () => void;
+}
+
+const LDraggable = (L as unknown as { Draggable: { prototype: DraggableProto; _dragging: unknown } }).Draggable;
+const LDomUtilExt = L.DomUtil as unknown as {
+  hasClass: (el: HTMLElement, name: string) => boolean;
+  preventOutline?: (el: HTMLElement) => void;
+  getPosition: (el: HTMLElement) => L.Point;
+  getScale?: (el: HTMLElement) => { x: number; y: number; boundingClientRect: DOMRect };
+  disableImageDrag?: () => void;
+  disableTextSelection?: () => void;
+};
+
+if (LDraggable?.prototype && typeof L.DomEvent?.on === "function") {
+  LDraggable.prototype._onDown = function (this: DraggableProto, e: MouseEvent | TouchEvent) {
+    if (!this._enabled) return;
+    this._moved = false;
+    if (LDomUtilExt.hasClass(this._element, "leaflet-zoom-anim")) return;
+    const touchEv = e as TouchEvent;
+    if (touchEv.touches && touchEv.touches.length !== 1) {
+      if (LDraggable._dragging === this) this.finishDrag?.();
+      return;
     }
+    const mouseEv = e as MouseEvent;
+    if (LDraggable._dragging === this || (mouseEv.shiftKey && e.type !== "touchstart")) return;
+    LDraggable._dragging = this;
+    if (this._preventOutline && LDomUtilExt.preventOutline) {
+      LDomUtilExt.preventOutline(this._element);
+    }
+    LDomUtilExt.disableImageDrag?.();
+    LDomUtilExt.disableTextSelection?.();
+    if (this._moving) return;
+    this.fire("down");
+    const first = touchEv.touches ? touchEv.touches[0] : mouseEv;
+    const sizedParent = safeGetSizedParentNode(this._element);
+    this._startPoint = L.point(first.clientX, first.clientY);
+    this._startPos = LDomUtilExt.getPosition(this._element) ?? L.point(0, 0);
+    const sc = LDomUtilExt.getScale?.(sizedParent);
+    this._parentScale = sc ? { x: sc.x || 1, y: sc.y || 1 } : { x: 1, y: 1 };
+    const isMouse = e.type === "mousedown";
+    L.DomEvent.on(
+      document,
+      isMouse ? "mousemove" : "touchmove",
+      this._onMove,
+      this,
+    );
+    L.DomEvent.on(
+      document,
+      isMouse ? "mouseup" : "touchend touchcancel",
+      this._onUp,
+      this,
+    );
   };
 }
 
