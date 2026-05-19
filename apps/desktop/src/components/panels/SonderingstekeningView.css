@@ -196,6 +196,21 @@
   top: -1px;
 }
 
+/* Noordpijl — rechtsboven op het papier, vaste mm-grootte. Boven
+   de map-tile-layer maar onder het titleblock. Witte cirkel achter
+   de pijl zodat hij ook over luchtfoto leesbaar is. */
+.tek-north-arrow {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 50;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+}
+.tek-north-arrow svg {
+  display: block;
+}
+
 /* Schaalbalk — vaste positie linksonder boven het titleblock, op het
    papier. z-index hoger dan de kaart-tegels (1) en frame (3) zodat
    de bar altijd boven de map zichtbaar is, lager dan het titleblock

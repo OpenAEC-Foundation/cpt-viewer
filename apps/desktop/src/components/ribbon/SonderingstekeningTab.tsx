@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import RibbonGroup from "./RibbonGroup";
 import RibbonButton from "./RibbonButton";
+import RibbonButtonStack from "./RibbonButtonStack";
 
 /**
  * Sonderingstekening ribbon — full toolset.
@@ -109,55 +110,55 @@ export default function SonderingstekeningTab() {
           />
         </RibbonGroup>
 
+        {/* Bewerken-groep: alle knoppen verticaal gestackt (volgens
+            Open PDF Studio / Open 2D Studio conventie). Kompacter en
+            laat ruimte over voor de Tekenen-groep ernaast. */}
         <RibbonGroup label={t("tekening.editGroup", "Bewerken")}>
-          <RibbonButton
-            icon={moveIcon}
-            label={t("tekening.moveSelection", "Verplaatsen")}
-            size="small"
-            title={t(
-              "tekening.moveHint",
-              "Pijltjestoetsen verplaatsen 1 m (Shift = 5 m)",
-            )}
-            onClick={() =>
-              dispatch("ogs:tekening-move", { dx: 1, dy: 0 })
-            }
-          />
-          <RibbonButton
-            icon={copyIcon}
-            label={t("tekening.copySelection", "Kopiëren")}
-            size="small"
-            title={t("tekening.copyHint", "Dupliceer naast het geselecteerde object (Ctrl+D)")}
-            onClick={() => dispatch("ogs:tekening-copy")}
-          />
-          <RibbonButton
-            icon={rotateIcon}
-            label={t("tekening.rotate", "Roteer…")}
-            size="large"
-            title={t(
-              "tekening.rotateHint",
-              "Vraag de gewenste hoek in graden (negatief = tegen de klok in). Werkt op raster of overlay.",
-            )}
-            onClick={() => {
-              // Native prompt zodat het inline-UI niet hoeft. Default
-              // -90° suggereert de gangbare CAD-rotatie; positief =
-              // klokwise (CSS-conventie), negatief = tegen-klok-in.
-              const raw = window.prompt(
-                "Roteer met hoeveel graden? (negatief = tegen de klok in)",
-                "90",
-              );
-              if (raw === null) return; // user canceled
-              const deg = parseFloat(raw.replace(",", "."));
-              if (!Number.isFinite(deg) || deg === 0) return;
-              dispatch("ogs:tekening-rotate", { deg });
-            }}
-          />
-          <RibbonButton
-            icon={deleteIcon}
-            label={t("tekening.deleteSelection", "Verwijderen")}
-            size="small"
-            title={t("tekening.deleteHint", "Verwijder het geselecteerde object (Delete)")}
-            onClick={() => dispatch("ogs:tekening-delete")}
-          />
+          <RibbonButtonStack>
+            <RibbonButton
+              icon={moveIcon}
+              label={t("tekening.moveSelection", "Verplaatsen")}
+              size="small"
+              title={t(
+                "tekening.moveHint",
+                "Pijltjestoetsen verplaatsen 1 m (Shift = 5 m)",
+              )}
+              onClick={() => dispatch("ogs:tekening-move", { dx: 1, dy: 0 })}
+            />
+            <RibbonButton
+              icon={copyIcon}
+              label={t("tekening.copySelection", "Kopiëren")}
+              size="small"
+              title={t("tekening.copyHint", "Dupliceer naast het geselecteerde object (Ctrl+D)")}
+              onClick={() => dispatch("ogs:tekening-copy")}
+            />
+            <RibbonButton
+              icon={rotateIcon}
+              label={t("tekening.rotate", "Roteren…")}
+              size="small"
+              title={t(
+                "tekening.rotateHint",
+                "Vraag de gewenste hoek in graden (negatief = tegen de klok in).",
+              )}
+              onClick={() => {
+                const raw = window.prompt(
+                  "Roteer met hoeveel graden? (negatief = tegen de klok in)",
+                  "90",
+                );
+                if (raw === null) return;
+                const deg = parseFloat(raw.replace(",", "."));
+                if (!Number.isFinite(deg) || deg === 0) return;
+                dispatch("ogs:tekening-rotate", { deg });
+              }}
+            />
+            <RibbonButton
+              icon={deleteIcon}
+              label={t("tekening.deleteSelection", "Verwijderen")}
+              size="small"
+              title={t("tekening.deleteHint", "Verwijder het geselecteerde object (Delete)")}
+              onClick={() => dispatch("ogs:tekening-delete")}
+            />
+          </RibbonButtonStack>
         </RibbonGroup>
 
         <RibbonGroup label={t("tekening.placeGroup", "Plaatsen")}>

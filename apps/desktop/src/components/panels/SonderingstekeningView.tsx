@@ -363,7 +363,7 @@ export default function SonderingstekeningView() {
    */
   const draggingRef = useRef(false);
 
-  const [paperSize, setPaperSize] = useState<PaperSize>("A2");
+  const [paperSize, setPaperSize] = useState<PaperSize>("A3");
   const [scale, setScale] = useState<Scale>(1000);
   const [showBro, setShowBro] = useState(true);
   const [placeMode, setPlaceMode] = useState<null | "sondering" | "bore">(null);
@@ -3049,6 +3049,11 @@ export default function SonderingstekeningView() {
               zowel het print-scale als de extra zoom van de gebruiker
               correct weergeeft. */}
           <ScaleBar mPerPx={mPerPx} paperPxW={paperLayout.pxW} />
+          {/* Noordpijl — rechtsboven, vaste mm-grootte op papier
+              (~22mm hoog). Rotatie 0 = noord boven (Web Mercator
+              heeft geen rotatie). Bedrukt op het papier zoals een
+              traditionele tekening; bedoeld vooral voor de PDF-print. */}
+          <NorthArrow />
           {/* Title block (Detailblad layout — mirrors page 2 of
               OpenAEC-style-book/preview-titleblock.html). A bottom-strip
               title bar with a project header row + 2×3 cell grid + logo
@@ -3304,6 +3309,41 @@ function ScaleCellEditor({ liveScale }: { liveScale: number }) {
       }}
       title="Klik om de schaal aan te passen (bv. 1:850)"
     />
+  );
+}
+
+/**
+ * Noordpijl rechtsboven op het papier. Traditionele bouwkundige
+ * vorm: een pijl met "N" boven. Zwart gevuld met witte achtergrond
+ * + dunne border zodat hij over elke base-layer leesbaar blijft.
+ * Vaste mm-grootte op het papier (CSS px = 96/25.4 × mm).
+ */
+function NorthArrow() {
+  return (
+    <div className="tek-north-arrow" aria-label="Noordpijl">
+      <svg viewBox="0 0 40 60" width="40" height="60" xmlns="http://www.w3.org/2000/svg">
+        {/* Witte ronde achtergrond zodat de pijl over luchtfoto leesbaar is */}
+        <circle cx="20" cy="32" r="18" fill="white" stroke="#111" strokeWidth="0.8" />
+        {/* N letter boven de pijl */}
+        <text
+          x="20"
+          y="14"
+          textAnchor="middle"
+          fontFamily="Inter, sans-serif"
+          fontSize="11"
+          fontWeight="700"
+          fill="#111"
+        >
+          N
+        </text>
+        {/* Pijl: zwarte halve = noordpunt, witte halve = zuidpunt.
+            Klassieke kompas-stijl. */}
+        <polygon points="20,18 14,46 20,40" fill="#111" stroke="#111" strokeWidth="0.4" />
+        <polygon points="20,18 26,46 20,40" fill="white" stroke="#111" strokeWidth="0.4" />
+        {/* Center punt */}
+        <circle cx="20" cy="40" r="1.2" fill="#111" />
+      </svg>
+    </div>
   );
 }
 
