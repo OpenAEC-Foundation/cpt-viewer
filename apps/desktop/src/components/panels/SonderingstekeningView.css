@@ -206,6 +206,14 @@
    gebruiker dat de klik niet werkte. */
 .tek-overlay-img {
   cursor: pointer;
+  /* Leaflet plaatst de image-overlay default op z-index:1 binnen de
+     overlay-pane, maar omdat de map met `preferCanvas: true` draait
+     zit er óók een CANVAS in dezelfde pane op z-index:100 — die staat
+     boven de afbeelding en steelt elke klik. Bump de IMG naar 250
+     zodat klikken op de afbeelding terechtkomen i.p.v. op de canvas-
+     renderer. Markers/handles zitten in marker-pane (z-index 600) en
+     blijven dus nog steeds boven de overlay. */
+  z-index: 250 !important;
 }
 .tek-overlay-img.selected {
   outline: 3px solid #d97706;

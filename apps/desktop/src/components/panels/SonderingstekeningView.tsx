@@ -445,6 +445,15 @@ export default function SonderingstekeningView() {
   const handlesLayerRef = useRef<L.LayerGroup | null>(null);
   const coordLayerRef = useRef<L.LayerGroup | null>(null);
   const overlayLayerRef = useRef<L.ImageOverlay | null>(null);
+  // Aparte handle-layer voor de geselecteerde image-overlay (4 hoek-
+  // handles voor schalen). Gescheiden van `handlesLayerRef` zodat ze
+  // elkaars markers niet wegvegen wanneer beide effects runnen.
+  const overlayHandlesLayerRef = useRef<L.LayerGroup | null>(null);
+  // Cache van de natural aspect-ratio van de overlay-image (height/
+  // width), zodat resize-handles de hoogte proportioneel berekenen
+  // zonder elke keer een nieuwe Image() te laden. Wordt door het
+  // overlay-init effect gevuld.
+  const overlayAspectRef = useRef<number>(1);
   const broLayerRef = useRef<L.LayerGroup | null>(null);
   const projectLayerRef = useRef<L.LayerGroup | null>(null);
   // Place-mode is een driewaardig flag: null = uit, "sondering" of
@@ -1509,6 +1518,7 @@ export default function SonderingstekeningView() {
       const aspect = img.naturalWidth > 0
         ? img.naturalHeight / img.naturalWidth
         : 1;
+      overlayAspectRef.current = aspect;
       const heightM = widthM * aspect;
       const [cxRd, cyRd] = WGS84_TO_RD.forward([cLon, cLat]);
       const swLL = WGS84_TO_RD.inverse([cxRd - widthM / 2, cyRd - heightM / 2]);
@@ -1560,6 +1570,93 @@ export default function SonderingstekeningView() {
     el.style.transform = `rotate(${overlayRotation}deg)`;
     el.style.transformOrigin = "center center";
   }, [overlayRotation, overlay?.id]);
+
+  // ── DEV-only: expose setOverlay + setSelection op window zodat de
+  // Claude-Preview MCP een test-overlay kan injecteren tijdens E2E-
+  // verificatie. In productie strip Vite deze block via dead-code
+  // elimination (`import.meta.env.DEV === false`). Pure debug-hulp,
+  // niets functioneels voor de eindgebruiker.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const w = window as unknown as {
+      __ogsTestSetOverlay?: (o: OverlayDrop | null) => void;
+      __ogsTestSetSelection?: (s: { kind: "overlay"; id: string } | null) => void;
+    };
+    w.__ogsTestSetOverlay = setOverlay;
+    w.__ogsTestSetSelection = setSelection;
+    return () => {
+      delete w.__ogsTestSetOverlay;
+      delete w.__ogsTestSetSelection;
+    };
+  }, []);
+
+  // ── Resize-handles voor geselecteerde image-overlay ─────────────
+  // Wanneer de gebruiker de overlay heeft geselecteerd verschijnen er
+  // 4 amber hoek-handles + 4 edge-handles op de bounds. Slepen aan
+  // een hoek schaalt de overlay proportioneel (de aspect-ratio is
+  // vast — afgeleid uit de natural image-dimensies in het init
+  // effect). Slepen aan een edge schaalt alleen in die richting (de
+  // overlay krijgt dan een eigen aspect-override; voor nu houden we
+  // het simpel en passen we widthMeters uniform aan zodat de aspect
+  // gerespecteerd blijft).
+  useEffect(() => {
+    const map = mapRef.current;
+    const layer = overlayHandlesLayerRef.current;
+    if (!map || !layer) return;
+    layer.clearLayers();
+    if (!overlay || (overlay.kind !== "image" && overlay.kind !== "svg")) return;
+    if (selection?.kind !== "overlay" || selection.id !== overlay.id) return;
+    const widthM = overlay.widthMeters ?? 100;
+    const cLat = overlay.centerLat ?? map.getCenter().lat;
+    const cLon = overlay.centerLon ?? map.getCenter().lng;
+    const aspect = overlayAspectRef.current || 1;
+    const heightM = widthM * aspect;
+    const [cxRd, cyRd] = WGS84_TO_RD.forward([cLon, cLat]);
+
+    // Vier hoek-handles op (±halfW, ±halfH) in lokale RD-coords.
+    const cornerOffsets: Array<[number, number]> = [
+      [-1, -1],
+      [+1, -1],
+      [+1, +1],
+      [-1, +1],
+    ];
+    for (const [sx, sy] of cornerOffsets) {
+      const cornerX = cxRd + (sx * widthM) / 2;
+      const cornerY = cyRd + (sy * heightM) / 2;
+      const ll = WGS84_TO_RD.inverse([cornerX, cornerY]);
+      const handle = L.marker([ll[1], ll[0]], {
+        icon: L.divIcon({
+          className: "tek-handle tek-handle-corner",
+          html: `<div class="tek-handle-dot"></div>`,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7],
+        }),
+        draggable: true,
+      });
+      handle.on("dragstart", () => { draggingRef.current = true; });
+      handle.on("drag", (e) => {
+        const ll2 = (e as L.LeafletEvent & { latlng: L.LatLng }).latlng;
+        const [dragRdX, dragRdY] = WGS84_TO_RD.forward([ll2.lng, ll2.lat]);
+        // Nieuwe halve breedte = afstand-x van center; halve hoogte
+        // wordt door aspect-ratio bepaald. We dwingen min 2m zodat
+        // de overlay niet per ongeluk verdwijnt in 1 sleep-impuls.
+        const halfW = Math.max(1, Math.abs(dragRdX - cxRd));
+        const halfH = Math.max(1, Math.abs(dragRdY - cyRd));
+        // Gebruik de grootste delta zodat slepen aan elke hoek de
+        // overlay groeit/krimpt — anders zou diagonaal-slepen alleen
+        // de X-component pakken.
+        const newWidthM = Math.max(2, 2 * Math.max(halfW, halfH / aspect));
+        setOverlay((prev) =>
+          prev ? { ...prev, widthMeters: newWidthM } : prev,
+        );
+      });
+      handle.on("dragend", () => { draggingRef.current = false; });
+      handle.on("click", (ev) => L.DomEvent.stopPropagation(ev));
+      layer.addLayer(handle);
+    }
+    // Cleanup gebeurt automatisch wanneer overlay/selection wijzigt
+    // — effect re-runt, clearLayers() bovenaan veegt alles weg.
+  }, [overlay, selection]);
 
   // ── Init Leaflet map inside the paper rect ─────────────────────
   useEffect(() => {
@@ -1751,6 +1848,7 @@ export default function SonderingstekeningView() {
     placedLayerRef.current = L.layerGroup().addTo(map);
     coordLayerRef.current = L.layerGroup().addTo(map);
     handlesLayerRef.current = L.layerGroup().addTo(map);
+    overlayHandlesLayerRef.current = L.layerGroup().addTo(map);
     bagLayerRef.current = L.layerGroup();        // attached on toggle
     kadasterLayerRef.current = L.layerGroup();   // attached on toggle
     drawnLayerRef.current = L.layerGroup().addTo(map);  // freehand lines / dimensions
