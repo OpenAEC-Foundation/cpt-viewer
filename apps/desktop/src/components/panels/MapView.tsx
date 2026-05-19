@@ -413,8 +413,16 @@ export default function MapView() {
       },
     );
     baseLayersRef.current = baseLayers;
-    // Default: BRT on.
+    // Default base: BRT als achtergrond + luchtfoto op 50% er
+    // bovenop. Luchtfoto wordt OOK direct geattacht zodat de
+    // gebruiker bij Kaart-tab open meteen de luchtfoto ziet — niet
+    // pas na een toggle vanuit het lagen-paneel.
     baseLayers["brt"].addTo(map);
+    baseLayers["luchtfoto-actueel"].addTo(map);
+    baseLayers["luchtfoto-actueel"].setOpacity(0.5);
+    enabledLayersRef.current["brt"] = true;
+    enabledLayersRef.current["luchtfoto-actueel"] = true;
+    layerOpacityRef.current["luchtfoto-actueel"] = 0.5;
 
     // Data layer groups — kept always attached so we just clear/refill.
     broLayerRef.current = L.layerGroup().addTo(map);
@@ -1106,6 +1114,23 @@ export default function MapView() {
     window.addEventListener("ogs:measure-toggle", onMeasureToggle);
     window.addEventListener("ogs:topotijdreis-year", onTopoYear as EventListener);
     window.addEventListener("keydown", onKey);
+
+    // ── Default overlay-stack op de Kaart-tab ─────────────────────
+    // Activeer bag + kadaster + adressen via dezelfde toggle-flow die
+    // het lagen-paneel ook gebruikt. requestAnimationFrame zodat de
+    // map zijn eerste fitBounds/setView heeft afgemaakt — anders
+    // gaan de WFS-fetches met een degenerate viewport off.
+    requestAnimationFrame(() => {
+      const fire = (id: string, enabled: boolean) =>
+        window.dispatchEvent(
+          new CustomEvent("ogs:layer-toggle", {
+            detail: { view: "map", id, enabled },
+          }),
+        );
+      fire("bag", true);
+      fire("kadaster", true);
+      fire("adressen", true);
+    });
     return () => {
       window.removeEventListener("ogs:bro-load-area", onLoad);
       window.removeEventListener("ogs:bro-clear", onClear);

@@ -111,28 +111,29 @@ const AHN_LEGEND: { color: string; label: string }[] = [
  * default so the user can search/inspect freely without overlays getting
  * in the way.
  */
-function defaultState(view: ViewId = "map"): Record<LayerId, boolean> {
+function defaultState(_view: ViewId = "map"): Record<LayerId, boolean> {
   const out = {} as Record<LayerId, boolean>;
   for (const d of LAYER_DEFS) out[d.id] = d.defaultOn;
-  if (view === "tekening") {
-    // BRT stays as a fallback under the luchtfoto so any tiles that fail
-    // to load still show a base. Luchtfoto-actueel sits on top at 50%.
-    out["luchtfoto-actueel"] = true;
-    out["kadaster"] = true;
-    out["bag"] = true;
-  }
+  // Beide views (Kaart en Situatietekening) starten met dezelfde
+  // overlay-stack: luchtfoto-actueel als base op halve dekking +
+  // BAG-gebouwen + Kadaster-percelen + adressen/straten. Geeft de
+  // gebruiker meteen een herkenbare situatieschets zonder dat hij
+  // eerst lagen moet aanzetten. BRT blijft als fallback eronder
+  // voor tiles die niet laden.
+  out["luchtfoto-actueel"] = true;
+  out["kadaster"] = true;
+  out["bag"] = true;
+  out["adressen"] = true;
   return out;
 }
 
-/** Initial opacity state. Sonderingstekening starts the luchtfoto at 50%
- *  so the cadaster + BAG outlines, sonderingen and dimensions stay
- *  readable on top — the Kaart tab keeps everything at 100%. */
-function defaultOpacityState(view: ViewId = "map"): Record<LayerId, number> {
+/** Initial opacity state. Beide views starten met de luchtfoto op
+ *  50% zodat de kadastrale lijnen, BAG-omtrekken, straat-labels en
+ *  geplaatste sonderingen leesbaar bovenop blijven. */
+function defaultOpacityState(_view: ViewId = "map"): Record<LayerId, number> {
   const out = {} as Record<LayerId, number>;
   for (const d of LAYER_DEFS) out[d.id] = 1;
-  if (view === "tekening") {
-    out["luchtfoto-actueel"] = 0.5;
-  }
+  out["luchtfoto-actueel"] = 0.5;
   return out;
 }
 
