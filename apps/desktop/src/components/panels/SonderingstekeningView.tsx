@@ -2104,8 +2104,8 @@ export default function SonderingstekeningView() {
                    <svg viewBox="0 0 12 12"><polygon points="1,1 11,1 6,11"
                      fill="#d97706" stroke="#7c2d12" stroke-width="1" /></svg>
                  </div>`,
-          iconSize: [12, 12],
-          iconAnchor: [6, 11],
+          iconSize: [24, 24], /* 2× — gebruiker-verzoek */
+          iconAnchor: [12, 22],
         }),
       });
       marker.bindTooltip(cpt.metadata.source_file || cpt.id, { permanent: false });
@@ -2148,10 +2148,11 @@ export default function SonderingstekeningView() {
                  : ""
              }
            </svg>`;
-      const iconSize: [number, number] = isBore ? [14, 14] : [12, 14];
+      /* 2× — gebruiker-verzoek: sondering/boring symbolen 2x zo groot */
+      const iconSize: [number, number] = isBore ? [28, 28] : [24, 28];
       const iconAnchor: [number, number] = isBore
-        ? [7, 7]
-        : [6, p.kleefmeting ? 12 : 11];
+        ? [14, 14]
+        : [12, p.kleefmeting ? 24 : 22];
       const m = L.marker([p.lat, p.lon], {
         icon: L.divIcon({
           className: isBore ? "tek-placed-bore-marker" : "tek-placed-marker",
@@ -2202,8 +2203,8 @@ export default function SonderingstekeningView() {
                        fill="${fill}" stroke="${stroke}" stroke-width="0.8" /></svg>
                      <span class="tek-marker-label tek-raster-cell-label">${cellLabel}</span>
                    </div>`,
-            iconSize: [10, 10],
-            iconAnchor: [5, 9],
+            iconSize: [20, 20], /* 2× */
+            iconAnchor: [10, 18],
           }),
           interactive: false,
         });
@@ -2458,8 +2459,8 @@ export default function SonderingstekeningView() {
                      <svg viewBox="0 0 12 12"><polygon points="1,1 11,1 6,11"
                        fill="#a1a1aa" stroke="#52525b" stroke-width="1" /></svg>
                    </div>`,
-            iconSize: [12, 12],
-            iconAnchor: [6, 11],
+            iconSize: [24, 24], /* 2× */
+            iconAnchor: [12, 22],
           }),
         });
         layer.addLayer(m);
