@@ -350,6 +350,10 @@ export default function MapView() {
       [initLat, initLon],
       initZoom,
     );
+    // Shift+drag is bij ons voor CPT-selectie (zie de selection-
+    // effect verderop). Direct hier disablen zodat de gebruiker niet
+    // per ongeluk Leaflet's BoxZoom triggert vóór die effect draait.
+    try { map.boxZoom.disable(); } catch { /* noop */ }
 
     // Build all base layers up front (cheap — they're just URL templates).
     const baseLayers: Record<string, L.TileLayer> = {};
@@ -561,6 +565,11 @@ export default function MapView() {
       // Solid grey (192,192,192) fill, red outline — matches the
       // user-requested rendering convention.
       L.geoJSON(fc, {
+        // Niet-interactieve overlay: Leaflet bindt geen mouse-handlers
+        // aan elk polygon. Voorkomt de getSizedParentNode null-crash
+        // bij snelle tab-switch (polygon → mousedown → walks dead
+        // parent DOM).
+        interactive: false,
         style: () => ({
           color: "#DC2626",       // outline = red-600
           weight: 1.1,
@@ -595,6 +604,7 @@ export default function MapView() {
       // user can see the perceelgrenzen on top of BRT/luchtfoto without
       // hiding the underlying basemap.
       L.geoJSON(fc, {
+        interactive: false, // zie reloadBag voor de toelichting
         style: () => ({
           color: "#475569",       // slate-600
           weight: 1.0,

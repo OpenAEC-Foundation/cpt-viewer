@@ -131,17 +131,25 @@ export default function SonderingstekeningTab() {
           />
           <RibbonButton
             icon={rotateIcon}
-            label={t("tekening.rotateCcw", "Roteer -90°")}
-            size="small"
-            title={t("tekening.rotateCcwHint", "Draai geselecteerd object 90° tegen de klok in")}
-            onClick={() => dispatch("ogs:tekening-rotate", { deg: -90 })}
-          />
-          <RibbonButton
-            icon={rotateIcon}
-            label={t("tekening.rotateCw", "Roteer +90°")}
-            size="small"
-            title={t("tekening.rotateCwHint", "Draai geselecteerd object 90° met de klok mee")}
-            onClick={() => dispatch("ogs:tekening-rotate", { deg: 90 })}
+            label={t("tekening.rotate", "Roteer…")}
+            size="large"
+            title={t(
+              "tekening.rotateHint",
+              "Vraag de gewenste hoek in graden (negatief = tegen de klok in). Werkt op raster of overlay.",
+            )}
+            onClick={() => {
+              // Native prompt zodat het inline-UI niet hoeft. Default
+              // -90° suggereert de gangbare CAD-rotatie; positief =
+              // klokwise (CSS-conventie), negatief = tegen-klok-in.
+              const raw = window.prompt(
+                "Roteer met hoeveel graden? (negatief = tegen de klok in)",
+                "90",
+              );
+              if (raw === null) return; // user canceled
+              const deg = parseFloat(raw.replace(",", "."));
+              if (!Number.isFinite(deg) || deg === 0) return;
+              dispatch("ogs:tekening-rotate", { deg });
+            }}
           />
           <RibbonButton
             icon={deleteIcon}
