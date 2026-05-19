@@ -185,6 +185,11 @@ interface DrawnLine {
   lon1: number;
   lat2: number;
   lon2: number;
+  /** Optionele override-kleur (hex, b.v. "#1F4FA8"). Wanneer gezet
+   *  overrijdt de kind-default (dimension=amber, line=donkergrijs).
+   *  Gebruiker zet deze via de kleur-picker in TekeningProperties
+   *  zodra een lijn geselecteerd is. */
+  color?: string;
 }
 
 interface BroFeature {
@@ -767,7 +772,8 @@ export default function SonderingstekeningView() {
       // visueel feedback krijgt na een klik in select-mode of na een
       // mirror/offset-source-keuze.
       const isSelected = selection?.kind === "line" && selection.id === ln.id;
-      const baseColor = ln.kind === "dimension" ? "#d97706" : "#36363e";
+      const baseColor = ln.color
+        ?? (ln.kind === "dimension" ? "#d97706" : "#36363e");
       const line = L.polyline(
         [[ln.lat1, ln.lon1], [ln.lat2, ln.lon2]],
         {
@@ -3245,6 +3251,19 @@ export default function SonderingstekeningView() {
         ),
       );
     };
+    // Wijzig de override-kleur van een geselecteerde lijn (via de
+    // kleur-picker in TekeningProperties). Kleur null = terug naar de
+    // kind-default (dimension=amber, line=donkergrijs).
+    const onSetLineColor = (e: Event) => {
+      const ce = e as CustomEvent<{ id: string; color: string | null }>;
+      setDrawnLines((prev) =>
+        prev.map((l) =>
+          l.id === ce.detail.id
+            ? { ...l, color: ce.detail.color ?? undefined }
+            : l,
+        ),
+      );
+    };
     const onSetPaperSize = (e: Event) => {
       const ce = e as CustomEvent<{ paperSize: PaperSize }>;
       setPaperSize(ce.detail.paperSize);
@@ -3278,6 +3297,7 @@ export default function SonderingstekeningView() {
     window.addEventListener("ogs:tekening-cad-offset", onCadOffset);
     window.addEventListener("ogs:tekening-select-mode", onSelectMode);
     window.addEventListener("ogs:tekening-set-kleefmeting", onSetKleefmeting as EventListener);
+    window.addEventListener("ogs:tekening-set-line-color", onSetLineColor as EventListener);
     window.addEventListener("ogs:tekening-toggle-freeze", onToggleFreeze);
     window.addEventListener("ogs:tekening-update-selected-overlay", onUpdateOverlay as EventListener);
     window.addEventListener("ogs:tekening-toggle-place", onTogglePlace);
@@ -3330,6 +3350,7 @@ export default function SonderingstekeningView() {
       window.removeEventListener("ogs:tekening-cad-offset", onCadOffset);
       window.removeEventListener("ogs:tekening-select-mode", onSelectMode);
       window.removeEventListener("ogs:tekening-set-kleefmeting", onSetKleefmeting as EventListener);
+      window.removeEventListener("ogs:tekening-set-line-color", onSetLineColor as EventListener);
       window.removeEventListener("ogs:tekening-toggle-freeze", onToggleFreeze);
       window.removeEventListener("ogs:tekening-update-selected-overlay", onUpdateOverlay as EventListener);
     };
@@ -3352,6 +3373,10 @@ export default function SonderingstekeningView() {
     const selectedOverlay =
       selection?.kind === "overlay" && overlay && overlay.id === selection.id
         ? overlay
+        : null;
+    const selectedLine =
+      selection?.kind === "line"
+        ? drawnLines.find((l) => l.id === selection.id) ?? null
         : null;
     // Live print-scale derived from the actual Leaflet zoom + paper.
     // 1 paper-mm = (paperPxW / paperMmW) px, which represents
@@ -3395,6 +3420,13 @@ export default function SonderingstekeningView() {
             widthMeters: selectedOverlay.widthMeters ?? 100,
           }
         : null,
+      selectedLine: selectedLine
+        ? {
+            id: selectedLine.id,
+            kind: selectedLine.kind,
+            color: selectedLine.color,
+          }
+        : null,
     };
     publishSnapshotRef.current = () => {
       window.dispatchEvent(
@@ -3402,7 +3434,7 @@ export default function SonderingstekeningView() {
       );
     };
     publishSnapshotRef.current();
-  }, [titleBlock, selection, rasters, placed, paperSize, scale, frozen, overlay, mPerPx]);
+  }, [titleBlock, selection, rasters, placed, paperSize, scale, frozen, overlay, mPerPx, drawnLines]);
 
   // ── Mirror complete tekening-state naar de module-level singleton ─
   // Aparte effect (los van het snapshot event boven) zodat we ALLE

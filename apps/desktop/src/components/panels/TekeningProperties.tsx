@@ -59,11 +59,15 @@ interface Snapshot {
    *  live als de gebruiker met het muiswiel in- of uitzoomt. */
   liveScale?: number;
   frozen?: boolean;
-  selectionKind: "raster" | "marker" | "overlay" | null;
+  selectionKind: "raster" | "marker" | "overlay" | "line" | null;
   selectionId: string | null;
   selectedRaster?: RasterSnapshot | null;
   selectedMarker?: { id: string; kleefmeting: boolean } | null;
   selectedOverlay?: OverlaySnapshot | null;
+  /** Properties van de geselecteerde lijn — id + huidige override-
+   *  kleur (undefined = kind-default). De kleur-picker in dit paneel
+   *  dispatcht `ogs:tekening-set-line-color` om hem te wijzigen. */
+  selectedLine?: { id: string; kind: "line" | "dimension"; color?: string } | null;
 }
 
 const TB_FIELDS: { key: keyof TitleBlockData; label: string }[] = [
@@ -346,6 +350,53 @@ export default function TekeningProperties() {
               onClick={deleteSelection}
             >
               Verwijder sondering
+            </button>
+          </div>
+        )}
+
+        {snap.selectionKind === "line" && snap.selectedLine && (
+          <div className="tekprops-body">
+            <p className="tekprops-hint">
+              {snap.selectedLine.kind === "dimension" ? "Maatlijn" : "Lijn"} {snap.selectedLine.id}
+            </p>
+            <label className="tekprops-field tekprops-field-wide">
+              <span>Kleur</span>
+              <input
+                type="color"
+                value={
+                  snap.selectedLine.color ??
+                  (snap.selectedLine.kind === "dimension" ? "#d97706" : "#36363e")
+                }
+                onChange={(e) =>
+                  window.dispatchEvent(
+                    new CustomEvent("ogs:tekening-set-line-color", {
+                      detail: { id: snap.selectionId!, color: e.target.value },
+                    }),
+                  )
+                }
+              />
+            </label>
+            {snap.selectedLine.color && (
+              <button
+                type="button"
+                className="tekprops-btn"
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent("ogs:tekening-set-line-color", {
+                      detail: { id: snap.selectionId!, color: null },
+                    }),
+                  )
+                }
+              >
+                Reset naar standaard
+              </button>
+            )}
+            <button
+              type="button"
+              className="tekprops-btn tekprops-btn-danger"
+              onClick={deleteSelection}
+            >
+              Verwijder lijn
             </button>
           </div>
         )}
