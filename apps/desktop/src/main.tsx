@@ -38,20 +38,26 @@ window.addEventListener("unhandledrejection", (e) => showError("unhandledrejecti
 // worden — dan crasht het op `parent.offsetWidth`. Wrap de functie
 // met een try/catch zodat dat oude-DOM-event-residue geen
 // app-wide crash veroorzaakt.
+//
+// CRITICAL: bij crash MOETEN we een geldige HTMLElement teruggeven
+// (niet null), anders crasht Leaflet's `_onDown` op `getScale(null)`
+// → drag-start faalt → pan werkt niet meer. document.body is altijd
+// safe (offsetWidth/Height > 0) en geeft scale {x:1, y:1}.
 import * as L from "leaflet";
 const _domUtil = L.DomUtil as unknown as {
   getSizedParentNode?: (el: HTMLElement) => HTMLElement | null;
 };
 if (_domUtil.getSizedParentNode) {
   const orig = _domUtil.getSizedParentNode;
-  _domUtil.getSizedParentNode = function (el: HTMLElement): HTMLElement | null {
+  _domUtil.getSizedParentNode = function (el: HTMLElement): HTMLElement {
     try {
-      return orig.call(this, el);
+      const result = orig.call(this, el);
+      // Origineel kan tegen verwachting null teruggeven als el losgekoppeld
+      // is van de DOM-tree — fallback naar document.body zodat downstream
+      // getScale niet crasht.
+      return result ?? document.body;
     } catch {
-      // Origineel crasht alleen wanneer parent === null in de loop.
-      // We geven null terug; Leaflet kan dat aan (drag-start wordt
-      // dan een no-op, geen verdere fallout).
-      return null;
+      return document.body;
     }
   };
 }

@@ -589,7 +589,7 @@
   height: 50mm;
   background: #fff;
   border: 1.5px solid #36363e;
-  font: 500 0.75rem 'Inter', system-ui, sans-serif;
+  font: 500 1.5rem 'Inter', system-ui, sans-serif; /* 0.75 × 2 */
   color: #36363e;
   pointer-events: auto;
   z-index: 1100;
@@ -607,12 +607,12 @@
   gap: 12px;
 }
 .tek-dbp-title {
-  font: 700 0.85rem var(--font-heading, 'Space Grotesk'), 'Inter', sans-serif;
+  font: 700 1.7rem var(--font-heading, 'Space Grotesk'), 'Inter', sans-serif; /* 0.85 × 2 */
   letter-spacing: -0.01em;
   flex: 0 0 auto;
 }
 .tek-dbp-address {
-  font: 400 0.72rem 'Inter', sans-serif;
+  font: 400 1.44rem 'Inter', sans-serif; /* 0.72 × 2 */
   color: rgba(250, 250, 249, 0.7);
   flex: 1;
   overflow: hidden;
@@ -620,7 +620,7 @@
   white-space: nowrap;
 }
 .tek-dbp-type {
-  font: 600 0.7rem var(--font-code, 'JetBrains Mono'), monospace;
+  font: 600 1.4rem var(--font-code, 'JetBrains Mono'), monospace; /* 0.7 × 2 */
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #d97706;
@@ -667,7 +667,9 @@
 
 .tek-db-body {
   display: grid;
-  grid-template-columns: 110px 1fr 90px;
+  /* Kolombreedtes 2× (logo 220px, format-corner 180px) zodat de
+     verdubbelde tekstgroottes daarbinnen passen zonder af te kappen. */
+  grid-template-columns: 220px 1fr 180px;
   align-items: stretch;
   min-height: 0; /* sta krimp toe binnen de grid-row */
 }
@@ -701,12 +703,12 @@
   display: block;
 }
 .tek-db-logo-text {
-  font: 700 0.85rem var(--font-heading, 'Space Grotesk'), 'Inter', sans-serif;
+  font: 700 1.7rem var(--font-heading, 'Space Grotesk'), 'Inter', sans-serif; /* 0.85 × 2 */
   color: #36363e;
 }
 .tek-db-logo-text span { color: #d97706; }
 .tek-db-logo-sub {
-  font: 500 0.6rem var(--font-code, 'JetBrains Mono'), monospace;
+  font: 500 1.2rem var(--font-code, 'JetBrains Mono'), monospace; /* 0.6 × 2 */
   color: #71717a;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -729,13 +731,13 @@
 .tek-db-cell:nth-child(4n) { border-right: 1px solid #36363e; }
 .tek-db-cell:nth-last-child(-n+4) { border-bottom: none; }
 .tek-db-cell-label {
-  font: 500 0.58rem 'Inter', sans-serif;
+  font: 500 1.16rem 'Inter', sans-serif; /* 0.58 × 2 */
   color: #71717a;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 .tek-db-cell-val {
-  font: 600 0.78rem 'Inter', sans-serif;
+  font: 600 1.56rem 'Inter', sans-serif; /* 0.78 × 2 */
   color: #36363e;
 }
 .tek-db-cell-val.mono { font-family: var(--font-code, 'JetBrains Mono'), monospace; }
@@ -751,13 +753,13 @@
   background: #fafaf9;
 }
 .tek-db-geo-label {
-  font: 500 0.55rem 'Inter', sans-serif;
+  font: 500 1.1rem 'Inter', sans-serif; /* 0.55 × 2 */
   color: #71717a;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 .tek-db-geo-format {
-  font: 700 1.4rem var(--font-heading, 'Space Grotesk'), 'Inter', sans-serif;
+  font: 700 2.8rem var(--font-heading, 'Space Grotesk'), 'Inter', sans-serif; /* 1.4 × 2 */
   color: #d97706;
 }
 

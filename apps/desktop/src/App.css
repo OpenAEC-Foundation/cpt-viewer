@@ -1276,6 +1276,14 @@ body,
   white-space: nowrap;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
 }
+/* Live preview tijdens mousemove (vóór de 2e klik). Iets zachter
+   gestyld dan de definitieve label zodat de gebruiker visueel kan
+   zien dat de meting nog niet vastgelegd is. */
+.cpt-measure-label-preview span {
+  background: rgba(250, 250, 249, 0.92);
+  border-style: dashed;
+  opacity: 0.85;
+}
 
 /* ── GisLayerPanel: layer-toggle list ── */
 .gis-layer-list {

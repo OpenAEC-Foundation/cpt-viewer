@@ -242,6 +242,11 @@ export default function MapView() {
   const cptLayerRef = useRef<L.LayerGroup | null>(null);
   const distLayerRef = useRef<L.LayerGroup | null>(null);
   const measureLayerRef = useRef<L.LayerGroup | null>(null);
+  // Aparte layer voor de LIVE meet-preview (geel-stippelijn + label
+  // tijdens mousemove na de 1e klik, vóór de 2e klik). Apart gehouden
+  // van measureLayerRef zodat we de preview kunnen wissen zonder de
+  // blauwe start-circle te verliezen.
+  const measurePreviewLayerRef = useRef<L.LayerGroup | null>(null);
   // Topotijdreis (historical maps) overlay. Created lazily — there's one
   // layer instance per active year because each service is a separate
   // ArcGIS endpoint. Disposed + recreated when the slider year changes.
@@ -521,7 +526,8 @@ export default function MapView() {
     broBoresLayerRef.current = L.layerGroup().addTo(map);
     distLayerRef.current = L.layerGroup().addTo(map);   // pairwise distance lines
     cptLayerRef.current = L.layerGroup().addTo(map);    // project sondering markers
-    measureLayerRef.current = L.layerGroup().addTo(map); // measure lines
+    measureLayerRef.current = L.layerGroup().addTo(map); // measure lines (definitief)
+    measurePreviewLayerRef.current = L.layerGroup().addTo(map); // live preview tijdens 2e klik
     // WFS-backed overlays — created here but only populated when their
     // toggle is enabled (see onLayerToggle below). They start NOT
     // attached so the early viewport doesn't trigger a useless fetch.
@@ -1064,6 +1070,7 @@ export default function MapView() {
       measureStartRef.current = null;
       // Clear any prior measurement (highlight + line + label) on every toggle.
       measureLayerRef.current?.clearLayers();
+      measurePreviewLayerRef.current?.clearLayers();
       setStatus(measureModeRef.current
         ? "Meet-modus: klik op een punt of sondering om te starten"
         : "Meet-modus uit");
@@ -1108,6 +1115,7 @@ export default function MapView() {
       const start = measureStartRef.current;
       // Draw line + label
       measureLayerRef.current?.clearLayers();
+      measurePreviewLayerRef.current?.clearLayers();
       const line = L.polyline(
         [[start.lat, start.lon], [lat, lon]],
         { color: "#2563EB", weight: 2.5, opacity: 0.9 },
@@ -1134,6 +1142,42 @@ export default function MapView() {
       measureStartRef.current = null;
     };
 
+    /** Live preview tijdens mousemove: na de 1e klik trekt de cursor
+     *  een gele stippellijn + afstandlabel mee zodat de gebruiker kan
+     *  inschatten waar de 2e klik moet landen. Stopt met renderen
+     *  zodra meetmodus uit gaat of de 2e klik is gedaan. */
+    const onMouseMovePreview = (e: L.LeafletMouseEvent) => {
+      if (!measureModeRef.current) return;
+      const start = measureStartRef.current;
+      const previewLayer = measurePreviewLayerRef.current;
+      if (!start || !previewLayer) return;
+      previewLayer.clearLayers();
+      const dist = mapRef.current?.distance(
+        [start.lat, start.lon],
+        [e.latlng.lat, e.latlng.lng],
+      ) ?? 0;
+      const line = L.polyline(
+        [[start.lat, start.lon], [e.latlng.lat, e.latlng.lng]],
+        { color: "#2563EB", weight: 1.5, opacity: 0.7, dashArray: "5 4" },
+      );
+      previewLayer.addLayer(line);
+      const mid = L.latLng(
+        (start.lat + e.latlng.lat) / 2,
+        (start.lon + e.latlng.lng) / 2,
+      );
+      const label = L.marker(mid, {
+        icon: L.divIcon({
+          className: "cpt-measure-label cpt-measure-label-preview",
+          html: `<span>${formatDist(dist)}</span>`,
+          iconSize: [80, 22],
+          iconAnchor: [40, 11],
+        }),
+        interactive: false,
+      });
+      previewLayer.addLayer(label);
+    };
+    map.on("mousemove", onMouseMovePreview);
+
     // Expose handleMeasurePoint to the project-CPT useEffect via the
     // measureLayerRef host (we use a closure-stable ref attached to it).
     (measureLayerRef.current as unknown as { __handleMeasurePoint?: typeof handleMeasurePoint }).__handleMeasurePoint = handleMeasurePoint;
@@ -1147,6 +1191,7 @@ export default function MapView() {
         setMeasureMode(false);
         measureStartRef.current = null;
         measureLayerRef.current?.clearLayers();
+        measurePreviewLayerRef.current?.clearLayers();
         setStatus("Meet-modus geannuleerd");
       }
     };
@@ -1273,6 +1318,7 @@ export default function MapView() {
       map.off("moveend", onMoveEnd);
       map.off("zoomend", onZoomEnd);
       map.off("click", onMapClick);
+      map.off("mousemove", onMouseMovePreview);
       if (panTimer) window.clearTimeout(panTimer);
       pendingAbort?.abort();
       adressenLayerRef.current?.detach();

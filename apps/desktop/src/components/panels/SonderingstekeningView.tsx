@@ -4066,21 +4066,18 @@ function ScaleBar({
   const MM_TO_PX = 96 / 25.4;
   const printN = mPerPx * MM_TO_PX * 1000;
 
-  // Vaste bar-meters per scale-range. Cap op 100m voor alle scales
-  // ≥ 1:1000 (gebruiker-verzoek "schaalstok mag naar 100 meter").
+  // Gebruiker-verzoek: schaalbalk altijd op 100 meter. Bij hele
+  // close-up schalen (1:200 en kleiner) past 100m niet op het papier
+  // (500mm bar bij 1:200) — dan kickt de safety-net hieronder in en
+  // valt terug op een nice round value die wél past.
   //
-  //   1:200  →  5m bar  = 25mm op papier
-  //   1:500  → 25m bar  = 50mm op papier
-  //   1:999  → 25m bar  = 25mm op papier
-  //   1:1000 → 100m bar = 100mm op papier (sprong naar de 100m-cap)
-  //   1:2000 → 100m bar = 50mm op papier
-  //   1:5000 → 100m bar = 20mm op papier (klein maar leesbaar)
-  let totalM: number;
-  if (printN < 100) totalM = 2;
-  else if (printN < 250) totalM = 5;
-  else if (printN < 600) totalM = 10;
-  else if (printN < 1000) totalM = 25;
-  else totalM = 100;
+  //   1:500  → 100m bar = 200mm op papier
+  //   1:1000 → 100m bar = 100mm op papier
+  //   1:2000 → 100m bar =  50mm op papier
+  //   1:5000 → 100m bar =  20mm op papier
+  //   1:200  → safety-net → 25m bar = 125mm op papier
+  let totalM = 100;
+  void printN; /* niet meer gebruikt, behouden voor de berekening hierboven */
   // Safety-net: als bar buitenproportioneel breed wordt (extreme
   // zoom-in op het papier), val terug op de oude auto-fit-logica.
   const proposedPx = totalM / mPerPx;
