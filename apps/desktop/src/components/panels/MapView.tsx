@@ -65,10 +65,17 @@ function createTopotijdreisLayer(serviceId: string): L.GridLayer {
     `https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/` +
     `services/Historische_tijdreis_${serviceId}/MapServer/tile`;
 
+  // maxZoom 22 (i.p.v. de oude 18) zodat de gebruiker verder kan
+  // inzoomen om historische kaart-details te bestuderen. Het RD-tile-
+  // raster heeft een eindige resolutie; bovenaan de pyramide pakt
+  // `bestLevel` automatisch de fijnste beschikbare RD-zoom + de
+  // canvas-reproject zorgt voor nette oversampling (pixelige bron-
+  // tegels worden vergroot getekend in plaats van een gat).
   const layer = L.gridLayer({
     tileSize: 256,
     minZoom: 6,
-    maxZoom: 18,
+    maxZoom: 22,
+    maxNativeZoom: 18,
     opacity: 1.0,
     attribution: "Topotijdreis © Kadaster / Esri NL",
   }) as L.GridLayer & {
@@ -527,6 +534,39 @@ export default function MapView() {
         attribution: "Ruimtelijkeplannen © Kadaster | PDOK",
         maxZoom: 20,
         opacity: 0.7,
+      },
+    );
+    // ── Geomorfologische kaart (BRO/GMM v2.0) ─────────────────────
+    // Toont landvormen + ontstaansgeschiedenis (rivierterras, duin,
+    // strandwal enz.) als gekleurde polygonen. Nuttig als onderlegger
+    // voor geotechnisch onderzoek omdat het direct iets zegt over de
+    // bodemopbouw van de eerste paar meter. Endpoint sinds 2025
+    // verhuisd van /tno/ naar /bzk/.
+    baseLayers["geomorfologie"] = L.tileLayer.wms(
+      "https://service.pdok.nl/bzk/bro-geomorfologischekaart/wms/v2_0",
+      {
+        layers: "geomorphological_area",
+        format: "image/png",
+        transparent: true,
+        attribution: "BRO Geomorfologische kaart © BZK / PDOK",
+        maxZoom: 20,
+        opacity: 0.65,
+      },
+    );
+    // ── Bodemkaart 1:50.000 (BRO/SGM v1.0) ────────────────────────
+    // Gekleurde polygonen per bodemtype (veen, zand, klei enz.).
+    // Voor projecten op rivierklei/holoceen direct zichtbaar in de
+    // achtergrond, plus de bodemtypering komt uit de geotechnische
+    // basisdata van Wageningen UR.
+    baseLayers["bodemkaart"] = L.tileLayer.wms(
+      "https://service.pdok.nl/bzk/bro-bodemkaart/wms/v1_0",
+      {
+        layers: "soilarea",
+        format: "image/png",
+        transparent: true,
+        attribution: "BRO Bodemkaart © BZK / PDOK",
+        maxZoom: 20,
+        opacity: 0.65,
       },
     );
     baseLayersRef.current = baseLayers;
@@ -1044,6 +1084,32 @@ export default function MapView() {
         } else {
           al.detach();
           if (map.hasLayer(al.group)) map.removeLayer(al.group);
+        }
+        return;
+      }
+
+      // Kabels & leidingen: pseudo-layer. Geen publieke WMS sinds Liander
+      // hun overview-layer eind 2025 uit productie heeft genomen. Bij
+      // aanvinken tonen we een nette popup met de KLIC-route — daarna
+      // forceren we de toggle weer uit zodat het vinkje niet "actief"
+      // blijft hangen.
+      if (id === "kabels-leidingen") {
+        if (enabled && !wasEnabled) {
+          alert(
+            "Kabels & leidingen — geen publieke WMS-laag beschikbaar.\n\n" +
+            "Sinds 10 december 2025 host PDOK geen landelijke kabel/leiding-" +
+            "viewer meer (Liander dataset uit productie). Voor een graafmelding " +
+            "moet je een KLIC-aanvraag doen via:\n\n" +
+            "https://www.kadaster.nl/zakelijk/producten/graafwerk/klic-viewer\n\n" +
+            "De aanvraag is gratis en de tekeningen krijg je binnen 1-3 werkdagen.",
+          );
+          // Reset het vinkje — er wordt geen laag aan de kaart toegevoegd.
+          window.dispatchEvent(
+            new CustomEvent("ogs:layer-toggle", {
+              detail: { view: "map", id: "kabels-leidingen", enabled: false },
+            }),
+          );
+          enabledLayersRef.current[id] = false;
         }
         return;
       }

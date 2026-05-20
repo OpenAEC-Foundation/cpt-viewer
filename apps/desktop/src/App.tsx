@@ -166,38 +166,54 @@ function App() {
 
   // Browser-fallback drag-and-drop: alleen registreren als we NIET in
   // Tauri draaien (anders zou je dubbele drop-events krijgen — Tauri's
-  // webview vangt OS-drops al af). Hangt aan `document` zodat de hele
+  // webview vangt OS-drops al af). Hangt aan `window` zodat de hele
   // app-area als drop-zone fungeert.
+  //
+  // Counter-based aanpak: `dragenter` op een child element triggert
+  // gelijk een `dragleave` op de parent — een naïeve setDragOver(false)
+  // op leave doet de overlay daardoor flikkeren. We tellen daarom enters
+  // minus leaves; overlay zichtbaar zolang teller > 0.
   useEffect(() => {
     if (isTauri()) return;
 
     const isOpenableExt = (name: string) =>
       /\.(gef|xml|ifcgis|ifcgeo|ifcx)$/i.test(name);
 
+    let depth = 0;
+
+    const hasFiles = (e: DragEvent): boolean => {
+      const types = e.dataTransfer?.types;
+      if (!types) return false;
+      // `types` kan een DOMStringList zijn — convert via Array.from voor
+      // includes(). "Files" verschijnt zodra de gebruiker iets van buiten
+      // de browser sleept (echte bestand), niet bij interne text-drags.
+      return Array.from(types as ArrayLike<string>).includes("Files");
+    };
+
     const onDragEnter = (e: DragEvent) => {
-      if (!e.dataTransfer) return;
-      // Toon overlay alleen bij externe drops, niet bij intern slepen.
-      if (Array.from(e.dataTransfer.types).includes("Files")) {
-        e.preventDefault();
-        setDragOver(true);
-      }
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth++;
+      if (depth === 1) setDragOver(true);
     };
     const onDragOver = (e: DragEvent) => {
-      if (!e.dataTransfer) return;
-      if (Array.from(e.dataTransfer.types).includes("Files")) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "copy";
-      }
+      if (!hasFiles(e)) return;
+      // preventDefault is verplicht — zonder dit gaat de browser het
+      // bestand zélf openen (b.v. de XML inline in een nieuwe tab tonen).
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
     };
     const onDragLeave = (e: DragEvent) => {
-      // Alleen weg-flikkeren als de cursor de hele document verlaat —
-      // niet bij ieder kindelement.
-      if (e.relatedTarget === null) setDragOver(false);
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragOver(false);
     };
     const onDrop = async (e: DragEvent) => {
       e.preventDefault();
+      depth = 0;
       setDragOver(false);
       const files = Array.from(e.dataTransfer?.files ?? []);
+      let openedAny = false;
       for (const f of files) {
         if (!isOpenableExt(f.name)) {
           console.warn("Drop genegeerd — onbekende extensie:", f.name);
@@ -206,6 +222,7 @@ function App() {
         try {
           const text = await f.text();
           await openContentByFilename(text, f.name);
+          openedAny = true;
         } catch (err) {
           console.error("Browser drop open failed for", f.name, err);
           const msg = err instanceof Error ? err.message : String(err);
@@ -216,17 +233,21 @@ function App() {
           );
         }
       }
+      if (openedAny) {
+        // Verberg de auto-load demo-banner zodra de gebruiker zelf iets
+        // heeft geopend — die was alleen bedoeld als "leeg-staat" hint.
+      }
     };
 
-    document.addEventListener("dragenter", onDragEnter);
-    document.addEventListener("dragover", onDragOver);
-    document.addEventListener("dragleave", onDragLeave);
-    document.addEventListener("drop", onDrop);
+    window.addEventListener("dragenter", onDragEnter);
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("drop", onDrop);
     return () => {
-      document.removeEventListener("dragenter", onDragEnter);
-      document.removeEventListener("dragover", onDragOver);
-      document.removeEventListener("dragleave", onDragLeave);
-      document.removeEventListener("drop", onDrop);
+      window.removeEventListener("dragenter", onDragEnter);
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("drop", onDrop);
     };
   }, []);
 

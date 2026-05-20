@@ -28,6 +28,9 @@ export type LayerId =
   | "bag"
   | "bgt"
   | "bestemmingsplan"
+  | "geomorfologie"
+  | "bodemkaart"
+  | "kabels-leidingen"
   | "bro-sonderingen"
   | "bro-boringen"
   | "bro-grondwaterputten"
@@ -77,6 +80,15 @@ const LAYER_DEFS: LayerDef[] = [
   // PDOK "Ruimtelijkeplannen" — gemeentelijke bestemmingsplannen via
   // WMS. Toont gekleurde zonering (Wonen, Bedrijf, Groen, Verkeer, …).
   { id: "bestemmingsplan", label: "Bestemmingsplan", group: "overlay", defaultOn: false },
+  // Geologische / bodemkundige onderleggers — gekleurde polygonen
+  // vanuit de BRO. Direct nuttig voor geotechniek omdat ze de
+  // ondergrond categoriseren (geomorf: landvormen; bodem: textuur).
+  { id: "geomorfologie", label: "Geomorfologische kaart", group: "overlay", defaultOn: false },
+  { id: "bodemkaart", label: "Bodemkaart 1:50.000", group: "overlay", defaultOn: false },
+  // Kabels & leidingen — pseudo-layer: BRO/PDOK heeft sinds eind 2025
+  // geen publieke landelijke WMS meer (Liander uit productie). Toggle
+  // toont een info-popup met KLIC-link i.p.v. een laag.
+  { id: "kabels-leidingen", label: "Kabels & leidingen (KLIC)", group: "overlay", defaultOn: false },
 
   // BRO data layers — sonderingen on by default so the map shows public CPTs
   // immediately when the user opens the Kaart tab.
