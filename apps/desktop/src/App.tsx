@@ -22,8 +22,9 @@ import RightPanel from "./components/panels/RightPanel";
 import TekeningProperties from "./components/panels/TekeningProperties";
 import { getDetachedParams, useWindowManager } from "./hooks/useWindowManager";
 import { getSetting, setSetting } from "./store";
-import { openPathByExtension } from "./store/useCptStore";
+import { openPathByExtension, openContentByFilename, useCptStore } from "./store/useCptStore";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { isTauri } from "./utils/isTauri";
 import "./themes.css";
 import "./App.css";
 
@@ -119,14 +120,20 @@ function App() {
   // Drag-and-drop: receive native OS file drops and route them to the
   // appropriate doc-loader by file extension. GEF/XML → CptDocument tab,
   // .ifcgis → ProjectDocument tab.
+  //
+  // Twee implementaties: in Tauri (desktop-window) gebruiken we
+  // getCurrentWebview().onDragDropEvent — die levert echte
+  // OS-paden. In de browser-modus (localhost zonder Tauri-runtime)
+  // vallen we terug op standaard HTML5-drop-events op `document` met
+  // File-objects die we via `file.text()` lezen.
   const [dragOver, setDragOver] = useState(false);
   useEffect(() => {
     const isOpenable = (path: string) =>
       /\.(gef|xml|ifcgis|ifcgeo|ifcx)$/i.test(path);
 
     // Bail out in browser-test contexts (geen Tauri-runtime) — getCurrentWebview
-    // crasht dan synchroon op undefined.metadata. We laten in dat geval simpel
-    // drag-drop voor wat-ie is; native DOM dragover blijft natuurlijk werken.
+    // crasht dan synchroon op undefined.metadata. In dat geval registreren
+    // we de HTML5-drag-drop listeners verderop.
     let unsubscribePromise: Promise<() => void> | null = null;
     try {
       unsubscribePromise = getCurrentWebview().onDragDropEvent(async (event) => {
@@ -155,6 +162,101 @@ function App() {
     return () => {
       if (unsubscribePromise) void unsubscribePromise.then((unsub) => unsub());
     };
+  }, []);
+
+  // Browser-fallback drag-and-drop: alleen registreren als we NIET in
+  // Tauri draaien (anders zou je dubbele drop-events krijgen — Tauri's
+  // webview vangt OS-drops al af). Hangt aan `document` zodat de hele
+  // app-area als drop-zone fungeert.
+  useEffect(() => {
+    if (isTauri()) return;
+
+    const isOpenableExt = (name: string) =>
+      /\.(gef|xml|ifcgis|ifcgeo|ifcx)$/i.test(name);
+
+    const onDragEnter = (e: DragEvent) => {
+      if (!e.dataTransfer) return;
+      // Toon overlay alleen bij externe drops, niet bij intern slepen.
+      if (Array.from(e.dataTransfer.types).includes("Files")) {
+        e.preventDefault();
+        setDragOver(true);
+      }
+    };
+    const onDragOver = (e: DragEvent) => {
+      if (!e.dataTransfer) return;
+      if (Array.from(e.dataTransfer.types).includes("Files")) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }
+    };
+    const onDragLeave = (e: DragEvent) => {
+      // Alleen weg-flikkeren als de cursor de hele document verlaat —
+      // niet bij ieder kindelement.
+      if (e.relatedTarget === null) setDragOver(false);
+    };
+    const onDrop = async (e: DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      for (const f of files) {
+        if (!isOpenableExt(f.name)) {
+          console.warn("Drop genegeerd — onbekende extensie:", f.name);
+          continue;
+        }
+        try {
+          const text = await f.text();
+          await openContentByFilename(text, f.name);
+        } catch (err) {
+          console.error("Browser drop open failed for", f.name, err);
+          const msg = err instanceof Error ? err.message : String(err);
+          alert(
+            `Kon ${f.name} niet openen in browser-modus:\n${msg}\n\n` +
+            "Tip: BHR-GT XML + GMW XML + GEF werken in de browser. " +
+            "Voor BRO CPT-XML en projectbestanden heb je de desktop-versie nodig.",
+          );
+        }
+      }
+    };
+
+    document.addEventListener("dragenter", onDragEnter);
+    document.addEventListener("dragover", onDragOver);
+    document.addEventListener("dragleave", onDragLeave);
+    document.addEventListener("drop", onDrop);
+    return () => {
+      document.removeEventListener("dragenter", onDragEnter);
+      document.removeEventListener("dragover", onDragOver);
+      document.removeEventListener("dragleave", onDragLeave);
+      document.removeEventListener("drop", onDrop);
+    };
+  }, []);
+
+  // Auto-load example.gef in browser-modus zodra de app voor het eerst
+  // mount én er nog geen documenten open zijn. Geeft een directe demo-
+  // ervaring voor bezoekers van de live webdemo zonder dat ze eerst
+  // moeten weten waar ze klikken. In Tauri (desktop) doen we dit niet
+  // — daar laten we de gebruiker zelf File → Open kiezen.
+  const autoloadDoneRef = useRef(false);
+  useEffect(() => {
+    if (isTauri() || autoloadDoneRef.current) return;
+    const docs = useCptStore.getState().documents;
+    if (docs.length > 0) {
+      autoloadDoneRef.current = true;
+      return;
+    }
+    autoloadDoneRef.current = true;
+    (async () => {
+      try {
+        const res = await fetch("./example.gef");
+        if (!res.ok) {
+          console.warn("Auto-load example.gef: HTTP", res.status);
+          return;
+        }
+        const text = await res.text();
+        await openContentByFilename(text, "example.gef");
+      } catch (err) {
+        console.warn("Auto-load example.gef failed:", err);
+      }
+    })();
   }, []);
 
   // Allow other components (eg. ReportPreview's sidebar action) to open

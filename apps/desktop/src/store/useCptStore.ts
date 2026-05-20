@@ -668,17 +668,44 @@ export function scheduleIfcGenerate(doc: AppDocument): void {
 // ─── External helpers ────────────────────────────────────────────
 
 /**
- * Parses a CPT (GEF / BRO-XML) via the `open_cpt` Tauri command and
- * opens it as a brand-new CptDocument tab. Always creates a new tab —
- * opening a CPT does NOT push it into the currently active project.
- * (Use `addCptToActiveProject` for that explicit flow.)
+ * Parses a CPT (GEF / BRO-XML) via de `open_cpt` Tauri-command en
+ * opent het als nieuwe CptDocument-tab. Altijd nieuwe tab — opent
+ * GEEN CPT in een bestaand project (gebruik `addCptToActiveProject`
+ * voor die flow).
+ *
+ * Browser-fallback: als `invoke()` faalt (geen Tauri-runtime, of
+ * `open_cpt` command niet beschikbaar) en de content er als GEF
+ * uitziet, gebruiken we de pure-TS `parseGef` parser zodat de
+ * webversie van de app GEF-bestanden óók kan openen.
  */
 export async function loadCptFromContent(
   content: string,
   filename: string,
   path?: string,
 ): Promise<Cpt> {
-  const cpt = await invoke<Cpt>("open_cpt", { content, filename });
+  let cpt: Cpt;
+  try {
+    cpt = await invoke<Cpt>("open_cpt", { content, filename });
+  } catch (invokeErr) {
+    // Browser-fallback: probeer de TS-GEF-parser. Voor BRO-CPT-XML
+    // hebben we (nog) geen TS-port — die geeft een nette error door.
+    const { looksLikeGef, parseGef } = await import("../types/gefParser");
+    if (looksLikeGef(content)) {
+      try {
+        cpt = parseGef(content, filename);
+      } catch (parseErr) {
+        throw new Error(
+          `Kon GEF niet parsen in browser-modus: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`,
+        );
+      }
+    } else {
+      // Geen GEF + geen Tauri = niets te doen.
+      throw new Error(
+        `Kon ${filename} niet openen: ${invokeErr instanceof Error ? invokeErr.message : String(invokeErr)}. ` +
+        `(BRO-CPT-XML vereist de desktop-versie — geen TS-parser beschikbaar.)`,
+      );
+    }
+  }
   let createdDoc: CptDocument | null = null;
   useCptStore.setState((s) => {
     const doc: CptDocument = {

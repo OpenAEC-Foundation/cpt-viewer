@@ -11,6 +11,7 @@ import {
 } from "../../store/useCptStore";
 import { isTauri } from "../../utils/isTauri";
 import { pickFiles } from "../../utils/browserFilePicker";
+import { saveJsonAsFile } from "../../utils/browserSave";
 import {
   getLatestTekening,
   tekeningStateToIfcgis,
@@ -109,18 +110,21 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
       alert("Geen project actief — open of maak een .ifcgeo project.");
       return;
     }
-    const dst = await save({
-      defaultPath: `${activeDoc.meta.title || "project"}.ifcgeo`,
-      // `.ifcgeo` is sinds 2026 de officiële extensie voor zowel
-      // single-CPT-snapshots als hele projecten. De CONTENT is 100%
-      // IFCX-shaped (IFC5 alpha JSON); de loader sniffed het schema
-      // om project vs single te onderscheiden. `.ifcgis` en `.ifcx`
-      // blijven leesbaar in de open-dialog (legacy bestanden).
-      filters: [
-        { name: "Open Geotechniek Studio bestand", extensions: ["ifcgeo", "ifcgis", "ifcx"] },
-      ],
-    });
-    if (!dst) return;
+    const defaultName = `${activeDoc.meta.title || "project"}.ifcgeo`;
+    const tauriDst = isTauri()
+      ? await save({
+          defaultPath: defaultName,
+          // `.ifcgeo` is sinds 2026 de officiële extensie voor zowel
+          // single-CPT-snapshots als hele projecten. De CONTENT is 100%
+          // IFCX-shaped (IFC5 alpha JSON); de loader sniffed het schema
+          // om project vs single te onderscheiden. `.ifcgis` en `.ifcx`
+          // blijven leesbaar in de open-dialog (legacy bestanden).
+          filters: [
+            { name: "Open Geotechniek Studio bestand", extensions: ["ifcgeo", "ifcgis", "ifcx"] },
+          ],
+        })
+      : null;
+    if (isTauri() && !tauriDst) return;
     try {
       // Project-meta → ifcgis ProjectInfo (snake_case + 'type' veld).
       const meta = activeDoc.meta;
@@ -193,10 +197,17 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
         ...(titleBlock ? { title_block: titleBlock } : {}),
         ...(deliverable ? { deliverable } : {}),
       };
-      await invoke("save_project_ifcgis_full", {
-        payload,
-        path: dst,
-      });
+      if (isTauri() && tauriDst) {
+        await invoke("save_project_ifcgis_full", {
+          payload,
+          path: tauriDst,
+        });
+      } else {
+        // Browser-fallback: download het project als JSON via showSaveFilePicker
+        // (Chrome/Edge) of <a download> (overige browsers). Geen Rust-zijde
+        // validatie — de gebruiker krijgt de raw payload.
+        await saveJsonAsFile(payload, defaultName);
+      }
       onClose();
     } catch (err) {
       console.error("save_project_ifcgis_full failed", err);
@@ -218,6 +229,24 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
           ? "BRO XML (.xml)"
           : "Geotechniek-object (.ifcgeo)";
       const baseName = activeDoc.cpt.id || "sondering";
+      // Browser-modus: alleen .ifcgeo (JSON-snapshot) wordt
+      // ondersteund — GEF + BRO-XML serializers zitten in Rust en
+      // hebben geen TS-port. Geef de gebruiker een duidelijke melding
+      // in plaats van een lege download.
+      if (!isTauri()) {
+        if (format !== "ifcgeo") {
+          alert(
+            "Exporteren naar GEF of BRO-XML vereist de desktop-versie " +
+              "(serializer zit in Rust). In de webversie kun je wel " +
+              "naar .ifcgeo (JSON-snapshot) exporteren.",
+          );
+          return;
+        }
+        await saveJsonAsFile(activeDoc.cpt, `${baseName}.ifcgeo`);
+        setShowCptSaveAsMenu(false);
+        onClose();
+        return;
+      }
       const dst = await save({
         defaultPath: `${baseName}.${ext}`,
         filters: [{ name: filterName, extensions: [ext] }],
