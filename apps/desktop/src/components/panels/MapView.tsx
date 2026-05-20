@@ -15,6 +15,14 @@ import {
   openGwpFromBroId,
 } from "../../store/useCptStore";
 import { setLayerLive } from "../../store/tekeningState";
+import { isTauri } from "../../utils/isTauri";
+import {
+  fetchBroCpts,
+  fetchBroBores,
+  fetchBroCptXml,
+  fetchBroBoreXml,
+  type BroBBox,
+} from "../../utils/broApiClient";
 // Topotijdreis slider lives in the GisLayerPanel (left side, with the
 // other map layer controls) — not in this view's bottom bar.
 
@@ -789,9 +797,18 @@ export default function MapView() {
       const tasks: Promise<void>[] = [];
       let cptCount = 0;
       let boreCount = 0;
+      // BRO publiek API (publiek.broservices.nl) heeft CORS-headers
+      // dus we kunnen 'm in browser direct aanroepen via broApiClient.
+      // In Tauri blijven we de Rust-command gebruiken (zelfde XML
+      // parser, maar dan in quick-xml — sneller voor grote payloads).
+      const inTauri = isTauri();
+      const broBbox: BroBBox = bbox;
       if (sondOn) {
+        const cptPromise = inTauri
+          ? invoke<BroFeature[]>("fetch_bro_area", { bbox })
+          : fetchBroCpts(broBbox);
         tasks.push(
-          invoke<BroFeature[]>("fetch_bro_area", { bbox })
+          cptPromise
             .then((features) => {
               if (myAbort.signal.aborted) return;
               broLayerRef.current?.clearLayers();
@@ -812,8 +829,11 @@ export default function MapView() {
         broLayerRef.current?.clearLayers();
       }
       if (boresOn) {
+        const borePromise = inTauri
+          ? invoke<BroFeature[]>("fetch_bro_bores", { bbox })
+          : fetchBroBores(broBbox);
         tasks.push(
-          invoke<BroFeature[]>("fetch_bro_bores", { bbox })
+          borePromise
             .then((features) => {
               if (myAbort.signal.aborted) return;
               broBoresLayerRef.current?.clearLayers();
@@ -1022,10 +1042,20 @@ export default function MapView() {
         // BoreDocument. All other actions (merge / addToProject) only
         // apply to CPTs — those buttons aren't rendered on bore popups.
         const kind = a.getAttribute("data-kind") ?? "cpt";
+        // Helper: kies tussen Tauri-invoke (desktop) of directe browser
+        // fetch via broApiClient (webdemo). Beide retourneren de raw XML.
+        const fetchCptXml = (broId: string) =>
+          isTauri()
+            ? invoke<string>("fetch_bro_cpt", { broId })
+            : fetchBroCptXml(broId);
+        const fetchBoreXmlForId = (broId: string) =>
+          isTauri()
+            ? invoke<string>("fetch_bro_bore", { broId })
+            : fetchBroBoreXml(broId);
         if (add) {
           await addBroToActiveProject(id);
         } else if (merge) {
-          const xml = await invoke<string>("fetch_bro_cpt", { broId: id });
+          const xml = await fetchCptXml(id);
           const existing = activeCptIdRef.current;
           if (!existing) {
             await loadCptFromContent(xml, `${id}.xml`);
@@ -1033,10 +1063,10 @@ export default function MapView() {
             await mergeIntoNewProject(existing, xml, `${id}.xml`);
           }
         } else if (kind === "bore") {
-          const xml = await invoke<string>("fetch_bro_bore", { broId: id });
+          const xml = await fetchBoreXmlForId(id);
           await loadBoreFromContent(xml, `${id}.xml`);
         } else {
-          const xml = await invoke<string>("fetch_bro_cpt", { broId: id });
+          const xml = await fetchCptXml(id);
           await loadCptFromContent(xml, `${id}.xml`);
         }
         map.closePopup();
