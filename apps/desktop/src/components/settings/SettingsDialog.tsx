@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { LANGUAGES, changeLanguage } from "../../i18n/config";
 import { getSetting, setSetting } from "../../store";
+import { useAllExtensions, setExtension, type ExtensionId } from "../../hooks/useExtensions";
 import Modal from "../Modal";
 import ThemedSelect from "../ThemedSelect";
 import "../ThemedSelect.css";
@@ -22,7 +23,7 @@ const THEME_OPTIONS = [
    Voorbeeld met domein-tab:
      const TAB_IDS = ["general", "appearance", "calculation", "about"] as const;
    ─────────────────────────────────────────────────────────── */
-const TAB_IDS = ["general", "appearance", "about"] as const;
+const TAB_IDS = ["general", "appearance", "extensions", "about"] as const;
 
 export function applyTheme(theme?: string) {
   document.documentElement.setAttribute("data-theme", theme || "light");
@@ -152,6 +153,7 @@ export default function SettingsDialog({
           {activeTab === "appearance" && (
             <AppearanceTabContent theme={draftTheme} onThemeSelect={handleThemePreview} />
           )}
+          {activeTab === "extensions" && <ExtensionsTabContent />}
           {activeTab === "about" && <AboutTabContent />}
         </div>
       </div>
@@ -280,6 +282,78 @@ function ThemeDropdown({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─── Extensies Tab ────────────────────────────────────────
+   Optionele app-modules die de gebruiker handmatig aanzet.
+   Default UIT zodat een verse installatie alleen het kern-
+   werkflow toont; de gebruiker kiest welke extra tabs/knoppen
+   ze willen. State zit in `preferences.json` via `useExtensions`.
+   ─────────────────────────────────────────────────────────── */
+function ExtensionsTabContent() {
+  const exts = useAllExtensions();
+
+  const items: Array<{
+    id: ExtensionId;
+    title: string;
+    description: string;
+  }> = [
+    {
+      id: "rapport",
+      title: "Rapport (PDF-generator)",
+      description:
+        "Voegt de tab 'Rapport' toe — genereert per-sondering pagina's, voorblad, coördinatentabel en overzichtskaart als PDF in OpenAEC huisstijl.",
+    },
+    {
+      id: "tekening",
+      title: "Situatietekening",
+      description:
+        "Voegt de tab 'Situatietekening' toe — CAD-papier (A2/A3) met sonderingen op kaart, kader, schaalbalk, snap-systeem, overlays en export naar PDF.",
+    },
+    {
+      id: "offertes",
+      title: "Offertes opvragen",
+      description:
+        "Voegt de knop 'Offertes opvragen' toe aan de Situatietekening-ribbon (vereist de Situatietekening-extensie). Opent een dialog met de dichtsbijzijnde sondeerbedrijven + automatische mailto-offerte.",
+    },
+  ];
+
+  return (
+    <div className="settings-section">
+      <h3>Extensies</h3>
+      <p style={{ fontSize: 11, lineHeight: 1.5, color: "var(--theme-dialog-content-secondary)", marginBottom: 12 }}>
+        Optionele modules — schakel aan wat je gebruikt. Wijzigingen
+        zijn direct actief (geen herstart nodig).
+      </p>
+      {items.map((item) => (
+        <div
+          key={item.id}
+          style={{
+            display: "flex",
+            gap: 12,
+            padding: "10px 0",
+            borderBottom: "1px solid var(--theme-border-subtle)",
+            alignItems: "flex-start",
+          }}
+        >
+          <label style={{ display: "flex", gap: 10, alignItems: "flex-start", flex: 1, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={exts[item.id]}
+              onChange={(e) => { void setExtension(item.id, e.target.checked); }}
+              style={{ marginTop: 2 }}
+            />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--theme-text)" }}>{item.title}</div>
+              <div style={{ fontSize: 11, color: "var(--theme-dialog-content-secondary)", marginTop: 2, lineHeight: 1.4 }}>
+                {item.description}
+              </div>
+            </div>
+          </label>
+        </div>
+      ))}
     </div>
   );
 }

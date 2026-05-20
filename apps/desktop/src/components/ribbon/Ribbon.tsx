@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import RibbonTab from "./RibbonTab";
 import StartTab from "./StartTab";
@@ -6,6 +6,7 @@ import KaartTab from "./KaartTab";
 import IfcTab from "./IfcTab";
 import RapportTab from "./RapportTab";
 import SonderingstekeningTab from "./SonderingstekeningTab";
+import { useExtension } from "../../hooks/useExtensions";
 import "./Ribbon.css";
 
 interface RibbonProps {
@@ -20,12 +21,37 @@ interface RibbonProps {
 // Rapport → Sonderingstekening (tekening) → IFC (model, always last).
 // IFC is auto-generated and rarely the active workflow target, so it
 // sits at the end where it can't get in the way.
-const TABS = ["start", "kaart", "rapport", "tekening", "ifc"] as const;
-type TabId = (typeof TABS)[number];
+//
+// Rapport en Tekening zijn EXTENSIES (default UIT) — gebruiker schakelt
+// ze aan via Instellingen → Extensies. Wanneer uit, vallen ze uit de
+// tab-rij en ben je dus alleen Start / Kaart / IFC kwijt aan ribbon-
+// ruimte. ALL_TABS is de complete lijst; visibleTabs hieronder filtert
+// op de live extension-state.
+const ALL_TABS = ["start", "kaart", "rapport", "tekening", "ifc"] as const;
+type TabId = (typeof ALL_TABS)[number];
 
 export default function Ribbon({ onFileTabClick, onProjectSettingsClick, onViewChange }: RibbonProps) {
   const { t, i18n } = useTranslation("ribbon");
   const [activeTab, setActiveTab] = useState<TabId>("start");
+  const extRapport = useExtension("rapport");
+  const extTekening = useExtension("tekening");
+
+  const TABS = useMemo<readonly TabId[]>(() => {
+    return ALL_TABS.filter((t) => {
+      if (t === "rapport") return extRapport;
+      if (t === "tekening") return extTekening;
+      return true;
+    });
+  }, [extRapport, extTekening]);
+
+  // Als de huidig actieve tab door een extension-toggle uit de
+  // zichtbare lijst valt, schakel naar Start (default-tab).
+  useEffect(() => {
+    if (!TABS.includes(activeTab)) {
+      setActiveTab("start");
+      onViewChange("default");
+    }
+  }, [TABS, activeTab, onViewChange]);
 
   // Allow other parts of the app (e.g. MapView's "Open in viewer" popup)
   // to programmatically jump to a specific ribbon tab. Listeners on
@@ -34,7 +60,7 @@ export default function Ribbon({ onFileTabClick, onProjectSettingsClick, onViewC
     const onSwitch = (e: Event) => {
       const ce = e as CustomEvent<{ tab: TabId }>;
       const next = ce.detail?.tab;
-      if (next && (TABS as readonly string[]).includes(next)) {
+      if (next && (ALL_TABS as readonly string[]).includes(next)) {
         switchTabRef.current?.(next);
       }
     };
@@ -84,8 +110,12 @@ export default function Ribbon({ onFileTabClick, onProjectSettingsClick, onViewC
 
   const switchTab = useCallback((newTab: TabId) => {
     if (newTab === activeTab) return;
-    const oldIndex = TABS.indexOf(activeTab);
-    const newIndex = TABS.indexOf(newTab);
+    // Gebruik ALL_TABS voor directie-bepaling: posities zijn vast,
+    // ook al is de tab momenteel verborgen door een uitgeschakelde
+    // extensie. Voorkomt -1 indexOf wanneer een tab pas net is
+    // aangezet en switchTab gelijk wordt aangeroepen.
+    const oldIndex = ALL_TABS.indexOf(activeTab);
+    const newIndex = ALL_TABS.indexOf(newTab);
     setDirection(newIndex > oldIndex ? "right" : "left");
     setPrevTab(activeTab);
     setActiveTab(newTab);

@@ -5,6 +5,7 @@
   "tabs": {
     "general": "General",
     "appearance": "Appearance",
+    "extensions": "Extensions",
     "about": "About"
   },
   "general": {

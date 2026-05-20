@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import RibbonGroup from "./RibbonGroup";
 import RibbonButton from "./RibbonButton";
 import RibbonButtonStack from "./RibbonButtonStack";
+import { useExtension } from "../../hooks/useExtensions";
 
 /**
  * Sonderingstekening ribbon — full toolset.
@@ -139,6 +140,7 @@ const dispatch = (name: string, detail?: unknown) =>
 
 export default function SonderingstekeningTab() {
   const { t } = useTranslation("ribbon");
+  const extOffertes = useExtension("offertes");
 
   // Houd lokaal bij of select-mode aan staat in de view, zodat de
   // Selecteren-knop kan highlighten (active-style). De view dispatcht
@@ -332,18 +334,20 @@ export default function SonderingstekeningTab() {
           />
         </RibbonGroup>
 
-        <RibbonGroup label={t("tekening.offertesGroup", "Offertes")}>
-          <RibbonButton
-            icon={quotesIcon}
-            label={t("tekening.requestQuotes", "Offertes opvragen")}
-            size="large"
-            title={t(
-              "tekening.requestQuotesHint",
-              "Open een dialog met de dichtstbijzijnde sondeerbedrijven en open een mailto-offerte-aanvraag in Outlook",
-            )}
-            onClick={() => dispatch("ogs:tekening-request-quotes")}
-          />
-        </RibbonGroup>
+        {extOffertes && (
+          <RibbonGroup label={t("tekening.offertesGroup", "Offertes")}>
+            <RibbonButton
+              icon={quotesIcon}
+              label={t("tekening.requestQuotes", "Offertes opvragen")}
+              size="large"
+              title={t(
+                "tekening.requestQuotesHint",
+                "Open een dialog met de dichtstbijzijnde sondeerbedrijven en open een mailto-offerte-aanvraag in Outlook",
+              )}
+              onClick={() => dispatch("ogs:tekening-request-quotes")}
+            />
+          </RibbonGroup>
+        )}
       </div>
     </div>
   );
