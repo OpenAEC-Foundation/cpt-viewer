@@ -103,18 +103,18 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
   // op schijf belandt.
   const saveProject = useCallback(async () => {
     if (!activeDoc || activeDoc.kind !== "project") {
-      alert("Geen project actief — open of maak een .ifcgis project.");
+      alert("Geen project actief — open of maak een .ifcgeo project.");
       return;
     }
     const dst = await save({
-      defaultPath: `${activeDoc.meta.title || "project"}.ifcgis`,
-      // .ifcgis blijft de officiële extensie van het Open Geotechniek
-      // Studio project-formaat. De CONTENT is sinds schema 0.3 wel
-      // 100% IFCX-shaped (IFC5 alpha JSON). .ifcx wordt als alias
-      // geaccepteerd in de open-dialog zodat ge-renamede bestanden
-      // ook openen.
+      defaultPath: `${activeDoc.meta.title || "project"}.ifcgeo`,
+      // `.ifcgeo` is sinds 2026 de officiële extensie voor zowel
+      // single-CPT-snapshots als hele projecten. De CONTENT is 100%
+      // IFCX-shaped (IFC5 alpha JSON); de loader sniffed het schema
+      // om project vs single te onderscheiden. `.ifcgis` en `.ifcx`
+      // blijven leesbaar in de open-dialog (legacy bestanden).
       filters: [
-        { name: "Open Geotechniek Studio project", extensions: ["ifcgis", "ifcx"] },
+        { name: "Open Geotechniek Studio bestand", extensions: ["ifcgeo", "ifcgis", "ifcx"] },
       ],
     });
     if (!dst) return;
@@ -252,7 +252,7 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
     const selected = await openDialog({
       multiple: true,
       filters: [
-        { name: "Open Geotechniek Studio", extensions: ["gef", "GEF", "xml", "XML", "ifcgis", "ifcx"] },
+        { name: "Open Geotechniek Studio", extensions: ["gef", "GEF", "xml", "XML", "ifcgeo", "ifcgis", "ifcx"] },
       ],
     });
     if (!selected) return;
@@ -650,7 +650,7 @@ function OpenPanel({
           </div>
           <div className="bs-open-card-text">
             <strong>{t("openPanel.openTitle", "Openen")}</strong>
-            <span>{t("openPanel.openAnyHint", "Sondering (GEF / BRO-XML) of project (.ifcgis) — elk bestand opent in een eigen tab")}</span>
+            <span>{t("openPanel.openAnyHint", "Sondering (GEF / BRO-XML) of project/sondering (.ifcgeo) — elk bestand opent in een eigen tab")}</span>
           </div>
         </button>
       </div>

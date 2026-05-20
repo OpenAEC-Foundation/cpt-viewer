@@ -122,7 +122,7 @@ function App() {
   const [dragOver, setDragOver] = useState(false);
   useEffect(() => {
     const isOpenable = (path: string) =>
-      /\.(gef|xml|ifcgis)$/i.test(path);
+      /\.(gef|xml|ifcgis|ifcgeo|ifcx)$/i.test(path);
 
     // Bail out in browser-test contexts (geen Tauri-runtime) — getCurrentWebview
     // crasht dan synchroon op undefined.metadata. We laten in dat geval simpel
@@ -312,7 +312,7 @@ function App() {
               <polyline points="17 8 12 3 7 8"/>
               <line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
-            <p>Laat los om te openen — GEF, BRO-XML of .ifcgis</p>
+            <p>Laat los om te openen — GEF, BRO-XML of .ifcgeo</p>
           </div>
         </div>
       )}

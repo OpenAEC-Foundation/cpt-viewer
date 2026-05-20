@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Open Geotechniek Studio",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "identifier": "foundation.openaec.opengeotechniekstudio",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -48,16 +48,9 @@
         "mimeType": "application/x-gef"
       },
       {
-        "ext": ["ifcgis"],
-        "name": "OpenGeoStudioProject",
-        "description": "Open Geotechniek Studio project (IFCX-content)",
-        "role": "Editor",
-        "mimeType": "application/x-ifcx+json"
-      },
-      {
         "ext": ["ifcgeo"],
         "name": "GeotechniekObject",
-        "description": "Geotechniek-object (IFCX)",
+        "description": "Open Geotechniek Studio bestand (IFCX-content; project of losse sondering)",
         "role": "Editor",
         "mimeType": "application/x-ifcgeo+json"
       }

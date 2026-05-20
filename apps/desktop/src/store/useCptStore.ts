@@ -1017,9 +1017,8 @@ export function newProjectDocument(): void {
  */
 export async function openPathByExtension(path: string): Promise<boolean> {
   const lower = path.toLowerCase();
-  // .ifcx is de nieuwe standaard-extensie voor project-bestanden.
-  // .ifcgis blijft als legacy-extensie ondersteund (zelfde Rust-
-  // loader, het schema-header bepaalt de versie).
+  // `.ifcgis` is legacy project-extensie — leest nog steeds via de
+  // project-loader (oude opslag-bestanden blijven werken).
   if (lower.endsWith(".ifcx") || lower.endsWith(".ifcgis")) {
     await openProjectIfcgis(path);
     return true;
@@ -1031,12 +1030,39 @@ export async function openPathByExtension(path: string): Promise<boolean> {
     // XML: sniff first 4 KB to distinguish BHR borings from CPTs/GEFs.
     if (lower.endsWith(".xml") && looksLikeBoringXml(content.slice(0, 4096))) {
       await loadBoreFromContent(content, filename, path);
-    } else {
-      await loadCptFromContent(content, filename, path);
+      return true;
     }
+    // `.ifcgeo` is sinds 2026 de gecombineerde extensie voor zowel
+    // project-bestanden (meerdere CPTs + tekening + title-block) als
+    // losse CPT-snapshots. Onderscheiden gebeurt door de eerste ~4 KB
+    // te sniffen op de JSON-shape:
+    //   - project: heeft `"cpts": [` of `"schema": "ifcgis-`
+    //   - single CPT: heeft alleen één `"points"`-array op top-level
+    // Bij twijfel valt-ie terug op de single-CPT-loader (oude .ifcgeo
+    // bestanden); de Rust-side gooit dan een nette parse-error als
+    // het tóch een project-payload blijkt.
+    if (lower.endsWith(".ifcgeo") && looksLikeProjectIfcgeo(content.slice(0, 4096))) {
+      await openProjectIfcgis(path);
+      return true;
+    }
+    await loadCptFromContent(content, filename, path);
     return true;
   }
   return false;
+}
+
+/**
+ * Lichtgewicht sniff: is dit `.ifcgeo`-bestand een project (meerdere
+ * CPTs + tekening) of een losse CPT? Werkt op de eerste paar KB —
+ * we hoeven dus niet de hele payload te parsen om te beslissen welke
+ * loader nodig is.
+ */
+function looksLikeProjectIfcgeo(head: string): boolean {
+  return (
+    /"schema"\s*:\s*"ifcgis-/i.test(head) ||
+    /"cpts"\s*:\s*\[/i.test(head) ||
+    /"project"\s*:\s*\{/i.test(head)
+  );
 }
 
 /**
