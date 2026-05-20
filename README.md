@@ -6,6 +6,37 @@ Open-source desktop-applicatie voor geotechnische werkzaamheden in Nederland —
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 ![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-24C8DB)
 
+![Open Geotechniek Studio — sondering geopend op de Home-tab met qc / fs / Rf charts, Robertson SBT-classificatie en locatie-kaart](docs/screenshots/01-cpt-sondering.jpg)
+
+---
+
+## Screenshots
+
+### Home — CPT-sondering met Robertson SBT-classificatie
+Conusweerstand (qc), plaatselijke wrijving (fs), wrijvingsgetal (Rf) en de bijbehorende Robertson SBT-classificatie per laag. Locatie op de mini-kaart rechts, eigenschappen-paneel met grondopbouw per diepte.
+
+![CPT-sondering met Robertson SBT-classificatie](docs/screenshots/01-cpt-sondering.jpg)
+
+### Home — BHR-boring met grondsoort-lagen (BRO)
+Boringsgegevens uit BRO-XML met visualisatie van grondsoort-lagen (sterkSiltigZand, matigSiltigeKlei, veen, etc.) inclusief bijmengingen, structuur en humusgehalte conform NEN5104.
+
+![BHR-boring volgens NEN5104](docs/screenshots/02-bhr-boring.jpg)
+
+### Kaart — BRO-integratie + PDOK-lagen
+Interactieve kaart met directe BRO-integratie. Klik "Laad gebied" en alle sonderingen + boringen rondom het zichtbare viewport worden automatisch ingelezen. Kadaster luchtfoto, BAG-gebouwen, kadastrale grenzen, AHN hoogtekaart, BGT topografie en historische luchtfoto's (2016-2025) als toggelbare overlays.
+
+![Kaart met 66 BRO-sonderingen op PDOK luchtfoto](docs/screenshots/03-kaart-bro.jpg)
+
+### Rapport — professioneel PDF-sonderingsrapport
+Genereer rapporten met voorblad, coördinatentabel, overzichtskaart, per-sondering pagina's, Robertson SBT-legenda en metadata-overzicht. Klaar voor projectdossier, vergunningsaanvraag of opdrachtgever. fs gecapped op 0.05 MPa, Rf op 10%, waterspanning u2 als cyaan stippellijn door qc heen.
+
+![PDF-sonderingsrapport in OpenAEC huisstijl](docs/screenshots/04-rapport-pdf.png)
+
+### Situatietekening — CAD-papier met sonderingsraster + offertes
+Teken een sonderingsraster op A2/A3-papier met professionele titelbalk en automatische schaal-fit. Klik "Offertes opvragen" en de app selecteert automatisch de 3 dichtsbijzijnde sondeerbedrijven uit een catalogus van 43 NL bedrijven en opent Outlook met een vooraf ingevulde offerte-aanvraag.
+
+![Situatietekening met sonderingsraster + offertes-dialog](docs/screenshots/05-situatietekening.jpg)
+
 ---
 
 ## Downloads

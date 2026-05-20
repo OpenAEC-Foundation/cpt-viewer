@@ -26,4 +26,8 @@ sample/
 
 # Docs work-in-progress / prompt notes
 PROMPTS.md
-docs/
+# docs/* (niet docs/) zodat we kunnen white-listen — git ondersteunt
+# geen re-include als de parent-directory volledig genegeerd is.
+docs/*
+# README-screenshots zijn WEL onderdeel van de repo.
+!docs/screenshots/
