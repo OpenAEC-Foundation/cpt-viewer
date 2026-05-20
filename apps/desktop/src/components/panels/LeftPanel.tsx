@@ -4,9 +4,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { useCptStore, addCptToActiveProject } from "../../store/useCptStore";
-import type { BoreDocument } from "../../store/useCptStore";
+import type { BoreDocument, GwpDocument } from "../../store/useCptStore";
 import type { Cpt, Layer } from "../../types/cpt";
 import type { Bore } from "../../types/bore";
+import type { Gwp } from "../../types/gwp";
 
 /**
  * Document-aware left panel.
@@ -40,7 +41,110 @@ export default function LeftPanel() {
   if (activeDoc.kind === "bore") {
     return <BoreDetails doc={activeDoc} />;
   }
+  if (activeDoc.kind === "gwp") {
+    return <GwpDetails doc={activeDoc} />;
+  }
   return <CptDetails cpt={activeDoc.cpt} />;
+}
+
+// ──────────────────────────────────────────────────────────────
+// Standalone Grondwaterput (active doc = GwpDocument)
+// ──────────────────────────────────────────────────────────────
+
+function GwpDetails({ doc }: { doc: GwpDocument }) {
+  const g = doc.gwp;
+  return (
+    <div className="left-panel-body">
+      <div className="project-header">
+        <div className="project-header-icon"><FileIcon /></div>
+        <div className="project-header-text">
+          <div className="project-header-title">{g.broId || doc.title}</div>
+          <div className="project-header-sub">
+            Grondwatermonitoringput (BRO/GMW)
+            {g.wellCode ? ` · ${g.wellCode}` : ""}
+          </div>
+        </div>
+      </div>
+
+      <PanelSection title="Putgegevens" defaultOpen>
+        <GwpMetadataList gwp={g} />
+      </PanelSection>
+      <PanelSection title="Buizen (filters)" defaultOpen>
+        <GwpTubesList gwp={g} />
+      </PanelSection>
+      <PanelSection title="Foto's & inspectie">
+        <BroPhotos broId={g.broId} kind="gwp" />
+      </PanelSection>
+      <PanelSection title="Ruwe data (XML)">
+        <BoreRawXml xml={doc.rawXml} />
+      </PanelSection>
+    </div>
+  );
+}
+
+function GwpMetadataList({ gwp }: { gwp: Gwp }) {
+  return (
+    <dl className="metadata-list">
+      <dt>BRO-id</dt><dd>{gwp.broId || "—"}</dd>
+      <dt>Put-code</dt><dd>{gwp.wellCode ?? "—"}</dd>
+      <dt>Beheerder</dt><dd>{gwp.deliveryAccountableParty ?? "—"}</dd>
+      <dt>Eigenaar</dt><dd>{gwp.owner ?? "—"}</dd>
+      <dt>Kwaliteitsregime</dt><dd>{gwp.qualityRegime ?? "—"}</dd>
+      <dt>Geconstrueerd</dt><dd>{gwp.constructionDate ?? "—"}</dd>
+      <dt>Initiële functie</dt><dd>{gwp.initialFunction ?? "—"}</dd>
+      <dt>Putkop-bescherming</dt><dd>{gwp.wellHeadProtector ?? "—"}</dd>
+      <dt>RD x/y</dt>
+      <dd>
+        {typeof gwp.rdX === "number" && typeof gwp.rdY === "number"
+          ? `${gwp.rdX.toFixed(1)}, ${gwp.rdY.toFixed(1)}`
+          : "—"}
+      </dd>
+      <dt>WGS84 lat/lon</dt>
+      <dd>
+        {typeof gwp.lat === "number" && typeof gwp.lon === "number"
+          ? `${gwp.lat.toFixed(5)}, ${gwp.lon.toFixed(5)}`
+          : "—"}
+      </dd>
+      <dt>Maaiveld NAP</dt>
+      <dd>
+        {typeof gwp.groundLevelNap === "number"
+          ? `${gwp.groundLevelNap.toFixed(2)} m`
+          : "—"}
+      </dd>
+      <dt>Aantal buizen</dt><dd>{gwp.numberOfMonitoringTubes ?? gwp.tubes.length}</dd>
+    </dl>
+  );
+}
+
+function GwpTubesList({ gwp }: { gwp: Gwp }) {
+  if (gwp.tubes.length === 0) {
+    return <p className="panel-empty">Geen buizen.</p>;
+  }
+  return (
+    <table className="layers-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Filter top</th>
+          <th>Filter onder</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {gwp.tubes
+          .slice()
+          .sort((a, b) => a.tubeNumber - b.tubeNumber)
+          .map((t) => (
+            <tr key={t.tubeNumber}>
+              <td>{t.tubeNumber}</td>
+              <td>{t.screenTopPositionNap?.toFixed(2) ?? "—"}</td>
+              <td>{t.screenBottomPositionNap?.toFixed(2) ?? "—"}</td>
+              <td title={t.material ?? ""}>{t.tubeStatus ?? "—"}</td>
+            </tr>
+          ))}
+      </tbody>
+    </table>
+  );
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -68,9 +172,51 @@ function BoreDetails({ doc }: { doc: BoreDocument }) {
       <PanelSection title="Lagen" defaultOpen>
         <BoreLayersList bore={b} />
       </PanelSection>
+      <PanelSection title="Foto's & inspectie">
+        <BroPhotos broId={b.id} kind="bore" />
+      </PanelSection>
       <PanelSection title="Ruwe data (XML)">
         <BoreRawXml xml={doc.rawXml} />
       </PanelSection>
+    </div>
+  );
+}
+
+/**
+ * BRO-foto's voor sonderingen + boringen. De publieke BRO REST API
+ * exposeert (op moment van schrijven) géén foto-bytes — foto's worden
+ * door BROloket gehost binnen hun web-viewer. We tonen een directe
+ * link daarheen, plus de geprobeerde endpoints voor wanneer een
+ * publieke foto-API in de toekomst beschikbaar komt.
+ *
+ * Werkt voor zowel BHR/CPT als GMW broIds — de BROloket-zoekpagina
+ * accepteert alle drie domein-prefixes.
+ */
+function BroPhotos({ broId, kind }: { broId?: string; kind: "cpt" | "bore" | "gwp" }) {
+  if (!broId || !/^[A-Z]{3}\d{12,}$/.test(broId)) {
+    return (
+      <p className="panel-empty">
+        Foto's zijn alleen beschikbaar voor BRO-objecten (BHR/CPT/GMW-id vereist).
+      </p>
+    );
+  }
+  const brokloketUrl = `https://www.broloket.nl/ondergrondgegevens?bro-id=${encodeURIComponent(broId)}`;
+  const label =
+    kind === "bore" ? "boring" :
+    kind === "gwp" ? "grondwaterput" : "sondering";
+  return (
+    <div className="bore-photo-wrap">
+      <p className="bore-photo-hint">
+        BRO hosts foto's van deze {label} (indien aanwezig) op BROloket.
+      </p>
+      <a
+        className="bore-photo-link"
+        href={brokloketUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Bekijk foto's op BROloket ↗
+      </a>
     </div>
   );
 }
@@ -353,6 +499,9 @@ function CptDetails({ cpt }: { cpt: Cpt }) {
       </PanelSection>
       <PanelSection title={t("measurements")}>
         <MeasurementsTable cpt={cpt} />
+      </PanelSection>
+      <PanelSection title="Foto's & inspectie">
+        <BroPhotos broId={cpt.id} kind="cpt" />
       </PanelSection>
     </div>
   );

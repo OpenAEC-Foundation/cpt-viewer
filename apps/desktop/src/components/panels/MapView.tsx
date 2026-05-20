@@ -12,6 +12,7 @@ import {
   loadBoreFromContent,
   mergeIntoNewProject,
   addBroToActiveProject,
+  openGwpFromBroId,
 } from "../../store/useCptStore";
 import { setLayerLive } from "../../store/tekeningState";
 // Topotijdreis slider lives in the GisLayerPanel (left side, with the
@@ -819,6 +820,7 @@ export default function MapView() {
                   + (beheerder ? `<br/>Beheerder: ${beheerder}` : "")
                   + (groundNap != null ? `<br/>Maaiveld NAP: ${groundNap} m` : "")
                   + (nTubes != null ? `<br/>Aantal filters: ${nTubes}` : "")
+                  + `<br/><a href="#" class="bro-popup-gwp-open" data-gwp-id="${broId}">Open in viewer</a>`
                   + `<br/><a href="https://www.broloket.nl/ondergrondgegevens?bro-id=${encodeURIComponent(broId)}" target="_blank">Open in BROloket</a>`;
                 const m = L.circleMarker([lat, lon], {
                   radius: 4.5,
@@ -828,7 +830,9 @@ export default function MapView() {
                   fillOpacity: 0.7,
                 });
                 m.bindPopup(popup);
-                m.setOpacity(op);
+                // CircleMarker heeft geen setOpacity — gebruik setStyle
+                // op zowel stroke (opacity) als vulling (fillOpacity).
+                m.setStyle({ opacity: op, fillOpacity: 0.7 * op });
                 broGwpLayerRef.current?.addLayer(m);
               }
             })
@@ -946,6 +950,25 @@ export default function MapView() {
     const onPopupClick = async (e: MouseEvent) => {
       const target = e.target;
       if (!(target instanceof Element)) return;
+      // Grondwaterput-link: aparte class + data-attribuut zodat we
+      // 'm los kunnen routeren naar de GMW-loader (geen Tauri
+      // fetch nodig — BRO REST is direct CORS-vriendelijk).
+      const gwpOpen = target.closest("a.bro-popup-gwp-open");
+      if (gwpOpen) {
+        e.preventDefault();
+        const gwpId = gwpOpen.getAttribute("data-gwp-id");
+        if (!gwpId) return;
+        try {
+          await openGwpFromBroId(gwpId);
+          map.closePopup();
+          window.dispatchEvent(
+            new CustomEvent("ogs:ribbon-switch", { detail: { tab: "start" } }),
+          );
+        } catch (err) {
+          console.error("GMW popup action failed", err);
+        }
+        return;
+      }
       const open = target.closest("a.bro-popup-open");
       const merge = target.closest("a.bro-popup-merge");
       const add = target.closest("a.bro-popup-add-to-project");

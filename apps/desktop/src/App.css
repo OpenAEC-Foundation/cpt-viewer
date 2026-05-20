@@ -1562,6 +1562,37 @@ body,
   position: relative;
   margin: 0;
 }
+
+/* ── BRO foto's-sectie in LeftPanel ────────────────────────── */
+
+.bore-photo-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0 0 0;
+}
+.bore-photo-hint {
+  margin: 0;
+  font: 400 0.75rem 'Inter', system-ui, sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+}
+.bore-photo-link {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 5px 10px;
+  border: 1px solid var(--theme-border, #cbd5e1);
+  border-radius: 4px;
+  background: var(--theme-bg, #fff);
+  color: var(--theme-text, #36363e);
+  text-decoration: none;
+  font: 600 0.78rem 'Inter', system-ui, sans-serif;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.bore-photo-link:hover {
+  background: var(--theme-bg-lighter, #f5f5f4);
+  border-color: var(--amber, #d97706);
+  color: var(--amber, #d97706);
+}
 .bore-raw-copy {
   position: absolute;
   top: 4px;

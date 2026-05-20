@@ -2,15 +2,19 @@ import { useTranslation } from "react-i18next";
 import { useCptStore } from "../../store/useCptStore";
 import ChartCanvas from "../chart/ChartCanvas";
 import BoreView from "./BoreView";
+import GwpView from "./GwpView";
 
 /**
- * Main chart panel. Routes between three states:
+ * Main chart panel. Routes between four states:
  *   - empty placeholder when nothing is open
  *   - BoreView when the active document is a borehole (BHR-GT)
+ *   - GwpView when the active document is a grondwaterput (GMW)
  *   - ChartCanvas when the active document is a CPT or project
  *
  * Borings don't have qc/fs/Rf curves, only a strip log of soil layers,
  * so they need their own viewer instead of an empty chart canvas.
+ * Grondwaterputten hebben tube-data + GLD-tijdseries — eveneens een
+ * eigen viewer.
  */
 export default function ChartView() {
   const { t } = useTranslation("cpt");
@@ -21,6 +25,9 @@ export default function ChartView() {
 
   if (activeDoc?.kind === "bore") {
     return <BoreView bore={activeDoc.bore} />;
+  }
+  if (activeDoc?.kind === "gwp") {
+    return <GwpView gwp={activeDoc.gwp} />;
   }
   if (cpts.size === 0) {
     return (

@@ -17,7 +17,7 @@ import {
 // active document determines what the chart, panels, and right panel
 // render.
 
-export type DocumentKind = "cpt" | "bore" | "project";
+export type DocumentKind = "cpt" | "bore" | "project" | "gwp";
 
 export interface CptDocument {
   kind: "cpt";
@@ -39,6 +39,16 @@ export interface BoreDocument {
   rawXml?: string;
 }
 
+export interface GwpDocument {
+  kind: "gwp";
+  id: string;
+  title: string;
+  path?: string;
+  gwp: import("../types/gwp").Gwp;
+  /** Origineel GMW-XML. */
+  rawXml?: string;
+}
+
 export interface ProjectDocument {
   kind: "project";
   id: string;
@@ -54,7 +64,11 @@ export interface ProjectDocument {
   activeCptId: string | null;
 }
 
-export type AppDocument = CptDocument | BoreDocument | ProjectDocument;
+export type AppDocument =
+  | CptDocument
+  | BoreDocument
+  | ProjectDocument
+  | GwpDocument;
 
 interface HoveredPoint {
   depth: number;
@@ -190,6 +204,16 @@ function deriveFromActive(documents: AppDocument[], activeDocId: string | null) 
       cpts: new Map<string, Cpt>(),
       activeCptId: null as string | null,
       projectMeta: { ...DEFAULT_PROJECT_META, title: active.bore.id || active.title },
+    };
+  }
+  if (active.kind === "gwp") {
+    // Grondwaterput-documenten hebben geen CPT-data. Net als bij
+    // boringen wissen we de chart-state en zetten we de meta-title
+    // op de bro-id zodat een eventuele header iets zinnigs toont.
+    return {
+      cpts: new Map<string, Cpt>(),
+      activeCptId: null as string | null,
+      projectMeta: { ...DEFAULT_PROJECT_META, title: active.gwp.broId || active.title },
     };
   }
   // project
@@ -347,8 +371,12 @@ export const useCptStore = create<DocStore>((set, get) => ({
         return { documents, activeDocId, hiddenCptIds, selectedCptIds, pdfCache, ifcCache, ...derived };
       }
 
-      // Boring doc — close-CPT is a no-op (borings don't own CPTs).
-      if (active.kind === "bore") return { hiddenCptIds, selectedCptIds };
+      // Boring + GMW docs — close-CPT is a no-op (zij hebben geen
+      // eigen CPT-collectie). Het type valt na deze guard naar
+      // ProjectDocument waardoor `active.cpts` veilig is.
+      if (active.kind === "bore" || active.kind === "gwp") {
+        return { hiddenCptIds, selectedCptIds };
+      }
 
       // Project doc — drop the CPT from its map.
       const next = new Map(active.cpts);
@@ -538,9 +566,9 @@ async function runPdfQueue(): Promise<void> {
 }
 
 export function schedulePdfPreview(doc: AppDocument): void {
-  // Boring documents don't generate a CPT-style chart report yet —
-  // skip silently so the rest of the doc-open pipeline doesn't fail.
-  if (doc.kind === "bore") return;
+  // Boring + GMW-documenten genereren geen CPT-style chart-rapport —
+  // sla over zodat de rest van de doc-open pipeline niet faalt.
+  if (doc.kind === "bore" || doc.kind === "gwp") return;
   const cptIds = doc.kind === "cpt"
     ? [doc.cpt.id]
     : Array.from(doc.cpts.keys());
@@ -587,9 +615,9 @@ interface GeneratedIfcResult {
 }
 
 export function scheduleIfcGenerate(doc: AppDocument): void {
-  // Boring documents don't (yet) get an auto-generated IFC export —
-  // skip to avoid an empty/erroneous IFCX in the cache.
-  if (doc.kind === "bore") return;
+  // Boring + GMW-documenten krijgen (nog) geen auto-IFC-export —
+  // skip om een lege/foutieve IFCX in de cache te vermijden.
+  if (doc.kind === "bore" || doc.kind === "gwp") return;
   const cptIds = doc.kind === "cpt"
     ? [doc.cpt.id]
     : Array.from(doc.cpts.keys());
@@ -700,6 +728,67 @@ export async function loadBoreFromContent(
     return { documents, activeDocId, ...derived };
   });
   return bore;
+}
+
+/**
+ * Parses a BRO GMW dispatch XML (grondwaterput) and opens it as a fresh
+ * GwpDocument tab. Used by:
+ *   - de "Open in viewer"-knop op een grondwaterput-marker op de kaart
+ *   - openPathByExtension wanneer de gebruiker een GMW-XML-bestand uit
+ *     BROloket opent
+ *
+ * Geen Rust roundtrip — parsing gebeurt 100% client-side in
+ * `parseGmwXml`. We bewaren de raw XML zodat een "Ruwe data"-paneel
+ * de dispatch kan terug-tonen.
+ */
+export async function loadGwpFromContent(
+  xml: string,
+  filename: string,
+  path?: string,
+): Promise<import("../types/gwp").Gwp> {
+  const { parseGmwXml } = await import("../types/gwp");
+  const gwp = parseGmwXml(xml);
+  if (!gwp) {
+    throw new Error(
+      `${filename}: kon geen GMW-dispatch parsen (geen <GMW_PO>/<GMW_O> root of geen broId gevonden)`,
+    );
+  }
+  useCptStore.setState((s) => {
+    const doc: GwpDocument = {
+      kind: "gwp",
+      id: makeId(),
+      title: gwp.broId || filename,
+      path,
+      gwp,
+      rawXml: xml,
+    };
+    const documents = [...s.documents, doc];
+    const activeDocId = doc.id;
+    const derived = deriveFromActive(documents, activeDocId);
+    return { documents, activeDocId, ...derived };
+  });
+  return gwp;
+}
+
+/**
+ * Haalt een grondwaterput op via de BRO publieke REST-API
+ * (https://publiek.broservices.nl/gm/gmw/v1/objects/{broId}) en opent
+ * 'm als nieuw GwpDocument-tab. Wordt aangeroepen door de
+ * "Open in viewer"-actie op een GMW-marker op de kaart.
+ *
+ * De BRO publieke API serveert CORS-headers waardoor we direct vanuit
+ * de WebView kunnen `fetch()` zonder Tauri-side proxy nodig te hebben.
+ */
+export async function openGwpFromBroId(
+  broId: string,
+): Promise<import("../types/gwp").Gwp> {
+  const url = `https://publiek.broservices.nl/gm/gmw/v1/objects/${encodeURIComponent(broId)}`;
+  const res = await fetch(url, { headers: { Accept: "application/xml" } });
+  if (!res.ok) {
+    throw new Error(`BRO ${broId}: HTTP ${res.status} ${res.statusText}`);
+  }
+  const xml = await res.text();
+  return loadGwpFromContent(xml, `${broId}.xml`);
 }
 
 /**
@@ -1027,10 +1116,21 @@ export async function openPathByExtension(path: string): Promise<boolean> {
     const { readTextFile } = await import("@tauri-apps/plugin-fs");
     const content = await readTextFile(path);
     const filename = path.split(/[\\/]/).pop() ?? path;
-    // XML: sniff first 4 KB to distinguish BHR borings from CPTs/GEFs.
-    if (lower.endsWith(".xml") && looksLikeBoringXml(content.slice(0, 4096))) {
-      await loadBoreFromContent(content, filename, path);
-      return true;
+    // XML: sniff first 4 KB om onderscheid te maken tussen GMW
+    // (grondwaterput), BHR (boring) en CPT/GEF. Volgorde matters —
+    // GMW eerst want de wrapper-element-namen overlappen niet maar de
+    // sniffer is goedkoper dan boring-sniff. Daarna boring, anders CPT.
+    if (lower.endsWith(".xml")) {
+      const head = content.slice(0, 4096);
+      const { looksLikeGwpXml } = await import("../types/gwp");
+      if (looksLikeGwpXml(head)) {
+        await loadGwpFromContent(content, filename, path);
+        return true;
+      }
+      if (looksLikeBoringXml(head)) {
+        await loadBoreFromContent(content, filename, path);
+        return true;
+      }
     }
     // `.ifcgeo` is sinds 2026 de gecombineerde extensie voor zowel
     // project-bestanden (meerdere CPTs + tekening + title-block) als

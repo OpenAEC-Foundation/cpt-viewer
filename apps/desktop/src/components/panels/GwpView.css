@@ -1,0 +1,200 @@
+/* ─────────────────────────────────────────────────────────────────
+   GwpView — viewer voor een BRO grondwaterput (GMW).
+   Layout: header strip + tubes-tabel + GLD-tijdsgrafiek.
+   ─────────────────────────────────────────────────────────────── */
+
+.gwp-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--theme-bg, #fff);
+  color: var(--theme-text, #36363e);
+  padding: 16px 20px;
+  gap: 16px;
+  overflow: auto;
+}
+
+.gwp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--theme-border, #e7e5e4);
+}
+.gwp-title {
+  margin: 0;
+  font: 700 1.4rem var(--font-heading, 'Space Grotesk'), 'Inter', sans-serif;
+  color: var(--theme-text, #36363e);
+}
+.gwp-sub {
+  margin: 2px 0 0;
+  font: 500 0.85rem 'Inter', sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+}
+.gwp-meta {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 12px;
+  margin: 0;
+  font: 500 0.78rem 'Inter', sans-serif;
+}
+.gwp-meta dt {
+  color: var(--theme-text-secondary, #71717a);
+}
+.gwp-meta dd {
+  margin: 0;
+  color: var(--theme-text, #36363e);
+}
+.gwp-meta code {
+  font: 500 0.78rem var(--font-code, 'JetBrains Mono'), monospace;
+}
+
+.gwp-toolbar {
+  display: flex;
+  gap: 8px;
+}
+.gwp-link-btn {
+  display: inline-block;
+  padding: 6px 12px;
+  border: 1px solid var(--theme-border, #e7e5e4);
+  border-radius: 6px;
+  background: var(--theme-bg, #fff);
+  font: 600 0.8rem 'Inter', sans-serif;
+  color: var(--theme-text, #36363e);
+  text-decoration: none;
+  transition: background 0.12s;
+}
+.gwp-link-btn:hover {
+  background: var(--theme-bg-lighter, #f5f5f4);
+}
+
+.gwp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gwp-section-title {
+  margin: 0;
+  font: 700 0.95rem var(--font-heading, 'Space Grotesk'), 'Inter', sans-serif;
+  color: var(--theme-text, #36363e);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--theme-border, #e7e5e4);
+}
+.gwp-section-sub {
+  margin: 0;
+  font: 400 0.78rem 'Inter', sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+}
+
+.gwp-empty {
+  padding: 16px;
+  font: 400 0.85rem 'Inter', sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+  text-align: center;
+  border: 1px dashed var(--theme-border, #e7e5e4);
+  border-radius: 6px;
+}
+
+/* ── Tubes-tabel ─────────────────────────────────────────────── */
+
+.gwp-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--theme-border, #e7e5e4);
+  border-radius: 6px;
+}
+.gwp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 500 0.78rem 'Inter', sans-serif;
+}
+.gwp-table th,
+.gwp-table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--theme-border, #e7e5e4);
+}
+.gwp-table thead th {
+  background: var(--theme-bg-lighter, #f5f5f4);
+  font: 600 0.72rem 'Inter', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--theme-text-secondary, #71717a);
+  line-height: 1.25;
+}
+.gwp-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.gwp-table td.num {
+  font: 500 0.78rem var(--font-code, 'JetBrains Mono'), monospace;
+  text-align: right;
+}
+
+/* ── GLD-lijst ──────────────────────────────────────────────── */
+
+.gwp-gld-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font: 400 0.78rem 'Inter', sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+}
+.gwp-gld-list code {
+  font: 600 0.78rem var(--font-code, 'JetBrains Mono'), monospace;
+  color: var(--theme-text, #36363e);
+}
+.gwp-link-inline {
+  margin-left: 8px;
+  color: var(--theme-accent, #0EA5E9);
+  text-decoration: none;
+}
+.gwp-link-inline:hover {
+  text-decoration: underline;
+}
+
+/* ── Chart ──────────────────────────────────────────────────── */
+
+.gwp-chart-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gwp-chart {
+  border: 1px solid var(--theme-border, #e7e5e4);
+  border-radius: 6px;
+  background: var(--theme-bg, #fff);
+  cursor: grab;
+  user-select: none;
+  display: block;
+  width: 100%;
+}
+.gwp-chart:active {
+  cursor: grabbing;
+}
+.gwp-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 6px 4px;
+  font: 500 0.75rem 'Inter', sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+}
+.gwp-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.gwp-chart-legend-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 3px;
+  border-radius: 1px;
+}
+.gwp-chart-legend code {
+  font: 600 0.72rem var(--font-code, 'JetBrains Mono'), monospace;
+  color: var(--theme-text, #36363e);
+}
