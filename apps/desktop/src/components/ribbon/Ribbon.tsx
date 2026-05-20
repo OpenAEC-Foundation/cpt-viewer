@@ -22,27 +22,23 @@ interface RibbonProps {
 // IFC is auto-generated and rarely the active workflow target, so it
 // sits at the end where it can't get in the way.
 //
-// Rapport en Tekening zijn EXTENSIES (default UIT) — gebruiker schakelt
-// ze aan via Instellingen → Extensies. Wanneer uit, vallen ze uit de
-// tab-rij en ben je dus alleen Start / Kaart / IFC kwijt aan ribbon-
-// ruimte. ALL_TABS is de complete lijst; visibleTabs hieronder filtert
-// op de live extension-state.
+// Sonderingstekening is een EXTENSIE (default UIT) — gebruiker zet 'm
+// aan via Instellingen → Extensies. Rapport, Home, Kaart en IFC zijn
+// kern-tabs en blijven altijd zichtbaar.
 const ALL_TABS = ["start", "kaart", "rapport", "tekening", "ifc"] as const;
 type TabId = (typeof ALL_TABS)[number];
 
 export default function Ribbon({ onFileTabClick, onProjectSettingsClick, onViewChange }: RibbonProps) {
   const { t, i18n } = useTranslation("ribbon");
   const [activeTab, setActiveTab] = useState<TabId>("start");
-  const extRapport = useExtension("rapport");
   const extTekening = useExtension("tekening");
 
   const TABS = useMemo<readonly TabId[]>(() => {
     return ALL_TABS.filter((t) => {
-      if (t === "rapport") return extRapport;
       if (t === "tekening") return extTekening;
       return true;
     });
-  }, [extRapport, extTekening]);
+  }, [extTekening]);
 
   // Als de huidig actieve tab door een extension-toggle uit de
   // zichtbare lijst valt, schakel naar Start (default-tab).

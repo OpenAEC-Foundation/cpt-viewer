@@ -14,17 +14,17 @@
 import { useEffect, useState } from "react";
 import { getSetting, setSetting } from "../store";
 
-export type ExtensionId = "rapport" | "tekening" | "offertes";
+export type ExtensionId = "tekening" | "offertes";
 
 const SETTING_KEYS: Record<ExtensionId, string> = {
-  rapport: "ext.rapport.enabled",
   tekening: "ext.tekening.enabled",
   offertes: "ext.offertes.enabled",
 };
 
-/** Default state: alles UIT (gebruiker-verzoek). */
+/** Default state: alles UIT (gebruiker-verzoek). Rapport is GEEN
+ *  extensie — die tab is altijd zichtbaar omdat PDF-generatie tot
+ *  de kern-workflow van de app behoort. */
 const DEFAULTS: Record<ExtensionId, boolean> = {
-  rapport: false,
   tekening: false,
   offertes: false,
 };
@@ -67,7 +67,7 @@ export function useAllExtensions(): Record<ExtensionId, boolean> {
 
   useEffect(() => {
     let cancelled = false;
-    const ids: ExtensionId[] = ["rapport", "tekening", "offertes"];
+    const ids: ExtensionId[] = ["tekening", "offertes"];
     Promise.all(
       ids.map(async (id) => [id, await getSetting(SETTING_KEYS[id], DEFAULTS[id])] as const),
     ).then((entries) => {

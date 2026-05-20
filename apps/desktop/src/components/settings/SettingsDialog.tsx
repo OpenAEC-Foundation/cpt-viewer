@@ -301,12 +301,6 @@ function ExtensionsTabContent() {
     description: string;
   }> = [
     {
-      id: "rapport",
-      title: "Rapport (PDF-generator)",
-      description:
-        "Voegt de tab 'Rapport' toe — genereert per-sondering pagina's, voorblad, coördinatentabel en overzichtskaart als PDF in OpenAEC huisstijl.",
-    },
-    {
       id: "tekening",
       title: "Situatietekening",
       description:
