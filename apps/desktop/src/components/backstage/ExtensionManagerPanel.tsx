@@ -1,19 +1,20 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  useAllExtensions,
+  setExtension,
+  type ExtensionId,
+} from "../../hooks/useExtensions";
 import "./ExtensionManagerPanel.css";
 
-interface InstalledExtension {
-  id: string;
-  name: string;
-  version: string;
-  description: string;
-  author: string;
-  category: string;
-  enabled: boolean;
-}
-
-interface CatalogEntry {
-  id: string;
+/**
+ * Beschrijving van één extensie zoals getoond in het Extensions-paneel.
+ * Bij elke nieuwe ExtensionId die in `useExtensions.ts` wordt
+ * toegevoegd hoort hier ook een entry — anders verschijnt-ie wel in de
+ * lijst (via useAllExtensions) maar zónder naam/beschrijving.
+ */
+interface ExtensionMeta {
+  id: ExtensionId;
   name: string;
   version: string;
   description: string;
@@ -21,86 +22,51 @@ interface CatalogEntry {
   category: string;
 }
 
-const SAMPLE_INSTALLED: InstalledExtension[] = [
+const INSTALLED_EXTENSIONS: ExtensionMeta[] = [
   {
-    id: "ifc-importer",
-    name: "IFC Importer",
-    version: "1.0.0",
-    description: "Import IFC4 STEP files into the application",
+    id: "tekening",
+    name: "Situatietekening",
+    version: "0.2.8",
+    description:
+      "CAD-papier (A2/A3/A4) met sonderingen op de kaart, kader, schaalbalk, snap-systeem, overlays en PDF-export.",
     author: "OpenAEC Foundation",
-    category: "Import/Export",
-    enabled: true,
+    category: "Tekening",
   },
   {
-    id: "pdf-export",
-    name: "PDF Export",
-    version: "0.9.0",
-    description: "Export reports as PDF using OpenAEC Report Generator",
+    id: "offertes",
+    name: "Offertes opvragen",
+    version: "0.2.8",
+    description:
+      "Vraagt offertes op bij dichtsbijzijnde sondeerbedrijven via een mailto-flow (vereist de Situatietekening-extensie).",
     author: "OpenAEC Foundation",
-    category: "Reporting",
-    enabled: true,
-  },
-];
-
-const SAMPLE_CATALOG: CatalogEntry[] = [
-  {
-    id: "excel-importer",
-    name: "Excel Importer",
-    version: "1.2.0",
-    description: "Import data from Excel spreadsheets (.xlsx)",
-    author: "Community",
-    category: "Import/Export",
-  },
-  {
-    id: "bonsai-sync",
-    name: "Bonsai Live Sync",
-    version: "0.5.0",
-    description: "Sync IFC models with Bonsai/Blender via WebSocket",
-    author: "OpenAEC Foundation",
-    category: "Utility",
-  },
-  {
-    id: "calculation-engine",
-    name: "Structural Calc Engine",
-    version: "0.3.0",
-    description: "Basic structural calculation blocks for reports",
-    author: "Community",
-    category: "Calculation",
+    category: "Werkflow",
   },
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
-  "Import/Export": "#22d3ee",
-  Calculation: "#60a5fa",
-  Reporting: "#a78bfa",
-  Utility: "#a1a1aa",
-  Other: "#71717a",
+  "Tekening": "#22d3ee",
+  "Werkflow": "#a78bfa",
+  "Import/Export": "#60a5fa",
+  "Reporting": "#a78bfa",
+  "Utility": "#a1a1aa",
+  "Other": "#71717a",
 };
 
 export default function ExtensionManagerPanel() {
   const { t } = useTranslation("backstage");
   const [tab, setTab] = useState<"installed" | "browse">("installed");
   const [search, setSearch] = useState("");
-  const [extensions, setExtensions] = useState(SAMPLE_INSTALLED);
+  const enabledMap = useAllExtensions();
 
-  const toggleExtension = (id: string) => {
-    setExtensions((prev) =>
-      prev.map((ext) => (ext.id === id ? { ...ext, enabled: !ext.enabled } : ext))
-    );
+  const toggleExtension = (id: ExtensionId) => {
+    void setExtension(id, !enabledMap[id]);
   };
 
-  const filteredInstalled = extensions.filter(
+  const filteredInstalled = INSTALLED_EXTENSIONS.filter(
     (e) =>
       !search ||
       e.name.toLowerCase().includes(search.toLowerCase()) ||
-      e.description.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const filteredCatalog = SAMPLE_CATALOG.filter(
-    (e) =>
-      !search ||
-      e.name.toLowerCase().includes(search.toLowerCase()) ||
-      e.description.toLowerCase().includes(search.toLowerCase())
+      e.description.toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
@@ -112,7 +78,7 @@ export default function ExtensionManagerPanel() {
           className={`ext-tab${tab === "installed" ? " active" : ""}`}
           onClick={() => setTab("installed")}
         >
-          {t("extInstalled")} ({extensions.length})
+          {t("extInstalled")} ({INSTALLED_EXTENSIONS.length})
         </button>
         <button
           className={`ext-tab${tab === "browse" ? " active" : ""}`}
@@ -130,47 +96,14 @@ export default function ExtensionManagerPanel() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <button className="ext-upload-btn" title={t("extInstallFile")}>
-          + ZIP
-        </button>
       </div>
 
       <div className="ext-list">
         {tab === "installed" &&
-          filteredInstalled.map((ext) => (
-            <div key={ext.id} className={`ext-card${ext.enabled ? "" : " disabled"}`}>
-              <div className="ext-card-header">
-                <span
-                  className="ext-category-badge"
-                  style={{ background: CATEGORY_COLORS[ext.category] || "#71717a" }}
-                >
-                  {ext.category}
-                </span>
-                <span className="ext-version">v{ext.version}</span>
-              </div>
-              <div className="ext-card-body">
-                <strong className="ext-name">{ext.name}</strong>
-                <p className="ext-desc">{ext.description}</p>
-                <span className="ext-author">{ext.author}</span>
-              </div>
-              <div className="ext-card-actions">
-                <label className="ext-toggle">
-                  <input
-                    type="checkbox"
-                    checked={ext.enabled}
-                    onChange={() => toggleExtension(ext.id)}
-                  />
-                  <span className="ext-toggle-slider" />
-                </label>
-              </div>
-            </div>
-          ))}
-
-        {tab === "browse" &&
-          filteredCatalog.map((ext) => {
-            const isInstalled = extensions.some((e) => e.id === ext.id);
+          filteredInstalled.map((ext) => {
+            const enabled = enabledMap[ext.id];
             return (
-              <div key={ext.id} className="ext-card">
+              <div key={ext.id} className={`ext-card${enabled ? "" : " disabled"}`}>
                 <div className="ext-card-header">
                   <span
                     className="ext-category-badge"
@@ -186,15 +119,39 @@ export default function ExtensionManagerPanel() {
                   <span className="ext-author">{ext.author}</span>
                 </div>
                 <div className="ext-card-actions">
-                  {isInstalled ? (
-                    <span className="ext-installed-badge">{t("extInstalledBadge")}</span>
-                  ) : (
-                    <button className="ext-install-btn">{t("extInstallBtn")}</button>
-                  )}
+                  <label className="ext-toggle">
+                    <input
+                      type="checkbox"
+                      checked={enabled}
+                      onChange={() => toggleExtension(ext.id)}
+                    />
+                    <span className="ext-toggle-slider" />
+                  </label>
                 </div>
               </div>
             );
           })}
+
+        {tab === "browse" && (
+          <div
+            style={{
+              padding: 24,
+              textAlign: "center",
+              color: "var(--theme-text-secondary, #71717a)",
+              fontSize: 13,
+              lineHeight: 1.6,
+            }}
+          >
+            <p style={{ margin: 0 }}>
+              Geen externe extensie-catalogus beschikbaar.
+            </p>
+            <p style={{ margin: "8px 0 0", fontSize: 12 }}>
+              Open Geotechniek Studio gebruikt momenteel alleen ingebouwde extensies
+              (zie tab "{t("extInstalled")}"). Een community-catalogus volgt in een
+              latere versie.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
