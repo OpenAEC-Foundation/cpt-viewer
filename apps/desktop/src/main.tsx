@@ -73,6 +73,9 @@ interface DraggableProto {
   _parentScale?: { x: number; y: number };
   _onMove: (e: Event) => void;
   _onUp: (e: Event) => void;
+  // _onDown wordt door onze patch GEZET — daarom optional + signature
+  // matched de patch hieronder. Niet door Leaflet's TS-types geëxporteerd.
+  _onDown?: (this: DraggableProto, e: MouseEvent | TouchEvent) => void;
   fire: (event: string) => void;
   finishDrag?: () => void;
 }
@@ -114,14 +117,17 @@ if (LDraggable?.prototype && typeof L.DomEvent?.on === "function") {
     const sc = LDomUtilExt.getScale?.(sizedParent);
     this._parentScale = sc ? { x: sc.x || 1, y: sc.y || 1 } : { x: 1, y: 1 };
     const isMouse = e.type === "mousedown";
+    // L.DomEvent.on accepteert Document op runtime; types kennen
+    // alleen HTMLElement. Cast naar HTMLElement zodat tsc tevreden is
+    // — Leaflet zelf doet exact dit (zie L.Draggable._onDown source).
     L.DomEvent.on(
-      document,
+      document as unknown as HTMLElement,
       isMouse ? "mousemove" : "touchmove",
       this._onMove,
       this,
     );
     L.DomEvent.on(
-      document,
+      document as unknown as HTMLElement,
       isMouse ? "mouseup" : "touchend touchcancel",
       this._onUp,
       this,

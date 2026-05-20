@@ -1,0 +1,126 @@
+name: Release — Tauri cross-platform installers
+
+# Triggered on:
+#  - a manual run via the Actions tab (workflow_dispatch)
+#  - any tag matching `v*` (b.v. `v0.3.0`) → produceert een GitHub Release
+#    met de installers als assets gekoppeld aan die tag.
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Maak ook een GitHub-Release (true/false)"
+        required: false
+        default: "true"
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-nsis
+            # NSIS .exe installer + MSI als secondary
+          - os: ubuntu-22.04
+            label: linux-deb-appimage
+            # produceert .deb (Debian/Ubuntu) + .AppImage (portable)
+          # macOS uitgeschakeld tot user expliciet vraagt — kost extra
+          # signing cert anders krijgt-ie "unidentified developer" pop-up.
+          # - os: macos-latest
+          #   label: macos-dmg
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          # We hebben cpt-core uit crates-warehouse nodig als path-dep.
+          # Clone die in een sibling-folder zodat de Cargo.toml-path
+          # `../../crates-warehouse/cpt-core` blijft kloppen.
+          # NB: hier zou submodule-config schoner zijn — TODO follow-up.
+          path: cpt-viewer
+          fetch-depth: 0
+
+      - name: Checkout crates-warehouse (path-dep)
+        uses: actions/checkout@v4
+        with:
+          repository: OpenAEC-Foundation/crates-warehouse
+          path: crates-warehouse
+          fetch-depth: 0
+
+      - name: Install Linux build deps (alleen Ubuntu)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            build-essential \
+            curl \
+            wget \
+            file
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            cpt-viewer/apps/desktop/src-tauri -> target
+            crates-warehouse -> target
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: cpt-viewer/apps/desktop/package-lock.json
+
+      - name: Install npm dependencies
+        working-directory: cpt-viewer/apps/desktop
+        run: npm ci
+
+      - name: Build Tauri app + bundle installers
+        working-directory: cpt-viewer/apps/desktop
+        # `npm run tauri build` runt vite build → tsc → cargo build
+        # release → bundle installers (NSIS op Windows, deb+AppImage
+        # op Linux). De installers eindigen in src-tauri/target/release/bundle/.
+        run: npm run tauri build
+
+      - name: Verzamel installers
+        if: success()
+        shell: bash
+        working-directory: cpt-viewer/apps/desktop/src-tauri/target/release/bundle
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/_installers
+          # Kopieer .exe, .msi, .deb, .AppImage — laat .sig en intermediates met rust.
+          find . -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.deb" -o -name "*.AppImage" \) -exec cp {} $GITHUB_WORKSPACE/_installers/ \;
+          ls -lh $GITHUB_WORKSPACE/_installers/
+
+      - name: Upload installers als CI-artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.label }}
+          path: _installers/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach installers aan GitHub Release (alleen bij tag-push)
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: _installers/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
