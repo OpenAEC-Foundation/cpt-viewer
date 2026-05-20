@@ -4600,30 +4600,36 @@ function ScaleBar({
   const MM_TO_PX = 96 / 25.4;
   const printN = mPerPx * MM_TO_PX * 1000;
 
-  // Gebruiker-verzoek: schaalbalk altijd op 100 meter. Bij hele
-  // close-up schalen (1:200 en kleiner) past 100m niet op het papier
-  // (500mm bar bij 1:200) — dan kickt de safety-net hieronder in en
-  // valt terug op een nice round value die wél past.
+  // Gebruiker-verzoek: schaalbalk ALTIJD in stappen van 5 meter met
+  // labels 0 / 5 / 10 / 15 / ... De count varieert per print-schaal
+  // zodat de bar een redelijke papier-lengte heeft (~50mm target):
   //
-  //   1:500  → 100m bar = 200mm op papier
-  //   1:1000 → 100m bar = 100mm op papier
-  //   1:2000 → 100m bar =  50mm op papier
-  //   1:5000 → 100m bar =  20mm op papier
-  //   1:200  → safety-net → 25m bar = 125mm op papier
-  let totalM = 100;
-  void printN; /* niet meer gebruikt, behouden voor de berekening hierboven */
-  // Safety-net: als bar buitenproportioneel breed wordt (extreme
-  // zoom-in op het papier), val terug op de oude auto-fit-logica.
+  //   1:500  →  5 stappen ×5m = 25m bar = 50mm op papier
+  //   1:1000 → 10 stappen ×5m = 50m bar = 50mm op papier
+  //   1:2000 → cap op 12 → 60m bar = 30mm
+  //   1:5000 → cap op 12 → 60m bar = 12mm (klein maar leesbaar)
+  //
+  // Cap op 12 segmenten zodat de label-rij niet ondoorzienlijk wordt
+  // bij hele zoom-out-scales. Safety-net pakt extreme zoom-IN scenarios
+  // (1:100 en kleiner) waar 5m al > 60% papier zou worden.
+  const TARGET_BAR_PX = 50 * MM_TO_PX;
+  let segM = 5;
+  let count = Math.round(TARGET_BAR_PX / (segM / mPerPx));
+  count = Math.max(4, Math.min(12, count));
+  let totalM = segM * count;
+  // Safety-net: als de bar buitenproportioneel breed wordt (b.v.
+  // extreme zoom-in zoals 1:100 waar 5m al > 60% paper is), val
+  // terug op een nice-round value zodat de bar nog binnen het papier
+  // past — labels dan dynamisch gegenereerd uit pickNiceScaleMeters.
   const proposedPx = totalM / mPerPx;
   if (proposedPx > paperPxW * 0.6) {
     const targetPx = Math.max(80, paperPxW * 0.25);
     totalM = pickNiceScaleMeters(targetPx * mPerPx);
+    const fd = parseInt(String(totalM).charAt(0), 10);
+    count = fd === 5 || fd === 1 ? 5 : 4;
+    segM = totalM / count;
   }
-  // Aantal segmenten: 5 voor ronde 5-veelvouden (geeft labels 0,1,2,3,4,5
-  // van segM), 4 voor de rest (0,1,2,3,4).
-  const firstDigit = parseInt(String(totalM).charAt(0), 10);
-  const count = firstDigit === 5 || firstDigit === 1 ? 5 : 4;
-  const segM = totalM / count;
+  void printN;
   const barPx = totalM / mPerPx;
   const segPx = barPx / count;
 
