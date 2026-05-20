@@ -1039,7 +1039,10 @@ function drawMarker(
       { panel: c.layout.rf, min: c.rfViewMax, max: c.rfViewMin, color: colors.rf, value: pt.rf, fmt: (v) => v.toFixed(2) },
     ];
     if (c.layout.u2) {
-      series.push({ panel: c.layout.u2, min: c.u2ViewMin, max: c.u2ViewMax, color: colors.u2, value: pt.u2, fmt: (v) => v.toFixed(3) });
+      // u2 wordt intern in MPa opgeslagen maar als kN/m² weergegeven
+      // (1 MPa = 1000 kN/m²). De bullet-label format converteert hier
+      // ook zodat het overal in de UI consistent is.
+      series.push({ panel: c.layout.u2, min: c.u2ViewMin, max: c.u2ViewMax, color: colors.u2, value: pt.u2, fmt: (v) => (v * 1000).toFixed(0) });
     }
 
     ctx.font = '600 9px "JetBrains Mono", monospace';
@@ -1179,7 +1182,9 @@ function drawHoverIndicator(
     { panel: c.layout.rf, min: c.rfViewMax, max: c.rfViewMin, color: colors.rf, value: pt.rf, label: "Rf", fmt: (v) => v.toFixed(2) },
   ];
   if (c.layout.u2) {
-    series.push({ panel: c.layout.u2, min: c.u2ViewMin, max: c.u2ViewMax, color: colors.u2, value: pt.u2, label: "u2", fmt: (v) => v.toFixed(3) });
+    // u2 wordt intern in MPa opgeslagen maar in de UI in kN/m² getoond
+    // (1 MPa = 1000 kN/m²).
+    series.push({ panel: c.layout.u2, min: c.u2ViewMin, max: c.u2ViewMax, color: colors.u2, value: pt.u2, label: "u2", fmt: (v) => (v * 1000).toFixed(0) });
   }
 
   ctx.font = '600 9px "JetBrains Mono", monospace';
