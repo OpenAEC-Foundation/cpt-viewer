@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { useCptStore } from "../../store/useCptStore";
+import { isTauri } from "../../utils/isTauri";
 import "./ReportPreview.css";
 
 /**
@@ -68,6 +69,23 @@ export default function ReportPreview() {
       }
       setPdfUrl(null);
       setError(null);
+      return;
+    }
+
+    // Browser-modus: er is geen Rust-side PDF-engine — preview_report
+    // bestaat niet als invoke-target. Toon een nette "alleen desktop"-
+    // melding i.p.v. een onbegrijpelijke runtime-error. Voor de
+    // online webdemo komt later HTML-rendering (zelfde data model,
+    // browser print-to-PDF), maar de native printpdf-stack is voor
+    // nu desktop-only.
+    if (!isTauri()) {
+      if (activeUrlRef.current) {
+        URL.revokeObjectURL(activeUrlRef.current);
+        activeUrlRef.current = null;
+      }
+      setPdfUrl(null);
+      setLoading(false);
+      setError("BROWSER_ONLY");
       return;
     }
 
@@ -247,6 +265,42 @@ export default function ReportPreview() {
           </p>
           <p className="report-empty-subtitle">
             {t("report.openCptHint", "Open een GEF of BRO-XML bestand om een rapport te genereren.")}
+          </p>
+        </div>
+      </div>
+    );
+  } else if (error === "BROWSER_ONLY") {
+    // Vriendelijke webdemo-melding. Linkt naar de Releases-pagina
+    // zodat geïnteresseerden direct kunnen downloaden.
+    previewArea = (
+      <div className="report-pages-wrapper">
+        <div className="report-empty-state">
+          <p className="report-empty-title">
+            PDF-rapport — alleen in desktop-versie
+          </p>
+          <p className="report-empty-subtitle">
+            De PDF-engine (printpdf + resvg) draait nu nog alleen in de
+            Rust-backend van de desktop-app. Voor de webdemo komt later
+            een HTML-versie (zelfde inhoud, browser print-to-PDF).
+          </p>
+          <p style={{ marginTop: 16 }}>
+            <a
+              href="https://github.com/OpenAEC-Foundation/open-geotechniek-studio/releases/latest"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "inline-block",
+                padding: "8px 16px",
+                background: "var(--amber, #D97706)",
+                color: "white",
+                textDecoration: "none",
+                borderRadius: 6,
+                fontWeight: 600,
+                fontSize: 13,
+              }}
+            >
+              Download desktop-versie ↗
+            </a>
           </p>
         </div>
       </div>

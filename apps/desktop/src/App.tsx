@@ -94,8 +94,18 @@ function App() {
   // Start sidebar — shown only on first launch.
   // Once the user dismisses it, the flag flips and it never auto-opens again.
   // Default: undefined (loading) → only render once we know the stored value.
+  //
+  // In browser-modus (webdemo) wordt-ie sowieso niet getoond — daar laden
+  // we automatisch example.gef en de gebruiker komt direct in de chart-
+  // view terecht. De StartSidebar is bedoeld als eerste-keer-hint voor
+  // de desktop-versie ("klik hier om een bestand te openen"), wat in
+  // de browser misleidend zou zijn want File→Open werkt daar anders.
   const [startSidebarVisible, setStartSidebarVisible] = useState<boolean | null>(null);
   useEffect(() => {
+    if (!isTauri()) {
+      setStartSidebarVisible(false);
+      return;
+    }
     getSetting<boolean>("startSidebarDismissed", false).then((dismissed) => {
       setStartSidebarVisible(!dismissed);
     });
