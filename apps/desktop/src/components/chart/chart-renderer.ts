@@ -592,21 +592,47 @@ function drawGridH(
   // so the right-edge reference is the soil panel, not the last data panel.
   const lastPanel = c.layout.soil;
   const totalR = lastPanel.l + lastPanel.w;
+  const groundNap = c.cpt.metadata.ground_level_nap;
+  const hasNap = typeof groundNap === "number";
 
-  for (
-    let d = Math.ceil(c.depthViewMin / step) * step;
-    d <= c.depthViewMax;
-    d = +(d + step).toFixed(6)
-  ) {
-    const y = Math.round(depthToY(d, shared, c.depthViewMin, c.depthViewMax)) + 0.5;
-    if (y < shared.plotT || y > shared.plotB) continue;
-    const major = Math.abs(d - Math.round(d)) < 0.001;
-    ctx.strokeStyle = major ? colors.gridMajor : colors.grid;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(totalL, y);
-    ctx.lineTo(totalR, y);
-    ctx.stroke();
+  if (hasNap) {
+    // Spiegelt de NAP-stepping van drawDepthAxis — gridlijnen vallen
+    // dan exact op de NAP-labels (..., 0, -5, -10, ...) i.p.v. op
+    // schone diepte-stappen vanaf maaiveld.
+    const napAtTop = groundNap! - c.depthViewMin;
+    const napAtBot = groundNap! - c.depthViewMax;
+    const napStep = niceStep(napAtTop - napAtBot, 8);
+    let n = Math.floor(napAtTop / napStep) * napStep;
+    while (n >= napAtBot - 1e-9) {
+      const d = groundNap! - n;
+      const y = Math.round(depthToY(d, shared, c.depthViewMin, c.depthViewMax)) + 0.5;
+      if (y >= shared.plotT && y <= shared.plotB) {
+        const major = Math.abs(n - Math.round(n)) < 0.001;
+        ctx.strokeStyle = major ? colors.gridMajor : colors.grid;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(totalL, y);
+        ctx.lineTo(totalR, y);
+        ctx.stroke();
+      }
+      n = +(n - napStep).toFixed(6);
+    }
+  } else {
+    for (
+      let d = Math.ceil(c.depthViewMin / step) * step;
+      d <= c.depthViewMax;
+      d = +(d + step).toFixed(6)
+    ) {
+      const y = Math.round(depthToY(d, shared, c.depthViewMin, c.depthViewMax)) + 0.5;
+      if (y < shared.plotT || y > shared.plotB) continue;
+      const major = Math.abs(d - Math.round(d)) < 0.001;
+      ctx.strokeStyle = major ? colors.gridMajor : colors.grid;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(totalL, y);
+      ctx.lineTo(totalR, y);
+      ctx.stroke();
+    }
   }
 }
 
@@ -768,21 +794,40 @@ function drawDepthAxis(
   ctx.font = depthFont;
   ctx.fillStyle = colors.text;
 
-  for (
-    let d = Math.ceil(c.depthViewMin / step) * step;
-    d <= c.depthViewMax;
-    d = +(d + step).toFixed(6)
-  ) {
-    const y = depthToY(d, shared, c.depthViewMin, c.depthViewMax);
-    if (y < shared.plotT + 6 || y > shared.plotB - 3) continue;
-
-    // Show NAP value if ground-level is known, else fall back to depth
-    // below ground (always reported as a negative number — convention:
-    // depth grows downward, so deeper = more negative).
-    const label = hasNap
-      ? formatNap(groundNap! - d)
-      : (-d).toFixed(1);
-    ctx.fillText(label, labelRight, y);
+  if (hasNap) {
+    // Itereer over schone NAP-veelvouden (b.v. 0, -5, -10, -15, ...)
+    // i.p.v. schone diepte-stappen vanaf maaiveld. Reden: bij een
+    // maaiveld op +3.54 zou een diepte-step van 5 m labels geven op
+    // NAP +3.54, -1.46, -6.46, -11.46, … — dat zijn geen mooie NAP-
+    // waardes. De gebruiker wil 0 / -5 / -10 / -15 / … zien zoals
+    // gebruikelijk in geotechnische rapporten.
+    const napAtTop = groundNap! - c.depthViewMin;
+    const napAtBot = groundNap! - c.depthViewMax;
+    const napStep = niceStep(napAtTop - napAtBot, 8);
+    // Start bij de eerste NAP-veelvoud onder napAtTop (label valt
+    // dan binnen het zichtbare bereik) en daal totdat we onder
+    // napAtBot zakken.
+    let n = Math.floor(napAtTop / napStep) * napStep;
+    while (n >= napAtBot - 1e-9) {
+      const d = groundNap! - n;
+      const y = depthToY(d, shared, c.depthViewMin, c.depthViewMax);
+      if (y >= shared.plotT + 6 && y <= shared.plotB - 3) {
+        ctx.fillText(formatNap(n), labelRight, y);
+      }
+      n = +(n - napStep).toFixed(6);
+    }
+  } else {
+    // Geen maaiveld-NAP bekend → val terug op diepte-vanaf-maaiveld
+    // (negatief getal, want diepte groeit naar beneden).
+    for (
+      let d = Math.ceil(c.depthViewMin / step) * step;
+      d <= c.depthViewMax;
+      d = +(d + step).toFixed(6)
+    ) {
+      const y = depthToY(d, shared, c.depthViewMin, c.depthViewMax);
+      if (y < shared.plotT + 6 || y > shared.plotB - 3) continue;
+      ctx.fillText((-d).toFixed(1), labelRight, y);
+    }
   }
 
   if (!shared.narrow) {
