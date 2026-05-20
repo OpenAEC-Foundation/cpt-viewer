@@ -1116,39 +1116,75 @@ export async function openPathByExtension(path: string): Promise<boolean> {
     const { readTextFile } = await import("@tauri-apps/plugin-fs");
     const content = await readTextFile(path);
     const filename = path.split(/[\\/]/).pop() ?? path;
-    // XML: sniff first 4 KB om onderscheid te maken tussen GMW
-    // (grondwaterput), BHR (boring) en CPT/GEF. Volgorde matters —
-    // GMW eerst want de wrapper-element-namen overlappen niet maar de
-    // sniffer is goedkoper dan boring-sniff. Daarna boring, anders CPT.
-    if (lower.endsWith(".xml")) {
-      const head = content.slice(0, 4096);
-      const { looksLikeGwpXml } = await import("../types/gwp");
-      if (looksLikeGwpXml(head)) {
-        await loadGwpFromContent(content, filename, path);
-        return true;
-      }
-      if (looksLikeBoringXml(head)) {
-        await loadBoreFromContent(content, filename, path);
-        return true;
-      }
-    }
-    // `.ifcgeo` is sinds 2026 de gecombineerde extensie voor zowel
-    // project-bestanden (meerdere CPTs + tekening + title-block) als
-    // losse CPT-snapshots. Onderscheiden gebeurt door de eerste ~4 KB
-    // te sniffen op de JSON-shape:
-    //   - project: heeft `"cpts": [` of `"schema": "ifcgis-`
-    //   - single CPT: heeft alleen één `"points"`-array op top-level
-    // Bij twijfel valt-ie terug op de single-CPT-loader (oude .ifcgeo
-    // bestanden); de Rust-side gooit dan een nette parse-error als
-    // het tóch een project-payload blijkt.
-    if (lower.endsWith(".ifcgeo") && looksLikeProjectIfcgeo(content.slice(0, 4096))) {
-      await openProjectIfcgis(path);
-      return true;
-    }
-    await loadCptFromContent(content, filename, path);
-    return true;
+    return openContentByFilename(content, filename, path);
   }
   return false;
+}
+
+/**
+ * Path-loos broertje van `openPathByExtension` — routet op basis van
+ * (filename + content) i.p.v. een bestandspad. Wordt aangeroepen door:
+ *   - openPathByExtension (na readTextFile in Tauri)
+ *   - de browser-fallback file-picker (web-versie zonder fs-toegang)
+ *
+ * Voor formats die de Rust-side nodig hebben (GEF, CPT-XML, .ifcgeo
+ * project) zal `invoke()` falen in browser-context — de aanroeper
+ * moet die error opvangen en een nette UI-melding tonen.
+ */
+export async function openContentByFilename(
+  content: string,
+  filename: string,
+  path?: string,
+): Promise<boolean> {
+  const lower = filename.toLowerCase();
+  // XML: sniff first 4 KB om onderscheid te maken tussen GMW
+  // (grondwaterput), BHR (boring) en CPT/GEF. Volgorde matters —
+  // GMW eerst want de wrapper-element-namen overlappen niet maar de
+  // sniffer is goedkoper dan boring-sniff. Daarna boring, anders CPT.
+  if (lower.endsWith(".xml")) {
+    const head = content.slice(0, 4096);
+    const { looksLikeGwpXml } = await import("../types/gwp");
+    if (looksLikeGwpXml(head)) {
+      await loadGwpFromContent(content, filename, path);
+      return true;
+    }
+    if (looksLikeBoringXml(head)) {
+      await loadBoreFromContent(content, filename, path);
+      return true;
+    }
+  }
+  // `.ifcgeo` is sinds 2026 de gecombineerde extensie voor zowel
+  // project-bestanden (meerdere CPTs + tekening + title-block) als
+  // losse CPT-snapshots. Onderscheiden gebeurt door de eerste ~4 KB
+  // te sniffen op de JSON-shape:
+  //   - project: heeft `"cpts": [` of `"schema": "ifcgis-`
+  //   - single CPT: heeft alleen één `"points"`-array op top-level
+  // Bij twijfel valt-ie terug op de single-CPT-loader (oude .ifcgeo
+  // bestanden); de Rust-side gooit dan een nette parse-error als
+  // het tóch een project-payload blijkt.
+  if (lower.endsWith(".ifcgeo") && looksLikeProjectIfcgeo(content.slice(0, 4096))) {
+    if (!path) {
+      throw new Error(
+        "Projectbestanden (.ifcgeo) zijn alleen ondersteund in de desktop-versie.",
+      );
+    }
+    await openProjectIfcgis(path);
+    return true;
+  }
+  if (lower.endsWith(".ifcx") || lower.endsWith(".ifcgis")) {
+    if (!path) {
+      throw new Error(
+        "Projectbestanden (.ifcgis/.ifcx) zijn alleen ondersteund in de desktop-versie.",
+      );
+    }
+    await openProjectIfcgis(path);
+    return true;
+  }
+  // Alles wat overblijft (GEF, generieke XML, single-CPT .ifcgeo) gaat
+  // door de Rust-CPT-parser. In Tauri werkt dat; in browser gooit
+  // invoke() — caller moet daarop voorbereid zijn.
+  await loadCptFromContent(content, filename, path);
+  return true;
 }
 
 /**

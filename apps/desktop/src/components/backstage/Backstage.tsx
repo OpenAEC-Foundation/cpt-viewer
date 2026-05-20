@@ -7,7 +7,10 @@ import {
   useCptStore,
   newProjectDocument,
   openPathByExtension,
+  openContentByFilename,
 } from "../../store/useCptStore";
+import { isTauri } from "../../utils/isTauri";
+import { pickFiles } from "../../utils/browserFilePicker";
 import {
   getLatestTekening,
   tekeningStateToIfcgis,
@@ -248,22 +251,53 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
 
   // Single "open anything" entry. Combined filter — the file's extension
   // determines whether we create a CptDocument or a ProjectDocument tab.
+  //
+  // In Tauri-modus gebruiken we de plugin-dialog (geeft een pad terug)
+  // en lezen we via plugin-fs. In browser-modus (npm run dev open in
+  // browser i.p.v. Tauri-window) valt-ie terug op een HTML
+  // `<input type="file">` zodat de webversie óók bestanden kan openen.
   const openAny = useCallback(async () => {
-    const selected = await openDialog({
-      multiple: true,
-      filters: [
-        { name: "Open Geotechniek Studio", extensions: ["gef", "GEF", "xml", "XML", "ifcgeo", "ifcgis", "ifcx"] },
-      ],
-    });
-    if (!selected) return;
-    const paths = Array.isArray(selected) ? selected : [selected];
     let openedAny = false;
-    for (const p of paths) {
-      try {
-        const handled = await openPathByExtension(p);
-        if (handled) openedAny = true;
-      } catch (err) {
-        console.error("open failed for", p, err);
+    if (isTauri()) {
+      const selected = await openDialog({
+        multiple: true,
+        filters: [
+          { name: "Open Geotechniek Studio", extensions: ["gef", "GEF", "xml", "XML", "ifcgeo", "ifcgis", "ifcx"] },
+        ],
+      });
+      if (!selected) return;
+      const paths = Array.isArray(selected) ? selected : [selected];
+      for (const p of paths) {
+        try {
+          const handled = await openPathByExtension(p);
+          if (handled) openedAny = true;
+        } catch (err) {
+          console.error("open failed for", p, err);
+        }
+      }
+    } else {
+      const picked = await pickFiles({
+        multiple: true,
+        accept: ".gef,.xml,.ifcgeo,.ifcgis,.ifcx",
+      });
+      if (picked.length === 0) return;
+      for (const f of picked) {
+        try {
+          const handled = await openContentByFilename(f.text, f.name);
+          if (handled) openedAny = true;
+        } catch (err) {
+          console.error("open failed for", f.name, err);
+          // Browser-fallback: GEF + CPT-XML + projects vereisen
+          // Rust-side invoke() en mislukken in de browser. Toon de
+          // gebruiker een nette melding in plaats van stilletjes te
+          // falen.
+          const msg = err instanceof Error ? err.message : String(err);
+          alert(
+            `Kon ${f.name} niet openen in browser-modus:\n${msg}\n\n` +
+            "Tip: BHR-GT XML + GMW XML werken wél in de browser. " +
+            "Voor GEF, CPT-XML en projectbestanden heb je de desktop-versie nodig.",
+          );
+        }
       }
     }
     if (openedAny) onClose();
