@@ -169,6 +169,21 @@ export const GIS_LAYER_CATALOG: GisLayerCatalogEntry[] = [
     defaultOpacity: 1,
   },
   {
+    // BRO Grondwatermonitoringputten (GMW) via PDOK's OGC API Features.
+    // CC0-licentie, GeoJSON-native, landelijke dekking (~600k+ putten).
+    // Aanbevolen door subagent-onderzoek 2026-05 als best-integreerbare
+    // grondwaterput-bron — vervangt provincie/gemeente/waterschap-
+    // aparte feeds met één landelijke set.
+    id: "bro-grondwaterputten",
+    label: "BRO Grondwaterputten",
+    group: "data",
+    kind: "wfs",
+    url: "https://api.pdok.nl/tno/bro-grondwatermonitoring-in-samenhang-karakteristieken/ogc/v1/collections/gm_gmw/items",
+    attribution: "© BRO / TNO Geologische Dienst",
+    defaultEnabled: false,
+    defaultOpacity: 1,
+  },
+  {
     id: "project-sonderingen",
     label: "Project sonderingen",
     group: "data",

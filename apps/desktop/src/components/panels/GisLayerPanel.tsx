@@ -30,6 +30,7 @@ export type LayerId =
   | "bestemmingsplan"
   | "bro-sonderingen"
   | "bro-boringen"
+  | "bro-grondwaterputten"
   | "project-sonderingen";
 
 interface LayerDef {
@@ -81,6 +82,7 @@ const LAYER_DEFS: LayerDef[] = [
   // immediately when the user opens the Kaart tab.
   { id: "bro-sonderingen", label: "BRO Sonderingen", group: "data", defaultOn: true },
   { id: "bro-boringen", label: "BRO Boringen", group: "data", defaultOn: false },
+  { id: "bro-grondwaterputten", label: "BRO Grondwaterputten", group: "data", defaultOn: false },
 
   // Project layer
   { id: "project-sonderingen", label: "Project sonderingen", group: "data", defaultOn: true },

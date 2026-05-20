@@ -239,6 +239,9 @@ export default function MapView() {
   const adressenLayerRef = useRef<AdressenLayer | null>(null);
   const broLayerRef = useRef<L.LayerGroup | null>(null);
   const broBoresLayerRef = useRef<L.LayerGroup | null>(null);
+  // Grondwaterputten (BRO GMW) via PDOK OGC API Features. Aparte
+  // layergroup zodat toggle hem onafhankelijk aan/uit kan zetten.
+  const broGwpLayerRef = useRef<L.LayerGroup | null>(null);
   const cptLayerRef = useRef<L.LayerGroup | null>(null);
   const distLayerRef = useRef<L.LayerGroup | null>(null);
   const measureLayerRef = useRef<L.LayerGroup | null>(null);
@@ -540,6 +543,7 @@ export default function MapView() {
     // Data layer groups — kept always attached so we just clear/refill.
     broLayerRef.current = L.layerGroup().addTo(map);
     broBoresLayerRef.current = L.layerGroup().addTo(map);
+    broGwpLayerRef.current = L.layerGroup().addTo(map);
     distLayerRef.current = L.layerGroup().addTo(map);   // pairwise distance lines
     cptLayerRef.current = L.layerGroup().addTo(map);    // project sondering markers
     measureLayerRef.current = L.layerGroup().addTo(map); // measure lines (definitief)
@@ -713,10 +717,12 @@ export default function MapView() {
       const z = map.getZoom();
       const sondOn = enabledLayersRef.current["bro-sonderingen"];
       const boresOn = enabledLayersRef.current["bro-boringen"];
-      if (!sondOn && !boresOn) {
+      const gwpOn = enabledLayersRef.current["bro-grondwaterputten"];
+      if (!sondOn && !boresOn && !gwpOn) {
         // Nothing to do — don't waste a request, but clear stale data.
         broLayerRef.current?.clearLayers();
         broBoresLayerRef.current?.clearLayers();
+        broGwpLayerRef.current?.clearLayers();
         emitBroCounts(0, 0);
         return;
       }
@@ -785,6 +791,55 @@ export default function MapView() {
         );
       } else {
         broBoresLayerRef.current?.clearLayers();
+      }
+      // ── BRO Grondwaterputten via PDOK OGC API Features ────────────
+      // Direct fetch (geen Tauri-command nodig — endpoint is CORS-vrij
+      // en GeoJSON-native). bbox-param in lon,lat,lon,lat volgorde
+      // (CRS84). limit 500 om browser-renderen voor zwaardere viewports
+      // niet vast te laten lopen.
+      if (gwpOn) {
+        const u = `https://api.pdok.nl/tno/bro-grondwatermonitoring-in-samenhang-karakteristieken/ogc/v1/collections/gm_gmw/items?f=json&limit=500&bbox=${bbox.min_lon},${bbox.min_lat},${bbox.max_lon},${bbox.max_lat}`;
+        tasks.push(
+          fetch(u, { signal: myAbort.signal })
+            .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+            .then((geo: { features?: Array<{ id?: string; geometry?: { type: string; coordinates: [number, number] }; properties?: Record<string, unknown> }> }) => {
+              if (myAbort.signal.aborted) return;
+              broGwpLayerRef.current?.clearLayers();
+              const op = layerOpacityRef.current["bro-grondwaterputten"] ?? 1;
+              for (const f of geo.features ?? []) {
+                const c = f.geometry?.coordinates;
+                if (!c || f.geometry?.type !== "Point") continue;
+                const [lon, lat] = c;
+                const props = f.properties ?? {};
+                const broId = String(props.bro_id ?? props.broId ?? f.id ?? "GMW?");
+                const beheerder = String(props.delivery_accountable_party ?? props.deliveryAccountableParty ?? "");
+                const groundNap = props.ground_level_position ?? props.groundLevelPosition;
+                const nTubes = props.number_of_monitoring_tubes ?? props.numberOfMonitoringTubes;
+                const popup = `<strong>${broId}</strong><br/>Type: Grondwaterput (GMW)`
+                  + (beheerder ? `<br/>Beheerder: ${beheerder}` : "")
+                  + (groundNap != null ? `<br/>Maaiveld NAP: ${groundNap} m` : "")
+                  + (nTubes != null ? `<br/>Aantal filters: ${nTubes}` : "")
+                  + `<br/><a href="https://www.broloket.nl/ondergrondgegevens?bro-id=${encodeURIComponent(broId)}" target="_blank">Open in BROloket</a>`;
+                const m = L.circleMarker([lat, lon], {
+                  radius: 4.5,
+                  color: "#0EA5E9",        // cyaan — onderscheidend van CPT (oranje) en bore (grijs)
+                  weight: 1.6,
+                  fillColor: "#7DD3FC",
+                  fillOpacity: 0.7,
+                });
+                m.bindPopup(popup);
+                m.setOpacity(op);
+                broGwpLayerRef.current?.addLayer(m);
+              }
+            })
+            .catch((e) => {
+              if ((e as Error).name === "AbortError") return;
+              console.warn("fetch GMW failed", e);
+              broGwpLayerRef.current?.clearLayers();
+            }),
+        );
+      } else {
+        broGwpLayerRef.current?.clearLayers();
       }
       try {
         await Promise.all(tasks);
@@ -1030,7 +1085,11 @@ export default function MapView() {
 
       // Newly-enabled BRO layer → kick off an immediate load for the
       // current viewport so the user doesn't have to manually pan.
-      if ((id === "bro-sonderingen" || id === "bro-boringen") && enabled && !wasEnabled) {
+      if (
+        (id === "bro-sonderingen" || id === "bro-boringen" || id === "bro-grondwaterputten")
+        && enabled
+        && !wasEnabled
+      ) {
         void loadVisibleArea({ force: true });
       }
     };

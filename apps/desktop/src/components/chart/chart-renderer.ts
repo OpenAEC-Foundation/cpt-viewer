@@ -705,6 +705,11 @@ function drawPanelHeader(
   minVal: number | null,
   maxVal: number | null,
   ladder: number[] | null = null,
+  // Display-multiplier — vermenigvuldigt elke tick-LABEL maar laat de
+  // axis-positie (en de polyline-data) ongemoeid. Voor u2 zetten we
+  // dit op 1000 zodat de MPa-data als kN/m² wordt weergegeven zonder
+  // het data-model aan te passen. Default 1 = geen conversie.
+  displayMultiplier: number = 1,
 ) {
   const cx = panel.l + panel.w / 2;
   ctx.textAlign = "center";
@@ -752,7 +757,7 @@ function drawPanelHeader(
     for (let v = first; v <= hi + 1e-9; v = +(v + step).toFixed(6), idx++) {
       if (idx % stride !== 0) continue;
       const x = Math.round(valueToX(v, panel, lo, hi, inverted));
-      const labelTxt = fmtScale(v);
+      const labelTxt = fmtScale(v * displayMultiplier);
       const halfW = ctx.measureText(labelTxt).width / 2;
       const minX = panel.l + halfW + 1;
       const maxX = panel.l + panel.w - halfW - 1;
@@ -763,15 +768,15 @@ function drawPanelHeader(
   } else {
     // Endpoint-only labels — order them so "min" lives on the
     // value-low side of the panel regardless of inversion.
-    const leftLabel = inverted ? fmtScale(hi) : fmtScale(lo);
-    const rightLabel = inverted ? fmtScale(lo) : fmtScale(hi);
+    const leftLabel = inverted ? fmtScale(hi * displayMultiplier) : fmtScale(lo * displayMultiplier);
+    const rightLabel = inverted ? fmtScale(lo * displayMultiplier) : fmtScale(hi * displayMultiplier);
     ctx.textAlign = "left";
     ctx.fillText(leftLabel, panel.l + 2, 15);
     ctx.textAlign = "right";
     ctx.fillText(rightLabel, panel.l + panel.w - 2, 15);
     if (panel.w > 60) {
       ctx.textAlign = "center";
-      ctx.fillText(fmtScale((lo + hi) / 2), cx, 15);
+      ctx.fillText(fmtScale((lo + hi) / 2 * displayMultiplier), cx, 15);
     }
   }
 }
@@ -1419,7 +1424,7 @@ export function renderChart(
     // Rf header is mirrored — pass max/min swapped so label "0" lands on
     // the right edge and the highest Rf value lands on the left.
     drawPanelHeader(ctx, colors, shared, c.layout.rf,   "Wrijvingsgetal (Rf, %)",   colors.rf, c.rfViewMax, c.rfViewMin, RF_LADDER);
-    if (c.layout.u2) drawPanelHeader(ctx, colors, shared, c.layout.u2, "Waterspanning (u2, MPa)", colors.u2, c.u2ViewMin, c.u2ViewMax, U2_LADDER);
+    if (c.layout.u2) drawPanelHeader(ctx, colors, shared, c.layout.u2, "Waterspanning (u2, kN/m²)", colors.u2, c.u2ViewMin, c.u2ViewMax, U2_LADDER, 1000);
 
     if (curves.qc) drawCurve(ctx, shared, c, c.layout.qc, "qc", c.qcViewMin, c.qcViewMax, colors.qc, 1.8);
     if (curves.fs) drawCurve(ctx, shared, c, c.layout.fs, "fs", c.fsViewMin, c.fsViewMax, colors.fs, 1.4);

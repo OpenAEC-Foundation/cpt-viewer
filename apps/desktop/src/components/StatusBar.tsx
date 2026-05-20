@@ -43,7 +43,9 @@ export default function StatusBar() {
             {hovered.u2 != null && (
               <>
                 <Sep />
-                <Field label="u2" value={hovered.u2.toFixed(3)} unit="MPa" color="var(--domain-cpt-u2, #2563EB)" />
+                {/* u2 wordt intern in MPa opgeslagen; we tonen het als
+                    kN/m² (=MPa × 1000) zoals geotechnici verwachten. */}
+                <Field label="u2" value={(hovered.u2 * 1000).toFixed(0)} unit="kN/m²" color="var(--domain-cpt-u2, #2563EB)" />
               </>
             )}
             {hovered.soil && (
