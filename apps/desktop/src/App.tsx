@@ -24,7 +24,7 @@ import { getDetachedParams, useWindowManager } from "./hooks/useWindowManager";
 import { getSetting, setSetting } from "./store";
 import { openPathByExtension, openContentByFilename, useCptStore } from "./store/useCptStore";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { isTauri } from "./utils/isTauri";
+import { IS_TAURI } from "./utils/platform";
 import "./themes.css";
 import "./App.css";
 
@@ -102,7 +102,7 @@ function App() {
   // de browser misleidend zou zijn want File→Open werkt daar anders.
   const [startSidebarVisible, setStartSidebarVisible] = useState<boolean | null>(null);
   useEffect(() => {
-    if (!isTauri()) {
+    if (!IS_TAURI) {
       setStartSidebarVisible(false);
       return;
     }
@@ -184,7 +184,7 @@ function App() {
   // op leave doet de overlay daardoor flikkeren. We tellen daarom enters
   // minus leaves; overlay zichtbaar zolang teller > 0.
   useEffect(() => {
-    if (isTauri()) return;
+    if (IS_TAURI) return;
 
     const isOpenableExt = (name: string) =>
       /\.(gef|xml|ifcgis|ifcgeo|ifcx)$/i.test(name);
@@ -268,7 +268,7 @@ function App() {
   // — daar laten we de gebruiker zelf File → Open kiezen.
   const autoloadDoneRef = useRef(false);
   useEffect(() => {
-    if (isTauri() || autoloadDoneRef.current) return;
+    if (IS_TAURI || autoloadDoneRef.current) return;
     const docs = useCptStore.getState().documents;
     if (docs.length > 0) {
       autoloadDoneRef.current = true;

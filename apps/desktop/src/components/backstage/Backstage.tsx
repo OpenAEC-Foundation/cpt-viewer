@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { save, open as openDialog } from "@tauri-apps/plugin-dialog";
+import { save } from "@tauri-apps/plugin-dialog";
 import { useRecentFiles, type RecentFile } from "../../hooks/useRecentFiles";
 import {
   useCptStore,
@@ -9,8 +9,7 @@ import {
   openPathByExtension,
   openContentByFilename,
 } from "../../store/useCptStore";
-import { isTauri } from "../../utils/isTauri";
-import { pickFiles } from "../../utils/browserFilePicker";
+import { IS_TAURI, files as filesPlatform } from "../../utils/platform";
 import { saveJsonAsFile } from "../../utils/browserSave";
 import {
   getLatestTekening,
@@ -111,7 +110,7 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
       return;
     }
     const defaultName = `${activeDoc.meta.title || "project"}.ifcgeo`;
-    const tauriDst = isTauri()
+    const tauriDst = IS_TAURI
       ? await save({
           defaultPath: defaultName,
           // `.ifcgeo` is sinds 2026 de officiële extensie voor zowel
@@ -124,7 +123,7 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
           ],
         })
       : null;
-    if (isTauri() && !tauriDst) return;
+    if (IS_TAURI && !tauriDst) return;
     try {
       // Project-meta → ifcgis ProjectInfo (snake_case + 'type' veld).
       const meta = activeDoc.meta;
@@ -197,7 +196,7 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
         ...(titleBlock ? { title_block: titleBlock } : {}),
         ...(deliverable ? { deliverable } : {}),
       };
-      if (isTauri() && tauriDst) {
+      if (IS_TAURI && tauriDst) {
         await invoke("save_project_ifcgis_full", {
           payload,
           path: tauriDst,
@@ -233,7 +232,7 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
       // ondersteund — GEF + BRO-XML serializers zitten in Rust en
       // hebben geen TS-port. Geef de gebruiker een duidelijke melding
       // in plaats van een lege download.
-      if (!isTauri()) {
+      if (!IS_TAURI) {
         if (format !== "ifcgeo") {
           alert(
             "Exporteren naar GEF of BRO-XML vereist de desktop-versie " +
@@ -286,46 +285,35 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
   // browser i.p.v. Tauri-window) valt-ie terug op een HTML
   // `<input type="file">` zodat de webversie óók bestanden kan openen.
   const openAny = useCallback(async () => {
+    // One platform-call handles both desktop (native OS-dialog +
+    // plugin-fs) and web (HTML file picker). Returned shape is
+    // identical — path is only set in Tauri-modus.
+    const picked = await filesPlatform.pickAndRead(true);
+    if (picked.length === 0) return;
     let openedAny = false;
-    if (isTauri()) {
-      const selected = await openDialog({
-        multiple: true,
-        filters: [
-          { name: "Open Geotechniek Studio", extensions: ["gef", "GEF", "xml", "XML", "ifcgeo", "ifcgis", "ifcx"] },
-        ],
-      });
-      if (!selected) return;
-      const paths = Array.isArray(selected) ? selected : [selected];
-      for (const p of paths) {
-        try {
-          const handled = await openPathByExtension(p);
+    for (const f of picked) {
+      try {
+        if (f.path) {
+          // Desktop: use path-routed loader so de Rust-side weet
+          // welk bestand op disk staat (handig voor save-back).
+          const handled = await openPathByExtension(f.path);
           if (handled) openedAny = true;
-        } catch (err) {
-          console.error("open failed for", p, err);
-        }
-      }
-    } else {
-      const picked = await pickFiles({
-        multiple: true,
-        accept: ".gef,.xml,.ifcgeo,.ifcgis,.ifcx",
-      });
-      if (picked.length === 0) return;
-      for (const f of picked) {
-        try {
+        } else {
+          // Web: alleen content beschikbaar, geen pad.
           const handled = await openContentByFilename(f.text, f.name);
           if (handled) openedAny = true;
-        } catch (err) {
-          console.error("open failed for", f.name, err);
-          // Browser-fallback: GEF + CPT-XML + projects vereisen
-          // Rust-side invoke() en mislukken in de browser. Toon de
-          // gebruiker een nette melding in plaats van stilletjes te
-          // falen.
+        }
+      } catch (err) {
+        console.error("open failed for", f.name, err);
+        if (!IS_TAURI) {
           const msg = err instanceof Error ? err.message : String(err);
           alert(
             `Kon ${f.name} niet openen in browser-modus:\n${msg}\n\n` +
-            "Tip: BHR-GT XML + GMW XML werken wél in de browser. " +
-            "Voor GEF, CPT-XML en projectbestanden heb je de desktop-versie nodig.",
+            "Tip: BHR-GT XML + GMW XML + GEF + BRO CPT-XML werken wél in de browser. " +
+            "Voor .ifcgeo/.ifcgis projectbestanden heb je de desktop-versie nodig.",
           );
+        } else {
+          alert(`Kon ${f.name} niet openen: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     }

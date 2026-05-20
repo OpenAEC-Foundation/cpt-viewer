@@ -566,6 +566,15 @@ async function runPdfQueue(): Promise<void> {
 }
 
 export function schedulePdfPreview(doc: AppDocument): void {
+  // Browser: geen Rust PDF-engine beschikbaar — sla het scheduler-
+  // werk over. ReportPreview toont in plaats daarvan een browser-
+  // only melding (zie utils/platform.ts + ReportPreview.tsx).
+  if (typeof window !== "undefined") {
+    const g = globalThis as unknown as { isTauri?: boolean };
+    if (!g.isTauri && !("__TAURI_INTERNALS__" in window) && !("__TAURI__" in window)) {
+      return;
+    }
+  }
   // Boring + GMW-documenten genereren geen CPT-style chart-rapport —
   // sla over zodat de rest van de doc-open pipeline niet faalt.
   if (doc.kind === "bore" || doc.kind === "gwp") return;
@@ -615,6 +624,13 @@ interface GeneratedIfcResult {
 }
 
 export function scheduleIfcGenerate(doc: AppDocument): void {
+  // Browser: geen Rust IFC-generator — sla over zoals schedulePdfPreview.
+  if (typeof window !== "undefined") {
+    const g = globalThis as unknown as { isTauri?: boolean };
+    if (!g.isTauri && !("__TAURI_INTERNALS__" in window) && !("__TAURI__" in window)) {
+      return;
+    }
+  }
   // Boring + GMW-documenten krijgen (nog) geen auto-IFC-export —
   // skip om een lege/foutieve IFCX in de cache te vermijden.
   if (doc.kind === "bore" || doc.kind === "gwp") return;
@@ -683,41 +699,10 @@ export async function loadCptFromContent(
   filename: string,
   path?: string,
 ): Promise<Cpt> {
-  let cpt: Cpt;
-  try {
-    cpt = await invoke<Cpt>("open_cpt", { content, filename });
-  } catch (invokeErr) {
-    // Browser-fallback: probeer de TS-parsers (GEF + BRO CPT XML).
-    // Volgorde: GEF sniff eerst (goedkoop), dan BRO CPT XML sniff.
-    const [{ looksLikeGef, parseGef }, { looksLikeBroCptXml, parseBroCptXml }] =
-      await Promise.all([
-        import("../types/gefParser"),
-        import("../types/broCptParser"),
-      ]);
-    if (looksLikeGef(content)) {
-      try {
-        cpt = parseGef(content, filename);
-      } catch (parseErr) {
-        throw new Error(
-          `Kon GEF niet parsen in browser-modus: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`,
-        );
-      }
-    } else if (looksLikeBroCptXml(content)) {
-      try {
-        cpt = parseBroCptXml(content, filename);
-      } catch (parseErr) {
-        throw new Error(
-          `Kon BRO CPT XML niet parsen in browser-modus: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`,
-        );
-      }
-    } else {
-      // Geen herkenbaar formaat + geen Tauri = niets te doen.
-      throw new Error(
-        `Kon ${filename} niet openen: ${invokeErr instanceof Error ? invokeErr.message : String(invokeErr)}. ` +
-        `(Onbekend formaat — verwacht GEF of BRO CPT XML.)`,
-      );
-    }
-  }
+  // Eén platform-call — desktop gaat naar Rust (autoritair), web
+  // naar de TS-parsers (gefParser + broCptParser). Zie utils/platform.ts.
+  const { cpt: cptPlatform } = await import("../utils/platform");
+  const cpt = await cptPlatform.parse(content, filename);
   let createdDoc: CptDocument | null = null;
   useCptStore.setState((s) => {
     const doc: CptDocument = {
@@ -840,27 +825,9 @@ export async function addCptToActiveProject(
   content: string,
   filename: string,
 ): Promise<Cpt> {
-  // Tauri → invoke open_cpt (autoritair, kent meer edge cases).
-  // Browser → TS-parser fallback (GEF + BRO CPT XML).
-  let cpt: Cpt;
-  try {
-    cpt = await invoke<Cpt>("open_cpt", { content, filename });
-  } catch (invokeErr) {
-    const [{ looksLikeGef, parseGef }, { looksLikeBroCptXml, parseBroCptXml }] =
-      await Promise.all([
-        import("../types/gefParser"),
-        import("../types/broCptParser"),
-      ]);
-    if (looksLikeGef(content)) {
-      cpt = parseGef(content, filename);
-    } else if (looksLikeBroCptXml(content)) {
-      cpt = parseBroCptXml(content, filename);
-    } else {
-      throw new Error(
-        `Kon ${filename} niet openen: ${invokeErr instanceof Error ? invokeErr.message : String(invokeErr)}`,
-      );
-    }
-  }
+  // Eén platform-call — zie utils/platform.ts voor de Tauri/web split.
+  const { cpt: cptPlatform } = await import("../utils/platform");
+  const cpt = await cptPlatform.parse(content, filename);
   const state = useCptStore.getState();
   const active = state.documents.find((d) => d.id === state.activeDocId);
   if (!active || active.kind !== "project") {
@@ -1274,14 +1241,9 @@ export async function addBroToActiveProject(broId: string): Promise<Cpt> {
   if (!active || active.kind !== "project") {
     throw new Error("Geen project actief — kan BRO-sondering niet toevoegen.");
   }
-  // Tauri: gebruik invoke. Browser: direct fetch op publiek.broservices.nl.
-  let xml: string;
-  try {
-    xml = await invoke<string>("fetch_bro_cpt", { broId });
-  } catch {
-    const { fetchBroCptXml } = await import("../utils/broApiClient");
-    xml = await fetchBroCptXml(broId);
-  }
+  // Eén platform-call — zie utils/platform.ts (Tauri: Rust-proxy; web: direct fetch).
+  const { bro } = await import("../utils/platform");
+  const xml = await bro.fetchCptXml(broId);
   return addCptToActiveProject(xml, `${broId}.xml`);
 }
 
@@ -1299,31 +1261,9 @@ export async function mergeIntoNewProject(
   newCptContent: string,
   newCptFilename: string,
 ): Promise<void> {
-  // Parse the new CPT first — failure should leave state unchanged.
-  // In browser-modus heeft invoke geen open_cpt-target; vallen we
-  // terug op de TS-parsers (GEF + BRO CPT XML) net als loadCptFromContent.
-  let newCpt: Cpt;
-  try {
-    newCpt = await invoke<Cpt>("open_cpt", {
-      content: newCptContent,
-      filename: newCptFilename,
-    });
-  } catch (invokeErr) {
-    const [{ looksLikeGef, parseGef }, { looksLikeBroCptXml, parseBroCptXml }] =
-      await Promise.all([
-        import("../types/gefParser"),
-        import("../types/broCptParser"),
-      ]);
-    if (looksLikeGef(newCptContent)) {
-      newCpt = parseGef(newCptContent, newCptFilename);
-    } else if (looksLikeBroCptXml(newCptContent)) {
-      newCpt = parseBroCptXml(newCptContent, newCptFilename);
-    } else {
-      throw new Error(
-        `Kon ${newCptFilename} niet openen: ${invokeErr instanceof Error ? invokeErr.message : String(invokeErr)}`,
-      );
-    }
-  }
+  // Eén platform-call — zie utils/platform.ts.
+  const { cpt: cptPlatform } = await import("../utils/platform");
+  const newCpt = await cptPlatform.parse(newCptContent, newCptFilename);
   let createdDoc: ProjectDocument | null = null;
   useCptStore.setState((s) => {
     // Locate the existing standalone CPT doc.

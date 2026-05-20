@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { useCptStore } from "../../store/useCptStore";
-import { isTauri } from "../../utils/isTauri";
+import { IS_TAURI } from "../../utils/platform";
 import "./ReportPreview.css";
 
 /**
@@ -78,7 +78,7 @@ export default function ReportPreview() {
     // online webdemo komt later HTML-rendering (zelfde data model,
     // browser print-to-PDF), maar de native printpdf-stack is voor
     // nu desktop-only.
-    if (!isTauri()) {
+    if (!IS_TAURI) {
       if (activeUrlRef.current) {
         URL.revokeObjectURL(activeUrlRef.current);
         activeUrlRef.current = null;
