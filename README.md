@@ -65,7 +65,7 @@ Builds worden automatisch gepubliceerd via [GitHub Actions](.github/workflows/re
 
 ### Export & integratie
 - **CSV** per sondering, **GeoJSON** voor alle locaties tegelijk
-- **Tauri file-associations** voor `.gef`, `.xml`, `.ifcgis`, `.ifcgeo`, `.ifcx` — dubbelklik bestand opent direct in de app
+- **Tauri file-associations** voor `.gef`, `.xml`, `.ifcgis`, `.ifcgeo` — dubbelklik bestand opent direct in de app
 - **`.ifcgis` / `.ifcx`** project-format (IFC5-alpha JSON) bevat héle projectstaat: sonderingen, tekening, title-block, layer-config — round-trips compleet
 - **GEF-export** volledig BRO IMBRO-A conform (passt GEFPlotTool 5.1 validator)
 - **Offertes opvragen**: dialog die de 3 dichtstbijzijnde sondeerbedrijven toont + automatische mailto-offerte-aanvraag
