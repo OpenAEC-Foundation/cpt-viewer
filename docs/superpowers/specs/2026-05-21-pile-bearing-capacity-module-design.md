@@ -1,10 +1,17 @@
-# Funderingspaal-extensie — Design
+# Pile Bearing Capacity Module — Design
 
+**Module-id:** `pile-bearing-capacity` (UI-naam: "Funderingspaal")
 **Datum:** 2026-05-21
 **Status:** Brainstorm-spec, ter review
-**Auteur:** opgesteld via brainstorming-skill
+**Framework:** dit spec beschrijft de **eerste module** binnen het
+*Calculations Framework* — zie
+[`2026-05-21-calculations-framework-design.md`](./2026-05-21-calculations-framework-design.md)
+voor de framework-conventies (Ribbon-tab "Berekeningen", module-registry,
+IFCX-persistentie, Engelse file-naming).
 **Methode:** NEN-EN 1997-1:2005+A1:2013+NB:2019 (Eurocode 7 — Geotechnisch ontwerp)
-**Referentie-output:** `verification-files/Constructieberekeningen/Funderingspaal/984.pdf` (ExternPakket 2027.3.01)
+**Referentie-outputs:**
+- `verification-files/Constructieberekeningen/Funderingspaal/984.pdf` (ExternPakket 2027.3.01)
+- 3BM `-CB-21 Constructieberekening.ods`, tabblad CGEO1 (3151 Bodegraven-template)
 
 ## 1. Doel en scope
 
@@ -18,11 +25,17 @@ en chart-annotaties presenteert.
 - **Eén actieve sondering** (de geselecteerde CPT in de tab)
 - **Eén paaltype** — *Stalen buispaal, geheid, gesloten punt* (αp=0,70, αs=0,008, αt=0,006 uit Tabel 7.c)
 - **Computation klant-zijdig** (TypeScript, werkt in browser én Tauri)
-- **Opt-in extensie** naast Situatietekening + Offertes — default UIT
-- **Eigen Ribbon-tab** "Funderingspaal" die de werkruimte wisselt naar
-  een 3-paneel split-view (input / CPT-chart met annotaties / berekening)
+- **Opt-in extensie** `calc.pile-bearing-capacity` naast Situatietekening
+  + Offertes — default UIT
+- **Render binnen het Berekeningen-framework** — geen eigen Ribbon-tab.
+  Module exporteert `InputPanel` / `VisualPanel` / `ResultPanel`
+  componenten die door `CalculationsView` worden gerendered in het
+  uniforme 3-pane concept (library + input links, CPT-chart midden,
+  formules rechts)
 - **Statische berekening** met live update bij elke input-wijziging
 - **Resultaten zichtbaar in UI**, geen PDF-export in MVP
+- **Persistentie via IFCX** — input wordt bij project-save geserialiseerd
+  in `calculations[]` van het `.ifcgeo`-bestand (zie framework §6)
 
 ### Buiten scope v1 (latere iteraties)
 
@@ -41,112 +54,171 @@ en chart-annotaties presenteert.
 ### 2.1 Extension-registratie
 
 Bestaand systeem in `apps/desktop/src/hooks/useExtensions.ts` uitbreiden
-met één nieuwe `ExtensionId`:
+met één nieuwe `ExtensionId` met de `calc.*`-namespace die het
+framework introduceert (zie framework §7.1):
 
 ```ts
-export type ExtensionId = "tekening" | "offertes" | "funderingspaal";
+export type ExtensionId =
+  | "tekening"
+  | "offertes"
+  | "calc.pile-bearing-capacity"
+  // (overige calc-modules — coming-soon — voegen het framework toe)
+  ;
 
 const SETTING_KEYS: Record<ExtensionId, string> = {
   tekening: "ext.tekening.enabled",
   offertes: "ext.offertes.enabled",
-  funderingspaal: "ext.funderingspaal.enabled",
+  "calc.pile-bearing-capacity": "ext.calc.pile-bearing-capacity.enabled",
 };
 
 const DEFAULTS: Record<ExtensionId, boolean> = {
   tekening: false,
   offertes: false,
-  funderingspaal: false,
+  "calc.pile-bearing-capacity": false,
 };
 ```
 
-Drie plekken pikken dit automatisch op:
+Twee plekken pikken dit automatisch op (geen eigen Ribbon-tab meer —
+zie framework §4.1 voor de centrale "Berekeningen"-tab):
 
-- **Ribbon** (`apps/desktop/src/components/ribbon/Ribbon.tsx`) — toont de
-  Funderingspaal-tab alleen als `useExtension("funderingspaal")` true is
 - **Settings → Extensies** (`SettingsDialog.tsx` `ExtensionsTabContent`) — checkbox via `useAllExtensions()`
 - **Backstage → Extensies** (`ExtensionManagerPanel.tsx`) — extra item in `INSTALLED_EXTENSIONS` array met
-  category "Berekening", versie "0.3.0"
+  category "Berekening" (categorie nieuw — zie framework §7.2)
 
-Persistentie loopt via `getSetting/setSetting` uit `apps/desktop/src/store.ts` —
-in Tauri naar `preferences.json` via `@tauri-apps/plugin-store`, in
-browser naar `window.localStorage` met `ogs:` prefix (al werkend sinds
-commit e9eeb32).
+Persistentie van de toggle loopt via `getSetting/setSetting` uit
+`apps/desktop/src/store.ts` — in Tauri naar `preferences.json` via
+`@tauri-apps/plugin-store`, in browser naar `window.localStorage` met
+`ogs:` prefix (al werkend sinds commit e9eeb32).
 
-### 2.2 File-layout
+### 2.2 File-layout (alles Engels, kebab-case folders)
 
 ```
-apps/desktop/src/
-├── calc/
-│   └── pile/
-│       ├── types.ts                  # PileDesign, PileResult, PileTypeSpec, soil tables
-│       ├── pileTypeCatalog.ts        # Tabel 7.c factoren (αp, αs, αt)
-│       ├── negKleef.ts               # §7.6.2.2 — Fnk;rep + Fnk;d
-│       ├── puntdraagvermogen.ts      # §7.6.2.3(e)(f) — qb;max + qc;I/II/III gem
-│       ├── schachtwrijving.ts        # §7.6.2.3(h)(i) — Rs;cal;max
-│       ├── zakking.ts                # Figuur 7.n/7.o — lastzakkingslijn iteratie
-│       ├── samenvatting.ts           # ξ3/ξ4 (n=1), Rc;k, Rc;d, unity check
-│       ├── compose.ts                # computePileDesign(cpt, design) → PileResult
-│       └── __fixtures__/
-│           └── sondering-984.json    # CPT-data uit blad 1 van 984.pdf
-├── calc/pile.test.ts                 # vitest gouden test + unit tests
-├── components/
-│   ├── ribbon/
-│   │   └── FunderingspaalTab.tsx     # Ribbon-tab (alleen zichtbaar als ext aan)
-│   └── panels/
-│       ├── FunderingspaalView.tsx    # 3-pane split-view container
-│       ├── PileInputPanel.tsx        # links — paal/load/factoren input
-│       ├── PileChartView.tsx         # midden — CPT-chart + paal-annotaties
-│       ├── PileResultPanel.tsx       # rechts — formules + tussenstappen
-│       └── FunderingspaalView.css    # split-view layout + result-formule styling
-└── store/
-    └── usePileStore.ts               # zustand store — PileDesign[] per project
+apps/desktop/src/calc/modules/pile-bearing-capacity/
+├── module.ts                 # CalcModule export — registry-entry
+├── types.ts                  # PileInput, PileResult, SoilLayer
+├── compute.ts                # computePile(input, ctx) → PileResult
+├── catalog.ts                # pile-type Catalog (Tabel 7.c factoren)
+├── parts/
+│   ├── negative-skin-friction.ts   # §7.6.2.2 — Fnk per laag (K0·tan δ)
+│   ├── base-resistance.ts          # §7.6.2.3(e)(f) — qb;max + qc;I/II/III
+│   ├── shaft-friction.ts           # §7.6.2.3(h)(i) — Rs;cal;max
+│   ├── settlement.ts               # Figuur 7.n/7.o — lastzakkingslijn iteratie
+│   ├── spring-stiffness.ts         # k;SLS / k;ULS / kmin / kmax
+│   └── summary.ts                  # ξ3/ξ4 (n=1), Rc;k, Rc;d, unity check
+├── ui/
+│   ├── InputPanel.tsx              # links — paal/load/factoren input
+│   ├── VisualPanel.tsx             # midden — CPT-chart + paal-annotaties
+│   ├── ResultPanel.tsx             # rechts — formules + tussenstappen + zakkingsdiagram
+│   └── styles.css                  # module-specifieke styling
+├── compute.test.ts                 # vitest gouden tests (984.pdf + 3BM CGEO1)
+└── __fixtures__/
+    ├── sondering-984.json          # CPT-data uit 984.pdf blad 1
+    └── sondering-3bm-cgeo1.json    # input uit 3151-CB-21 ODS CGEO1
 ```
+
+**Naming-conventie**:
+- Folder + bestand: `kebab-case`, Engels (`pile-bearing-capacity`,
+  `negative-skin-friction.ts`)
+- TS-types: `PascalCase` Engels (`PileInput`, `SettlementResult`)
+- Variabelen: `camelCase` Engels (`baseResistance`, `shaftFriction`)
+- Symbolen in formules: het Eurocode-symbool als comment/label
+  (`αp`, `qc;I;gem`) — alleen voor UI-rendering en docs
+- UI-strings (labels, tooltips, sectie-headers): **Nederlands**
 
 ### 2.3 Data-flow
 
+State zit in de **framework-store** (`useCalculationsStore`, zie
+framework §5.1) — niet in een module-eigen store. De huidige
+calc-instance wordt aan de module geleverd; de module zelf is stateless.
+
 ```
-PileInputPanel → setPileDesign(...) → usePileStore (zustand)
-                                          ↓
-                  ┌───────────────────────┴──┐
-                  ↓                          ↓
-            PileChartView           PileResultPanel
-            (chart + annotaties)     (formules + getallen)
-                  ↑                          ↑
-                  └─── useMemo(() =>
-                       computePileDesign(cpt, design) ───┘
+CalculationsView (framework)
+   ├─ ProjectTreePanel  → selecteert actieve CalcInstance
+   ├─ active instance.input ─────┐
+   │                              │
+   ├─ module.InputPanel ──onChange→ useCalculationsStore.updateCalc(id, {input})
+   │                              │
+   ├─ module.VisualPanel ◄────────┤
+   └─ module.ResultPanel ◄────────┘
+                                  │
+                                  ▼
+                       useMemo(() => module.compute(input, ctx))
 ```
 
-`computePileDesign` is **pure**: zelfde input geeft zelfde output, geen
+`module.compute()` is **pure**: zelfde input geeft zelfde output, geen
 side-effects, idempotent. Resultaat wordt gecached via `useMemo` zodat
 typen in een input-veld geen onnodige re-computatie veroorzaakt voor
 panelen die niet wijzigen.
 
-### 2.4 View-routing
+### 2.4 View-rendering — geen eigen Ribbon-tab
 
-Nieuwe case in `App.tsx`:
+Deze module rendert **niet** via een eigen Ribbon-tab. Het Berekeningen-
+framework (`CalculationsView`) detecteert de actieve calc-instance, kijkt
+in de registry welke module dat is, en rendert dan:
 
-```ts
-type AppView = "map" | "tekening" | "report" | "pile";  // pile is new
+```tsx
+// Framework CalculationsView.tsx (simplified):
+const instance = useCalculationsStore(s => s.getActive());
+const module = getCalcModule(instance.moduleId);
+return (
+  <div className="calc-3pane">
+    <aside className="calc-left">
+      <ProjectTreePanel />
+      <module.InputPanel input={instance.input} onChange={onChange} result={result} />
+    </aside>
+    <main className="calc-mid"><module.VisualPanel input={instance.input} result={result} /></main>
+    <aside className="calc-right"><module.ResultPanel input={instance.input} result={result} /></aside>
+  </div>
+);
 ```
 
-`FunderingspaalTab` dispatcht `ogs:view-change` met `view: "pile"` →
-`App.tsx` rendert `<FunderingspaalView />` in de hoofdwerkruimte.
-Bestaand pattern, hergebruik van Sonderingstekening-aanpak.
+De module's enige verantwoordelijkheid is exporteren:
+- `InputPanel` — paal/load/factoren input
+- `VisualPanel` — CPT-chart met paal-annotaties
+- `ResultPanel` — formules + tussenstappen + zakkingsdiagram
 
 ### 2.5 Persistentie binnen project
 
-Per project één lijst van `PileDesign[]` — bewaard in zustand
-`usePileStore`. Bij `Save Project (.ifcgeo)` worden de designs
-meegeschreven onder een nieuwe top-level sectie `pile_designs` zodat
-later openen ze terughaalt. Backwards-compatible — oudere `.ifcgeo`'s
-zonder die sectie laden gewoon zonder paal-designs.
+Beheerd door het framework via de IFCX `calculations[]` sectie (zie
+framework §6). Deze module hoeft alleen `PileInput` JSON-serialiseerbaar
+te houden — geen aparte top-level sectie meer in `.ifcgeo`.
 
 ```ts
-interface IfcgisProjectV04 {
-  // ... bestaande velden ...
-  pile_designs?: PileDesign[];
-}
+// In het .ifcgeo bestand:
+calculations: [
+  {
+    id: "uuid-...",
+    module_id: "pile-bearing-capacity",
+    name: "Hoofdgebouw paalfundering",
+    input: {  // module-specifieke PileInput payload
+      cpt_id: "CPT000000004317",
+      pile_type: "steel-pipe-driven-closed",
+      pile_top_nap: 0.34,
+      pile_toe_nap: -14.50,
+      water_nap: -0.16,
+      excavation_nap: 0.84,
+      diameter_mm: 219,
+      wall_thickness_mm: 8.0,
+      n_ed: 324,
+      n_ek: 303,
+      gamma_m: 1.20,
+      gamma_f_nk: 1.00,
+      neg_skin_friction_bottom_nap: -9.00,
+      soil_profile: [ ... ],  // per-layer overrides
+    },
+    cpt_refs: ["CPT000000004317"],
+    created_at: "2026-05-21T12:34:56Z",
+    updated_at: "2026-05-21T13:01:23Z",
+  }
+]
 ```
+
+**Snake_case** in JSON-payload — past bij de bestaande IFCX-velden in
+`.ifcgeo` (b.v. `pile_top_nap`, `cpt_refs`). TS-types blijven `camelCase`
+intern; serializer mapt heen en weer.
+
+Backwards-compatible — oudere `.ifcgeo`'s zonder `calculations`-array
+laden gewoon zonder calc-instances.
 
 ## 3. UI layout
 
