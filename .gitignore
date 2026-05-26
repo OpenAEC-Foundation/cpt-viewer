@@ -31,3 +31,5 @@ PROMPTS.md
 docs/*
 # README-screenshots zijn WEL onderdeel van de repo.
 !docs/screenshots/
+# Design specs uit de brainstorming-skill horen ook in de repo.
+!docs/superpowers/
