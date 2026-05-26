@@ -229,8 +229,46 @@ Secties analoog aan blad 3 van 984.pdf, in deze volgorde:
 3. **Maximumschachtwrijving** (§7.6.2.3 h/i)
 4. **Maximum gronddraagvermogen** (Rc;cal)
 5. **Berekening zakking** (§7.6.4.2 + Figuur 7.n/7.o)
-6. **Veerwaarde** (kmin / k / kmax)
-7. **Samenvatting + Unity check**
+6. **Zakkingsdiagram** — visuele zakkingskromme met SLS + ULS-banden (zie §3.5.1)
+7. **Veerwaarde** (kmin / k / kmax)
+8. **Samenvatting + Unity check**
+
+#### 3.5.1 Zakkingsdiagram (sub-paneel binnen 5/6)
+
+Inline SVG-grafiek onder de zakkings-formules, zelfde stijl als het
+norm-figuur "Bepaling zakking":
+
+```
+                Bepaling zakking
+   zakking
+   [mm]   ▲
+       5  ┤
+       0  ┤━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      -5  ┤    ╱─────────────────────╲      ━━━━ ULS  (s bij Fc;tot;ULS = NEd+Fnk)
+     -10  ┤   ╱  ━━━━━━━━━━━━━━━━━━━━━╲    ━━━━ SLS  (s bij Fc;tot;SLS = NEk+Fnk)
+     -15  ┤  ╱                          ╲     ─── Zakkingskromme (lastzakkingslijn)
+     -20  ┤ ╱                            ╲
+         ─┴────┬────┬────┬────┬────┬────┬─────────►
+            -80   -40    0   40    80   120
+                  belasting / werkpunt
+```
+
+- **Curve**: lastzakkingslijn uit §4.5 — `Rb(sb) + Rs(sb)` als
+  functie van `sb`. X-as = totale belasting Fc;tot [kN], Y-as =
+  zakking s1 [mm] (negatief naar beneden).
+- **Twee horizontale lijnen**:
+  - **SLS** (oranje, dikker): zakking bij `Fc;tot;SLS = NEk + Fnk`
+  - **ULS** (blauw, dikker): zakking bij `Fc;tot;ULS = NEd + Fnk`
+- **Limiet-banden** (gestreepte zones, optioneel toonbaar):
+  - Verticaal: max toelaatbare zakking volgens Eurocode/NEN 9997-1
+    (typisch 25 mm absoluut, 10 mm tussen palen). User-instelbaar.
+- **Legend**: rechts naast de grafiek met SLS / ULS / Zakkingskromme + limiet.
+- **Tooltip op hover**: bij muis over de curve toont `Fc;tot = X kN → s1 = Y mm`.
+- **Live update**: bij wijziging NEk/NEd/Fnk schuiven de SLS/ULS-lijnen direct.
+
+Implementatie: SVG met React + `useMemo` over de curve-punten. ~150 lijn-
+segmenten genoeg voor smooth rendering. Plot-helper hergebruikt uit
+bestaande `GldChart`-component die we al hebben voor de GLD-tijdsgrafiek.
 
 Elke formule gerenderd als drie regels:
 
@@ -397,16 +435,26 @@ Met:
 
 ### 4.6 Veerwaarde — op basis van werkelijke belasting
 
+We berekenen voor zowel SLS (karakteristieke belasting) als ULS
+(rekenbelasting) een werkpunt op de lastzakkingslijn:
+
 ```
-k    = Fc;tot / s1                ← veerstijfheid BIJ de opgegeven belasting
-kmin = k / √2  ≈ k · 0,707
-kmax = k · √2  ≈ k · 1,414        ← Eurocode-spreiding 50%
+Fc;tot;SLS = NEk + Fnk          → solveSb → s1;SLS → k;SLS = Fc;tot;SLS / s1;SLS
+Fc;tot;ULS = NEd + Fnk          → solveSb → s1;ULS → k;ULS = Fc;tot;ULS / s1;ULS
+
+kmin = k;SLS / √2  ≈ k;SLS · 0,707
+k    = k;SLS                    ← primaire veerwaarde voor SLS
+kmax = k;SLS · √2  ≈ k;SLS · 1,414       (Eurocode-spreiding 50%)
 ```
 
+De SLS-veerwaarde is wat de constructeur doorgaans in zijn raamwerk-
+model invoert (lineair-elastische veer). De ULS-zakking is de zakking
+die optreedt onder de rekenbelasting — wordt gebruikt voor de
+toets aan absolute zakkings-grens (typisch 25 mm).
+
 Re-actief: zodra `NEk`, `NEd`, paalniveaus of Fnk wijzigen → `useMemo`
-herberekent de hele cascade (`Fc;tot → sb → Rb,Rs → s1 → k`) en de drie
-panelen updaten live. Dit is wat de constructeur typisch wil: schuiven met
-de belasting en direct zien wat het effect op zakking en veerwaarde is.
+herberekent beide werkpunten + cascade en alle panelen updaten live.
+Het zakkingsdiagram (§3.5.1) verschuift de SLS/ULS-lijnen direct mee.
 
 ### 4.7 Samenvatting + unity check (n=1, MVP)
 
