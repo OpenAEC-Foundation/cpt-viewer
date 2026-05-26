@@ -196,9 +196,13 @@ Collapsible secties met section-headers (zelfde pattern als bestaande
 - **Partiële factoren**:
   - γm = 1,20 (Tabel A.10, default)
   - γf,nk = 1,00 (Tabel A.6, default)
-- **Bodemprofiel**:
-  - "Auto van Robertson" (default)
+- **Bodemprofiel** (cruciaal voor neg.kleef-berekening):
+  - "Auto van Robertson" (default) — Robertson zone-detectie levert
+    laag-grenzen + soiltype-suggestie per laag
+  - Tabel met kolommen: Grondsoort | Start NAP | Eind NAP | Δh | γ | γ_wat | Φ
+  - Defaults uit grondsoort-tabel (sectie 4.1), per laag overrule-baar
   - Knop "Negatieve kleef-grens overrulen" → number input m NAP
+  - Grondwaterstand (GWS) m NAP — bepaalt of `γ_wat` mee-telt per laag
 
 ### 3.4 PileChartView (midden)
 
@@ -252,22 +256,44 @@ Bij `unity > 1.0` rood + ✗, anders groen + ✓.
 
 ## 4. Berekening — Eurocode 7 §7.6.2.3
 
-### 4.1 Negatieve kleef (formule 7.6)
+### 4.1 Negatieve kleef (formule 7.6) — per-laag berekening
 
 ```
-Fnk;rep = Os;gem · K0 · tan(δ) · Σᵢ((σv,i-1 + σv,i)/2 · hᵢ)
-Fnk;d   = γf,nk · Fnk;rep                            (γf,nk = 1,00)
+Per laag i (top..bottom van de neg.kleef-zone):
+  σk;rep,i      = σk;rep,i-1 + Δhᵢ · (γᵢ - γwat,i)    (σ-stack opbouwen)
+  σk;gem;rep,i  = (σk;rep,i-1 + σk;rep,i) / 2 · Δhᵢ   (gemiddelde × dikte)
+  K₀,i          = 1 - sin(Φᵢ)                        (rusttegen­druk-coëfficient)
+  δᵢ            = 0,75 · Φᵢ                          (paal-grond wrijvingshoek)
+  (K₀·tan δ)ᵢ   = max(K₀,i · tan(δᵢ), 0,25)          (Eurocode min-cap)
+  Fs;nk;rep,i   = σk;gem;rep,i · Os;gem · (K₀·tan δ)ᵢ
+
+Totaal:
+  Fnk;rep = Σᵢ Fs;nk;rep,i
+  Fnk;d   = γf,nk · Fnk;rep                          (γf,nk = 1,00)
 ```
+
+**Inputs per laag** (uit `pile/types.ts` grondsoort-tabel, default-waarden
+afgestemd op de 3BM ODS-template):
+
+| Grondsoort | γ [kN/m³] | γ_wat [kN/m³] | Φ [°] | Notitie |
+|---|---|---|---|---|
+| Zand droog | 17,0 | 0,0 | 32,5 | boven GWS |
+| Zand nat | 17,0 | 10,0 | 32,5 | onder GWS |
+| Veen nat | 13,0 | 10,0 | 15,0 | |
+| Klei nat | 18,0 | 10,0 | 22,5 | matig consistentie |
+| Klei vast | 19,0 | 10,0 | 25,0 | vaste kern |
+
+User-editable via een soillaag-tabel in PileInputPanel (per laag: grondsoort
+dropdown + Δh + auto-populated γ/Φ, met override-velden). Robertson zone-
+detectie levert default soilkind per laag.
 
 - `Os;gem` = π · D (rond) of 2(a+b) (rechthoek)
-- `σv` per laag via Robertson-classificatie uit cpt-core: per laag pakken we
-  `γ_k` en `γ_sat;k` uit een grondsoort-tabel (intern in `pile/types.ts`,
-  defaults uit NEN 9997-1 tabel-bijlage)
 - Zone = paalkop → `negKleefBottomNAP`
   - Default `negKleefBottomNAP` = top eerste vaste-zandlaag uit Robertson
   - Gebruiker kan overrulen via input-panel
 - `ΔLnk = pileTopNAP - negKleefBottomNAP`
-- `K0 · tan(δ)` default = 0,25 (Eurocode A.6 voor matig vaste klei)
+- **K₀·tan(δ) wordt NIET hardcoded** — altijd berekend uit Φ per laag,
+  met de Eurocode-minimumeis 0,25 als ondergrens.
 
 ### 4.2 Puntdraagvermogen (formule 7.6.2.3 e/f)
 
@@ -423,7 +449,7 @@ Edge-cases met test-fixtures:
 
 `apps/desktop/src/calc/pile.test.ts` met vitest:
 
-### 6.1 Gouden test — referentie 984.pdf blad 1-3
+### 6.1 Gouden test A — referentie 984.pdf blad 1-3 (XConstruct)
 
 Fixture: `__fixtures__/sondering-984.json` met:
 - Sondering 1 uit 984.pdf (CPT-data, paalkop +0,34, paalpunt -14,50)
@@ -443,6 +469,32 @@ expect(result.unity).toBeCloseTo(0.96, 2)       // 324/337
 
 > NB: De PDF gebruikt nog n=7 (multi-CPT) en komt op 0,92. Voor n=1
 > wordt de unity iets hoger door grotere ξ-factor.
+
+### 6.2 Gouden test B — referentie 3BM ODS-template (CGEO1)
+
+Fixture: `__fixtures__/sondering-3bm-cgeo1.json` met:
+- Inputs uit `3151-CB-21 Constructieberekening.ods`, tabblad CGEO1
+- D=168mm (Deq=178mm), paalkop -0,5, paalpunt -14,0
+- 4 lagen neg.kleef: Zand droog -0,5/-2,5; Zand nat -2,5/-4,0;
+  Veen nat -4,0/-6,0; Klei nat -6,0/-8,0 (GWS -2,5)
+
+Assertions (tolerantie 0,5 kN):
+```ts
+// Per-laag neg.kleef met K0·tan(δ) cap op 0,25
+expect(result.negKleef.layers[0].fsNkRep).toBeCloseTo(4.49, 1)  // Zand droog
+expect(result.negKleef.layers[1].fsNkRep).toBeCloseTo(7.77, 1)  // Zand nat
+expect(result.negKleef.layers[2].fsNkRep).toBeCloseTo(12.53, 1) // Veen
+expect(result.negKleef.layers[3].fsNkRep).toBeCloseTo(15.44, 1) // Klei
+expect(result.Fnk).toBeCloseTo(40.2, 1)         // Σ
+expect(result.RbCal).toBeCloseTo(141.1, 1)      // qbMax 5,67 MPa × 24884 mm²
+expect(result.RsCal).toBeCloseTo(79.2, 1)
+expect(result.RcD).toBeCloseTo(132.1, 1)
+expect(result.RcNetD).toBeCloseTo(91.8, 1)      // 132,1 - 40,2
+```
+
+Deze test garandeert dat de per-laag K₀·tan(δ) berekening (inclusief de
+0,25 minimum-cap) exact matcht met de praktijk-template die 3BM
+Bouwtechniek dagelijks gebruikt.
 
 ### 6.2 Unit tests per stap
 
@@ -469,8 +521,10 @@ Aannames die ik in dit design heb gemaakt — pas aan bij review als gewenst:
    inlezen via JSON-resource zodat aanpassingen niet recompiles vereisen.
 2. **EA paal** — afgeleid uit D + wanddikte t in input-panel (E_staal =
    210 GPa). Alternatief: directe input.
-3. **K0 · tan(δ) = 0,25** als product-default. Per-grondsoort uit Robertson
-   zou nauwkeuriger zijn, maar is v2-werk.
+3. **K₀·tan(δ) per laag berekend** uit Φ (K₀=1-sin(Φ), δ=0,75·Φ) met
+   Eurocode-minimumeis 0,25 als ondergrens. Φ-defaults per grondsoort uit
+   tabel in sectie 4.1, user-editable. Bron-aanname: 3BM XConstruct/ODS
+   template "CGEO1" — geverifieerd 2026-05-21.
 4. **qs;max per grondsoort** — defaults uit `Tabel 7.d` (zand 0,15 MPa,
    klei 0,10 MPa, veen 0,02 MPa). Bron-tabel in `pile/types.ts`, niet
    editable in MVP.
