@@ -343,8 +343,15 @@ Rc;cal = Rb;cal;max + Rs;cal;max
 
 ### 4.5 Zakking — lastzakkingslijn (§7.6.4.2, Figuur 7.n + 7.o)
 
+**Belangrijk principe**: zakking en veerwaarde worden bepaald bij de
+**werkelijk ingevoerde paalbelasting** `Fc;tot`, NIET bij de maximaal
+opneembare draagkracht. Hoe lager de belasting, hoe minder zakking, hoe
+stijver de paalveer. De gebruiker voert NEk in → spec berekent
+bijbehorende `s1` en `k`. Als de gebruiker NEk verhoogt, schuift het
+werkpunt langs de lastzakkingslijn omhoog en wordt zowel s1 als k anders.
+
 ```
-Fc;tot = NEk + Fnk
+Fc;tot = NEk + Fnk      ← werkelijke werkpunt-belasting paalkop
 ```
 
 **Curves uit Eurocode digitaal als lookup-table** in `pile/zakking.ts`:
@@ -353,10 +360,14 @@ Fc;tot = NEk + Fnk
   paal (Lastzakkingslijn 1). Discretisatie elke 0,1% op X-as.
 - `figuur7o[]` — `sb [mm] → (Rs/Rs;cal;max %)`. Discretisatie elke 0,5 mm.
 
-**Iteratie**: bisectie op `sb`:
+**Iteratie**: bisectie op `sb` totdat `Rb(sb) + Rs(sb) = Fc;tot`. Zo
+vinden we welk werkpunt op de lastzakkingslijn correspondeert met de
+opgegeven belasting:
 
 ```ts
-function solveSb(Fc_tot, Rb_max, Rs_max, Deq, EA, L, deltaL): number {
+function solveSb(Fc_tot, Rb_max, Rs_max, Deq): number {
+  // Voorwaarde: Fc_tot ≤ Rb_max + Rs_max — anders is er geen evenwicht
+  // op de curve en moet caller een rode waarschuwing tonen.
   let lo = 0, hi = 0.05 * Deq;  // 5% zakkingsratio als bovengrens
   for (let iter = 0; iter < 30; iter++) {
     const sb = (lo + hi) / 2;
@@ -369,12 +380,14 @@ function solveSb(Fc_tot, Rb_max, Rs_max, Deq, EA, L, deltaL): number {
 }
 ```
 
-Daarna:
+Na het vinden van `sb` (zakking paalpunt onder belasting):
 
 ```
+Rb = Rb;cal;max · (Rb/Rb;cal;max bij sb)   ← gemobiliseerde puntdraagkracht
+Rs = Rs;cal;max · (Rs/Rs;cal;max bij sb)   ← gemobiliseerde schachtwrijving
 Fgem = (l·Fc;tot + 0,5·ΔL·(Fc;tot - Rb)) / L
-sel = L · Fgem / EA
-s1 = sb + sel
+sel = L · Fgem / EA                          ← elastische verkorting paal
+s1  = sb + sel                               ← totale zakking paalkop
 ```
 
 Met:
@@ -382,13 +395,18 @@ Met:
 - `L` = paallengte = `pileTopNAP - pileToeNAP`
 - `ΔL` = zone schachtwrijving = `negKleefBottomNAP - pileToeNAP`
 
-### 4.6 Veerwaarde
+### 4.6 Veerwaarde — op basis van werkelijke belasting
 
 ```
-k    = Fc;tot / s1
-kmin = k / √2   = k · 0,7071
-kmax = k · √2   = k · 1,4142
+k    = Fc;tot / s1                ← veerstijfheid BIJ de opgegeven belasting
+kmin = k / √2  ≈ k · 0,707
+kmax = k · √2  ≈ k · 1,414        ← Eurocode-spreiding 50%
 ```
+
+Re-actief: zodra `NEk`, `NEd`, paalniveaus of Fnk wijzigen → `useMemo`
+herberekent de hele cascade (`Fc;tot → sb → Rb,Rs → s1 → k`) en de drie
+panelen updaten live. Dit is wat de constructeur typisch wil: schuiven met
+de belasting en direct zien wat het effect op zakking en veerwaarde is.
 
 ### 4.7 Samenvatting + unity check (n=1, MVP)
 
