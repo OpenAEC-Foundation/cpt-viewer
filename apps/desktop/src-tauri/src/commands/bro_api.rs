@@ -55,27 +55,25 @@ pub struct BroFeature {
 }
 
 // ───────────────────────────────────────────────────────────────────
-// Public Tauri commands
+// Core implementations (geen Tauri-State afhankelijkheid — direct
+// aanroepbaar door MCP-handlers via block_on)
 // ───────────────────────────────────────────────────────────────────
 
-#[tauri::command]
-pub async fn fetch_bro_area(bbox: BBox) -> Result<Vec<BroFeature>, String> {
+pub async fn fetch_bro_area_core(bbox: BBox) -> Result<Vec<BroFeature>, String> {
     let url = format!("{BASE}/sr/cpt/v1/characteristics/searches");
     let body = build_search_body(&bbox);
     let xml = post_xml(&url, &body).await?;
     parse_characteristics(&xml, "cpt").map_err(|e| format!("parse CPT search: {e}"))
 }
 
-#[tauri::command]
-pub async fn fetch_bro_bores(bbox: BBox) -> Result<Vec<BroFeature>, String> {
+pub async fn fetch_bro_bores_core(bbox: BBox) -> Result<Vec<BroFeature>, String> {
     let url = format!("{BASE}/sr/bhrgt/v2/characteristics/searches");
     let body = build_search_body(&bbox);
     let xml = post_xml(&url, &body).await?;
     parse_characteristics(&xml, "bore").map_err(|e| format!("parse BHRGT search: {e}"))
 }
 
-#[tauri::command]
-pub async fn fetch_bro_cpt(bro_id: String) -> Result<String, String> {
+pub async fn fetch_bro_cpt_core(bro_id: &str) -> Result<String, String> {
     let url = format!("{BASE}/sr/cpt/v1/objects/{bro_id}");
     let client = http_client()?;
     let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
@@ -85,11 +83,7 @@ pub async fn fetch_bro_cpt(bro_id: String) -> Result<String, String> {
     resp.text().await.map_err(|e| e.to_string())
 }
 
-/// Fetch the full BHR-GT borehole XML for a single BRO object. Returns
-/// the raw XML so the front-end can parse + render a strip log without
-/// needing additional Rust types. Same shape as `fetch_bro_cpt`.
-#[tauri::command]
-pub async fn fetch_bro_bore(bro_id: String) -> Result<String, String> {
+pub async fn fetch_bro_bore_core(bro_id: &str) -> Result<String, String> {
     let url = format!("{BASE}/sr/bhrgt/v2/objects/{bro_id}");
     let client = http_client()?;
     let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
@@ -99,15 +93,11 @@ pub async fn fetch_bro_bore(bro_id: String) -> Result<String, String> {
     resp.text().await.map_err(|e| e.to_string())
 }
 
-/// Fetch the *full* BRO object metadata for a CPT or borehole and return
-/// it as a flat key/value map suitable for popup rendering. `kind` must
-/// be `"cpt"` or `"bore"`.
-#[tauri::command]
-pub async fn fetch_bro_object_metadata(
-    id: String,
-    kind: String,
+pub async fn fetch_bro_object_metadata_core(
+    id: &str,
+    kind: &str,
 ) -> Result<HashMap<String, String>, String> {
-    let url = match kind.as_str() {
+    let url = match kind {
         "cpt" => format!("{BASE}/sr/cpt/v1/objects/{id}"),
         "bore" | "bhrgt" => format!("{BASE}/sr/bhrgt/v2/objects/{id}"),
         other => return Err(format!("unsupported BRO kind: {other}")),
@@ -119,6 +109,44 @@ pub async fn fetch_bro_object_metadata(
     }
     let xml = resp.text().await.map_err(|e| e.to_string())?;
     parse_object_metadata(&xml).map_err(|e| format!("parse object metadata: {e}"))
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Public Tauri commands (dunne wrappers rond core-functies)
+// ───────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn fetch_bro_area(bbox: BBox) -> Result<Vec<BroFeature>, String> {
+    fetch_bro_area_core(bbox).await
+}
+
+#[tauri::command]
+pub async fn fetch_bro_bores(bbox: BBox) -> Result<Vec<BroFeature>, String> {
+    fetch_bro_bores_core(bbox).await
+}
+
+#[tauri::command]
+pub async fn fetch_bro_cpt(bro_id: String) -> Result<String, String> {
+    fetch_bro_cpt_core(&bro_id).await
+}
+
+/// Fetch the full BHR-GT borehole XML for a single BRO object. Returns
+/// the raw XML so the front-end can parse + render a strip log without
+/// needing additional Rust types. Same shape as `fetch_bro_cpt`.
+#[tauri::command]
+pub async fn fetch_bro_bore(bro_id: String) -> Result<String, String> {
+    fetch_bro_bore_core(&bro_id).await
+}
+
+/// Fetch the *full* BRO object metadata for a CPT or borehole and return
+/// it as a flat key/value map suitable for popup rendering. `kind` must
+/// be `"cpt"` or `"bore"`.
+#[tauri::command]
+pub async fn fetch_bro_object_metadata(
+    id: String,
+    kind: String,
+) -> Result<HashMap<String, String>, String> {
+    fetch_bro_object_metadata_core(&id, &kind).await
 }
 
 // ───────────────────────────────────────────────────────────────────

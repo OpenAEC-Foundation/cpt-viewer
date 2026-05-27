@@ -3256,6 +3256,7 @@ dependencies = [
 name = "open-geo-studio"
 version = "0.2.4"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "cpt-core",
  "lopdf 0.34.0",
@@ -3275,6 +3276,7 @@ dependencies = [
  "tauri-plugin-os",
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
+ "tokio",
  "ttf-parser 0.25.1",
 ]
 

@@ -2,21 +2,25 @@ use serde_json::{json, Value};
 
 /// Return MCP tool definitions for the tools/list endpoint.
 ///
-/// Tools zijn gegroepeerd per domein:
+/// Tools zijn gegroepeerd per domein (totaal 27):
 ///   - tenant (5): list_tenants, list_templates, get_brand, generate_report, get_app_state
 ///   - cpt (5): cpt_open, cpt_close, cpt_list, cpt_detect_layers, cpt_save_as
 ///   - project (5): project_save_ifcgis, project_open_ifcgis,
 ///     project_save_ifcgis_full, project_open_ifcgis_full, project_preview_ifcx
 ///   - export (2): export_csv, export_geojson
-///
-/// Totaal: 17 tools. Async tools (bro_*, ifc_*, report_*) volgen in een
-/// vervolg-uitbreiding (vereisen tokio runtime in MCP-mode).
+///   - bro (5): bro_fetch_area, bro_fetch_bores, bro_fetch_cpt,
+///     bro_fetch_bore, bro_fetch_object_metadata
+///   - ifc (3): ifc_generate, ifc_list_generated, ifc_read_generated
+///   - report (2): report_preview, report_generate
 pub fn tool_definitions() -> Vec<Value> {
     let mut tools = Vec::new();
     tools.extend(tenant_tools());
     tools.extend(cpt_tools());
     tools.extend(project_tools());
     tools.extend(export_tools());
+    tools.extend(bro_tools());
+    tools.extend(ifc_tools());
+    tools.extend(report_tools());
     tools
 }
 
@@ -233,6 +237,168 @@ fn export_tools() -> Vec<Value> {
                     "path": { "type": "string", "description": "Doelpad voor .geojson" }
                 },
                 "required": ["cpt_ids", "path"]
+            }
+        }),
+    ]
+}
+
+fn bro_tools() -> Vec<Value> {
+    let bbox_schema = json!({
+        "type": "object",
+        "description": "Bounding box in WGS84",
+        "properties": {
+            "min_lat": { "type": "number" },
+            "min_lon": { "type": "number" },
+            "max_lat": { "type": "number" },
+            "max_lon": { "type": "number" }
+        },
+        "required": ["min_lat", "min_lon", "max_lat", "max_lon"]
+    });
+    vec![
+        json!({
+            "name": "bro_fetch_area",
+            "description": "Zoek BRO CPT-sonderingen in een bounding box via de publieke BRO REST API. Returnt een lijst van BroFeature met BRO-id, WGS84 lat/lon, einddiepte, kwaliteitsklasse, etc.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "bbox": bbox_schema },
+                "required": ["bbox"]
+            }
+        }),
+        json!({
+            "name": "bro_fetch_bores",
+            "description": "Zoek BRO BHR-GT geotechnische boringen in een bounding box. Zelfde shape als bro_fetch_area maar voor boringen.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "bbox": bbox_schema.clone() },
+                "required": ["bbox"]
+            }
+        }),
+        json!({
+            "name": "bro_fetch_cpt",
+            "description": "Haal de volledige BRO CPT XML op voor een specifieke BRO-id (gebruik daarna cpt_open om hem in de cache te krijgen).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "bro_id": { "type": "string", "description": "BRO-id (bv. CPT000000004317)" }
+                },
+                "required": ["bro_id"]
+            }
+        }),
+        json!({
+            "name": "bro_fetch_bore",
+            "description": "Haal de volledige BRO BHR-GT XML op voor een boring-BRO-id.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "bro_id": { "type": "string" }
+                },
+                "required": ["bro_id"]
+            }
+        }),
+        json!({
+            "name": "bro_fetch_object_metadata",
+            "description": "Haal flatten BRO-metadata op voor een CPT of boring (key/value map, gefilterd op interessante velden zoals broId, finalDepth, qualityClass).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "kind": { "type": "string", "enum": ["cpt", "bore", "bhrgt"] }
+                },
+                "required": ["id", "kind"]
+            }
+        }),
+    ]
+}
+
+fn ifc_tools() -> Vec<Value> {
+    vec![
+        json!({
+            "name": "ifc_generate",
+            "description": "Genereer een IFC-document (IFC4x3 of IFCX-JSON) voor een project + lijst CPT-ids. Slaat het bestand op in een per-sessie cache-directory en returnt content + metadata.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": {
+                        "type": "object",
+                        "properties": {
+                            "id": { "type": "string" },
+                            "title": { "type": "string" },
+                            "client": { "type": "string" },
+                            "location": { "type": "string" },
+                            "project_number": { "type": "string" },
+                            "author": { "type": "string" },
+                            "date": { "type": "string", "description": "ISO 8601 YYYY-MM-DD" }
+                        },
+                        "required": ["title", "date"]
+                    },
+                    "cpt_ids": { "type": "array", "items": { "type": "string" } },
+                    "format": { "type": "string", "enum": ["ifc4x3", "ifcx"] }
+                },
+                "required": ["project", "cpt_ids", "format"]
+            }
+        }),
+        json!({
+            "name": "ifc_list_generated",
+            "description": "Lijst eerder gegenereerde IFC-bestanden (newest first) voor een project_id of de default-bucket.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project_id": { "type": "string" }
+                },
+                "required": []
+            }
+        }),
+        json!({
+            "name": "ifc_read_generated",
+            "description": "Lees een eerder gegenereerd IFC-bestand terug uit de cache via volledig pad (uit ifc_list_generated.full_path).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "full_path": { "type": "string" }
+                },
+                "required": ["full_path"]
+            }
+        }),
+    ]
+}
+
+fn report_tools() -> Vec<Value> {
+    let project_meta_schema = json!({
+        "type": "object",
+        "properties": {
+            "title": { "type": "string" },
+            "client": { "type": "string" },
+            "location": { "type": "string" },
+            "project_number": { "type": "string" },
+            "author": { "type": "string" },
+            "date": { "type": "string", "description": "ISO 8601 YYYY-MM-DD" }
+        },
+        "required": ["title", "client", "location", "project_number", "author", "date"]
+    });
+    vec![
+        json!({
+            "name": "report_preview",
+            "description": "Genereer PDF-rapport bytes in-memory (base64-geserialiseerd in JSON-respons) voor een lijst CPT-ids + project-meta. Geschikt voor preview zonder schijf-write.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "cpt_ids": { "type": "array", "items": { "type": "string" } },
+                    "project": project_meta_schema.clone()
+                },
+                "required": ["cpt_ids", "project"]
+            }
+        }),
+        json!({
+            "name": "report_generate",
+            "description": "Genereer PDF-rapport voor een lijst CPT-ids + project-meta en schrijf direct naar schijf op output_path.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "cpt_ids": { "type": "array", "items": { "type": "string" } },
+                    "project": project_meta_schema,
+                    "output_path": { "type": "string", "description": "Doelpad voor .pdf" }
+                },
+                "required": ["cpt_ids", "project", "output_path"]
             }
         }),
     ]

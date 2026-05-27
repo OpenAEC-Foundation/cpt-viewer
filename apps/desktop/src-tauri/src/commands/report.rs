@@ -36,7 +36,45 @@ impl From<ProjectMetaInput> for ProjectMeta {
     }
 }
 
-/// `preview_report` is now `async` and the heavy printpdf work runs on
+// ─── Core implementations ──────────────────────────────────────────
+
+/// Genereer een PDF-rapport voor PRE-SNAPSHOTTED cpts (de caller zorgt zelf
+/// voor de AppState-lock + clone). Direct aanroepbaar door zowel de Tauri-
+/// command-wrapper als de MCP-server. Heavy rendering loopt via
+/// `tokio::task::spawn_blocking` zodat het runtime threadpool gerespecteerd
+/// blijft (Tauri-runtime in GUI-mode, eigen tokio runtime in MCP-mode).
+pub async fn preview_report_core(
+    cpts: Vec<cpt_core::Cpt>,
+    project: ProjectMetaInput,
+) -> Result<Vec<u8>, String> {
+    let meta: ProjectMeta = project.into();
+    tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        if cpts.len() == 1 {
+            return Ok(generate_single_cpt_pdf_bytes(&cpts[0], &meta));
+        }
+        let report = build_report(&cpts, &meta);
+        generate_pdf_bytes(&report).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join failed: {e}"))?
+}
+
+pub async fn generate_report_core(
+    cpts: Vec<cpt_core::Cpt>,
+    project: ProjectMetaInput,
+    output_path: String,
+) -> Result<(), String> {
+    let bytes = preview_report_core(cpts, project).await?;
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        std::fs::write(PathBuf::from(output_path), bytes).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join failed: {e}"))?
+}
+
+// ─── Tauri command wrappers ────────────────────────────────────────
+
+/// `preview_report` is `async` and the heavy printpdf work runs on
 /// `spawn_blocking` so it never stalls Tauri's async runtime. Opening
 /// multiple sonderingen in quick succession now interleaves with UI
 /// commands instead of queuing on the single command thread.
@@ -56,22 +94,7 @@ pub async fn preview_report(
             .filter_map(|id| cpts_map.get(id).cloned())
             .collect()
     };
-    let meta: ProjectMeta = project.into();
-
-    // Render off the runtime thread — printpdf + image rasterisation is
-    // pure CPU work and blocks for hundreds of ms / several seconds per
-    // CPT. Without `spawn_blocking` Tauri's command executor stalls.
-    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<u8>, String> {
-        if cpts.len() == 1 {
-            // Single-CPT projects use the direct printpdf path which produces
-            // the Dutch-convention full-bleed A4 chart matching the reference.
-            return Ok(generate_single_cpt_pdf_bytes(&cpts[0], &meta));
-        }
-        let report = build_report(&cpts, &meta);
-        generate_pdf_bytes(&report).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join failed: {e}"))?
+    preview_report_core(cpts, project).await
 }
 
 #[tauri::command]
@@ -81,10 +104,12 @@ pub async fn generate_report(
     output_path: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let bytes = preview_report(cpt_ids, project, state).await?;
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        std::fs::write(PathBuf::from(output_path), bytes).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join failed: {e}"))?
+    let cpts: Vec<_> = {
+        let cpts_map = state.cpts.lock().unwrap();
+        cpt_ids
+            .iter()
+            .filter_map(|id| cpts_map.get(id).cloned())
+            .collect()
+    };
+    generate_report_core(cpts, project, output_path).await
 }

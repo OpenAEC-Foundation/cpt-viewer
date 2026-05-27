@@ -78,37 +78,19 @@ pub struct GeneratedIfcEntry {
 }
 
 // ───────────────────────────────────────────────────────────────────
-// Tauri commands
+// Core implementations
 // ───────────────────────────────────────────────────────────────────
 
-/// Generate an IFC document for the given project + CPTs and write it to
-/// the per-session cache directory. Returns the generated text alongside
-/// metadata so the renderer can show it immediately without a follow-up
-/// `read_text_file` round-trip.
-///
-/// `format` must be `"ifc4x3"` or `"ifcx"`. Unknown formats are rejected.
-#[tauri::command]
-pub async fn generate_ifc(
+/// Genereer IFC voor PRE-SNAPSHOTTED cpts (de caller zorgt zelf voor de
+/// AppState-lock + clone). Wordt direct aangeroepen door zowel de Tauri-
+/// command-wrapper als de MCP-server.
+pub async fn generate_ifc_core(
     project: ProjectMetaInput,
-    cpt_ids: Vec<String>,
+    cpts: Vec<Cpt>,
     format: String,
-    state: State<'_, AppState>,
 ) -> Result<GeneratedIfcResult, String> {
     let project_id = project.id.clone().unwrap_or_else(|| "default".into());
     let project_id_safe = sanitise_id(&project_id);
-
-    // Snapshot the requested CPTs out of state quickly so we can release the
-    // lock before doing any IFC work (the writers iterate over potentially
-    // thousands of measurement points and we don't want to block other
-    // commands while that happens).
-    let cpts: Vec<Cpt> = {
-        let cache = state.cpts.lock().map_err(|e| e.to_string())?;
-        cpt_ids
-            .iter()
-            .filter_map(|id| cache.get(id).cloned())
-            .collect()
-    };
-
     let meta = project.into_meta();
 
     // The writers themselves are CPU-bound; spin them off the async pool so
@@ -118,7 +100,7 @@ pub async fn generate_ifc(
         "ifc4x3" | "ifc" => {
             let cpts_clone = cpts.clone();
             let meta_clone = meta.clone();
-            let text = tauri::async_runtime::spawn_blocking(move || {
+            let text = tokio::task::spawn_blocking(move || {
                 core_ifc::write_ifc4x3(&cpts_clone, &meta_clone)
             })
             .await
@@ -128,7 +110,7 @@ pub async fn generate_ifc(
         "ifcx" | "json" => {
             let cpts_clone = cpts.clone();
             let meta_clone = meta.clone();
-            let text = tauri::async_runtime::spawn_blocking(move || {
+            let text = tokio::task::spawn_blocking(move || {
                 core_ifc::write_ifcx(&cpts_clone, &meta_clone)
             })
             .await
@@ -157,10 +139,53 @@ pub async fn generate_ifc(
     })
 }
 
+pub async fn list_generated_ifc_core(project_id: Option<String>) -> Result<Vec<GeneratedIfcEntry>, String> {
+    list_generated_ifc_impl(project_id).await
+}
+
+pub async fn read_generated_ifc_core(full_path: &str) -> Result<String, String> {
+    fs::read_to_string(full_path).map_err(|e| format!("read IFC {full_path}: {e}"))
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Tauri commands
+// ───────────────────────────────────────────────────────────────────
+
+/// Generate an IFC document for the given project + CPTs and write it to
+/// the per-session cache directory. Returns the generated text alongside
+/// metadata so the renderer can show it immediately without a follow-up
+/// `read_text_file` round-trip.
+///
+/// `format` must be `"ifc4x3"` or `"ifcx"`. Unknown formats are rejected.
+#[tauri::command]
+pub async fn generate_ifc(
+    project: ProjectMetaInput,
+    cpt_ids: Vec<String>,
+    format: String,
+    state: State<'_, AppState>,
+) -> Result<GeneratedIfcResult, String> {
+    // Snapshot the requested CPTs out of state quickly so we can release the
+    // lock before doing any IFC work (the writers iterate over potentially
+    // thousands of measurement points and we don't want to block other
+    // commands while that happens).
+    let cpts: Vec<Cpt> = {
+        let cache = state.cpts.lock().map_err(|e| e.to_string())?;
+        cpt_ids
+            .iter()
+            .filter_map(|id| cache.get(id).cloned())
+            .collect()
+    };
+    generate_ifc_core(project, cpts, format).await
+}
+
 /// Enumerate IFC files previously generated for `project_id` (or the
 /// default bucket, when no project is active). Sorted newest-first.
 #[tauri::command]
 pub async fn list_generated_ifc(project_id: Option<String>) -> Result<Vec<GeneratedIfcEntry>, String> {
+    list_generated_ifc_impl(project_id).await
+}
+
+async fn list_generated_ifc_impl(project_id: Option<String>) -> Result<Vec<GeneratedIfcEntry>, String> {
     let id_safe = sanitise_id(project_id.as_deref().unwrap_or("default"));
     let dir = ifc_cache_dir(&id_safe)?;
     if !dir.exists() {
@@ -206,7 +231,7 @@ pub async fn list_generated_ifc(project_id: Option<String>) -> Result<Vec<Genera
 /// contents — they could be megabytes each).
 #[tauri::command]
 pub async fn read_generated_ifc(full_path: String) -> Result<String, String> {
-    fs::read_to_string(&full_path).map_err(|e| format!("read IFC {full_path}: {e}"))
+    read_generated_ifc_core(&full_path).await
 }
 
 // ───────────────────────────────────────────────────────────────────

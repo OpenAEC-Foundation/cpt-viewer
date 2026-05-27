@@ -1,13 +1,36 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
+use tokio::runtime::Runtime;
 
 use super::tools;
-use crate::commands::{cpt as cpt_cmd, export as export_cmd, project as project_cmd};
+use crate::commands::{
+    bro_api as bro_cmd,
+    cpt as cpt_cmd,
+    export as export_cmd,
+    ifc as ifc_cmd,
+    project as project_cmd,
+    report as report_cmd,
+};
 use crate::pdf::model::{ReportData, TenantInfo};
 use crate::pdf::tenant::TenantManager;
 use crate::state::AppState;
+use cpt_core::Cpt;
+
+/// Lazy, process-global tokio multi-thread runtime — gebruikt door MCP-mode
+/// om async commands (BRO API, IFC-generatie, PDF-rapport) sync te kunnen
+/// aanroepen via `block_on`. In GUI-mode wordt deze runtime niet aangemaakt
+/// (Tauri brengt z'n eigen runtime mee).
+fn tokio_rt() -> &'static Runtime {
+    static RT: OnceLock<Runtime> = OnceLock::new();
+    RT.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("create tokio runtime for MCP server")
+    })
+}
 
 /// JSON-RPC request (MCP protocol)
 #[derive(Deserialize, Debug)]
@@ -299,6 +322,124 @@ impl McpServer {
                 let path = arg_str("path")?;
                 export_cmd::export_geojson_core(&cpt_ids, &path, &self.app_state)?;
                 Ok(format!("GeoJSON exported to {}", path))
+            }
+
+            // ─── BRO (async, block_on via tokio runtime) ───────────────
+            "bro_fetch_area" => {
+                let bbox_val = arg_value("bbox")?;
+                let bbox: bro_cmd::BBox = serde_json::from_value(bbox_val)
+                    .map_err(|e| format!("Invalid bbox: {}", e))?;
+                let features = tokio_rt().block_on(bro_cmd::fetch_bro_area_core(bbox))?;
+                serde_json::to_string_pretty(&features).map_err(|e| e.to_string())
+            }
+            "bro_fetch_bores" => {
+                let bbox_val = arg_value("bbox")?;
+                let bbox: bro_cmd::BBox = serde_json::from_value(bbox_val)
+                    .map_err(|e| format!("Invalid bbox: {}", e))?;
+                let features = tokio_rt().block_on(bro_cmd::fetch_bro_bores_core(bbox))?;
+                serde_json::to_string_pretty(&features).map_err(|e| e.to_string())
+            }
+            "bro_fetch_cpt" => {
+                let bro_id = arg_str("bro_id")?;
+                let xml = tokio_rt().block_on(bro_cmd::fetch_bro_cpt_core(&bro_id))?;
+                Ok(xml)
+            }
+            "bro_fetch_bore" => {
+                let bro_id = arg_str("bro_id")?;
+                let xml = tokio_rt().block_on(bro_cmd::fetch_bro_bore_core(&bro_id))?;
+                Ok(xml)
+            }
+            "bro_fetch_object_metadata" => {
+                let id = arg_str("id")?;
+                let kind = arg_str("kind")?;
+                let meta = tokio_rt()
+                    .block_on(bro_cmd::fetch_bro_object_metadata_core(&id, &kind))?;
+                serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())
+            }
+
+            // ─── IFC (async) ───────────────────────────────────────────
+            "ifc_generate" => {
+                let project_val = arg_value("project")?;
+                let project: ifc_cmd::ProjectMetaInput = serde_json::from_value(project_val)
+                    .map_err(|e| format!("Invalid project meta: {}", e))?;
+                let cpt_ids_val = arg_value("cpt_ids")?;
+                let cpt_ids: Vec<String> = serde_json::from_value(cpt_ids_val)
+                    .map_err(|e| format!("Invalid cpt_ids: {}", e))?;
+                let format = arg_str("format")?;
+                // Snapshot CPTs zodat de async-werker zonder lock kan draaien.
+                let cpts: Vec<Cpt> = {
+                    let cache = self.app_state.cpts.lock().map_err(|e| e.to_string())?;
+                    cpt_ids
+                        .iter()
+                        .filter_map(|id| cache.get(id).cloned())
+                        .collect()
+                };
+                let result = tokio_rt()
+                    .block_on(ifc_cmd::generate_ifc_core(project, cpts, format))?;
+                serde_json::to_string_pretty(&result).map_err(|e| e.to_string())
+            }
+            "ifc_list_generated" => {
+                let project_id = args
+                    .get("project_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let entries = tokio_rt()
+                    .block_on(ifc_cmd::list_generated_ifc_core(project_id))?;
+                serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())
+            }
+            "ifc_read_generated" => {
+                let full_path = arg_str("full_path")?;
+                let content = tokio_rt()
+                    .block_on(ifc_cmd::read_generated_ifc_core(&full_path))?;
+                Ok(content)
+            }
+
+            // ─── Report (async) ────────────────────────────────────────
+            "report_preview" => {
+                let cpt_ids_val = arg_value("cpt_ids")?;
+                let cpt_ids: Vec<String> = serde_json::from_value(cpt_ids_val)
+                    .map_err(|e| format!("Invalid cpt_ids: {}", e))?;
+                let project_val = arg_value("project")?;
+                let project: report_cmd::ProjectMetaInput = serde_json::from_value(project_val)
+                    .map_err(|e| format!("Invalid project meta: {}", e))?;
+                let cpts: Vec<Cpt> = {
+                    let cache = self.app_state.cpts.lock().map_err(|e| e.to_string())?;
+                    cpt_ids
+                        .iter()
+                        .filter_map(|id| cache.get(id).cloned())
+                        .collect()
+                };
+                let bytes = tokio_rt()
+                    .block_on(report_cmd::preview_report_core(cpts, project))?;
+                // PDF-bytes als base64 in JSON-respons — voor stdio-MCP is
+                // dat een veilige manier zonder binary corruption.
+                use base64::Engine;
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                Ok(json!({
+                    "format": "pdf-base64",
+                    "byte_count": bytes.len(),
+                    "data": b64,
+                }).to_string())
+            }
+            "report_generate" => {
+                let cpt_ids_val = arg_value("cpt_ids")?;
+                let cpt_ids: Vec<String> = serde_json::from_value(cpt_ids_val)
+                    .map_err(|e| format!("Invalid cpt_ids: {}", e))?;
+                let project_val = arg_value("project")?;
+                let project: report_cmd::ProjectMetaInput = serde_json::from_value(project_val)
+                    .map_err(|e| format!("Invalid project meta: {}", e))?;
+                let output_path = arg_str("output_path")?;
+                let cpts: Vec<Cpt> = {
+                    let cache = self.app_state.cpts.lock().map_err(|e| e.to_string())?;
+                    cpt_ids
+                        .iter()
+                        .filter_map(|id| cache.get(id).cloned())
+                        .collect()
+                };
+                tokio_rt().block_on(
+                    report_cmd::generate_report_core(cpts, project, output_path.clone()),
+                )?;
+                Ok(format!("PDF report saved to {}", output_path))
             }
 
             _ => Err(format!("Unknown tool: {}", name)),
