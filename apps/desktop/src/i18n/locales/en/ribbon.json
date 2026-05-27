@@ -4,6 +4,7 @@
   "ifcTab": "IFC",
   "rapportTab": "Report",
   "tekeningTab": "Site plan",
+  "berekeningenTab": "Calculations",
   "tekening": {
     "info": "Drawing",
     "titleHint": "Site plan",

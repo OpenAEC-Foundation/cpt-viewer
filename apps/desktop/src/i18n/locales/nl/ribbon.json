@@ -4,6 +4,7 @@
   "ifcTab": "IFC",
   "rapportTab": "Rapport",
   "tekeningTab": "Situatietekening",
+  "berekeningenTab": "Berekeningen",
   "tekening": {
     "info": "Tekening",
     "titleHint": "Situatietekening",

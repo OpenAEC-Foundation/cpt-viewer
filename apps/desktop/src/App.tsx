@@ -16,6 +16,7 @@ import MapView from "./components/panels/MapView";
 import IfcView from "./components/panels/IfcView";
 import "./components/panels/IfcView.css";
 import SonderingstekeningView from "./components/panels/SonderingstekeningView";
+import { CalculationsView } from "./calc/framework/views/CalculationsView";
 import LeftPanel from "./components/panels/LeftPanel";
 import GisLayerPanel from "./components/panels/GisLayerPanel";
 import RightPanel from "./components/panels/RightPanel";
@@ -402,9 +403,12 @@ function App() {
   // viewport and doesn't need the Explorer / Properties sidebars.
   // Sonderingstekening now also wants the left-side GisLayerPanel so
   // the user can toggle base + overlay layers without leaving the view.
-  // Only Rapport + IFC stay full-width because they don't deal with maps.
+  // Calculations heeft een eigen 3-pane lay-out (library + visual +
+  // result) en moet de gehele werkruimte vullen — dus ook full-width.
+  // Only Rapport + IFC + Calculations stay full-width because they
+  // don't deal with maps.
   const isFullWidthView =
-    activeView === "report" || activeView === "ifc";
+    activeView === "report" || activeView === "ifc" || activeView === "calculations";
 
   const renderMainContent = () => {
     switch (activeView) {
@@ -416,6 +420,8 @@ function App() {
         return <IfcView />;
       case "tekening":
         return <SonderingstekeningView />;
+      case "calculations":
+        return <CalculationsView />;
       default:
         return <ChartView />;
     }
