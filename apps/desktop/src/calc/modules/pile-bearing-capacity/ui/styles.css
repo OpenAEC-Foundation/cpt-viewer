@@ -148,6 +148,29 @@
   stroke-width: 2;
 }
 
+/* ─── Drag-to-edit ─── */
+/* De zichtbare line krijgt cursor + hover-emphase; de hitbox er bovenop
+   vergroot het klikgebied tot 12 px en is zelf onzichtbaar. */
+.pile-niveau-draggable {
+  cursor: ns-resize;
+  transition: stroke-width 80ms ease-out;
+}
+.pile-niveau-draggable:hover {
+  stroke-width: 4;
+  filter: drop-shadow(0 0 3px currentColor);
+}
+.pile-niveau-dragging {
+  stroke-width: 4;
+  filter: drop-shadow(0 0 4px currentColor);
+  opacity: 0.85;
+}
+.pile-niveau-hitbox {
+  stroke: transparent;
+  stroke-width: 12;
+  cursor: ns-resize;
+  fill: none;
+}
+
 /* ─── Overlay labels ─── */
 .pile-cpt-overlay-label {
   fill: var(--theme-text, #36363e);

@@ -103,7 +103,7 @@ export function CalculationsView() {
           <mod.InputPanel input={input} result={result} onChange={onChange} />
         </>
       );
-      midContent = <mod.VisualPanel input={input} result={result} />;
+      midContent = <mod.VisualPanel input={input} result={result} onChange={onChange} />;
       rightContent = <mod.ResultPanel input={input} result={result} />;
     }
   }

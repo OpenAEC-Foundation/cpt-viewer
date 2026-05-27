@@ -1,10 +1,24 @@
 // apps/desktop/src/calc/modules/pile-bearing-capacity/ui/VisualPanel.tsx
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useCptStore } from "../../../../store/useCptStore";
 import type { PanelProps } from "../../../framework/types";
 import type { Cpt, MeasurementPoint } from "../../../../types/cpt";
 import type { PileInput, PileResult } from "../types";
 import "./styles.css";
+
+/** Velden die via drag-to-edit aanpasbaar zijn in de chart. */
+type DraggableField =
+  | "pileTopNap"
+  | "pileToeNap"
+  | "negKleefBottomNap"
+  | "excavationNap"
+  | "waterNap";
+
+interface DragState {
+  field: DraggableField;
+  startClientY: number;
+  startNap: number;
+}
 
 // ─── Chart geometry ──────────────────────────────────────────────
 // SVG-coordinates: x→right, y→down. We work in a fixed viewBox so
@@ -116,9 +130,12 @@ interface ChartProps {
   cpt: Cpt;
   input: PileInput;
   result: PileResult;
+  onChange?: (next: PileInput) => void;
 }
 
-function CptOverlayChart({ cpt, input, result }: ChartProps) {
+function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [drag, setDrag] = useState<DragState | null>(null);
   const bounds = useMemo(() => buildBounds(cpt.points, input), [cpt.points, input]);
   const qcPath = useMemo(() => {
     // Build a polyline from the qc curve. Downsample to ~500 pts.
@@ -159,8 +176,65 @@ function CptOverlayChart({ cpt, input, result }: ChartProps) {
   // of its respective band (rough but readable).
   const xRightLabel = MARGIN.left + PLOT_W + 6;
 
+  // ─── Drag-to-edit ──────────────────────────────────────────────
+  // Mouse-Y in screen-px → viewBox-px → NAP-m via dezelfde lineaire
+  // mapping als napToY (geïnverteerd). Snappen op 0,05 m raster.
+  const draggable = !!onChange;
+
+  const startDrag = (field: DraggableField, startNap: number) =>
+    (e: ReactMouseEvent<SVGElement>) => {
+      if (!onChange) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setDrag({ field, startClientY: e.clientY, startNap });
+    };
+
+  useEffect(() => {
+    if (!drag || !onChange) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const onMove = (e: MouseEvent) => {
+      const rect = svg.getBoundingClientRect();
+      if (rect.height === 0) return;
+      // viewBox-y per screen-px. SVG uses preserveAspectRatio="xMidYMid meet"
+      // so the effective scale is uniform; height-based ratio is correct.
+      const vbPerScreenPx = VB_H / rect.height;
+      const dyVb = (e.clientY - drag.startClientY) * vbPerScreenPx;
+      // NAP increases UPWARDS while SVG-y increases DOWNWARDS — dus -dy.
+      const napPerVbPx = (bounds.napTop - bounds.napBot) / PLOT_H;
+      let newNap = drag.startNap - dyVb * napPerVbPx;
+      // Snap to nearest 0,05 m.
+      newNap = Math.round(newNap * 20) / 20;
+      // Voorkom no-op-updates (zelfde waarde → geen onChange-storm).
+      const current = input[drag.field];
+      if (newNap === current) return;
+      onChange({ ...input, [drag.field]: newNap });
+    };
+    const onUp = () => setDrag(null);
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [drag, onChange, input, bounds.napTop, bounds.napBot]);
+
+  // Body-cursor lock tijdens drag: voorkomt text-cursor flicker bij snel
+  // bewegen over labels of buiten de SVG.
+  useEffect(() => {
+    if (!drag) return;
+    const prev = document.body.style.cursor;
+    document.body.style.cursor = "ns-resize";
+    return () => {
+      document.body.style.cursor = prev;
+    };
+  }, [drag]);
+
   return (
     <svg
+      ref={svgRef}
       className="pile-cpt-chart-svg"
       viewBox={`0 0 ${VB_W} ${VB_H}`}
       preserveAspectRatio="xMidYMid meet"
@@ -292,8 +366,18 @@ function CptOverlayChart({ cpt, input, result }: ChartProps) {
         x2={MARGIN.left + PLOT_W}
         y1={yPileTop}
         y2={yPileTop}
-        className="pile-cpt-line-paalkop"
+        className={`pile-cpt-line-paalkop${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "pileTopNap" ? " pile-niveau-dragging" : ""}`}
       />
+      {draggable && (
+        <line
+          x1={MARGIN.left}
+          x2={MARGIN.left + PLOT_W}
+          y1={yPileTop}
+          y2={yPileTop}
+          className="pile-niveau-hitbox"
+          onMouseDown={startDrag("pileTopNap", input.pileTopNap)}
+        />
+      )}
       <text
         x={MARGIN.left + 4}
         y={yPileTop - 4}
@@ -308,8 +392,18 @@ function CptOverlayChart({ cpt, input, result }: ChartProps) {
         x2={MARGIN.left + PLOT_W}
         y1={yExcavation}
         y2={yExcavation}
-        className="pile-cpt-line-ontgraving"
+        className={`pile-cpt-line-ontgraving${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "excavationNap" ? " pile-niveau-dragging" : ""}`}
       />
+      {draggable && (
+        <line
+          x1={MARGIN.left}
+          x2={MARGIN.left + PLOT_W}
+          y1={yExcavation}
+          y2={yExcavation}
+          className="pile-niveau-hitbox"
+          onMouseDown={startDrag("excavationNap", input.excavationNap)}
+        />
+      )}
       <text
         x={MARGIN.left + 4}
         y={yExcavation - 4}
@@ -324,8 +418,18 @@ function CptOverlayChart({ cpt, input, result }: ChartProps) {
         x2={MARGIN.left + PLOT_W}
         y1={yWater}
         y2={yWater}
-        className="pile-cpt-line-water"
+        className={`pile-cpt-line-water${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "waterNap" ? " pile-niveau-dragging" : ""}`}
       />
+      {draggable && (
+        <line
+          x1={MARGIN.left}
+          x2={MARGIN.left + PLOT_W}
+          y1={yWater}
+          y2={yWater}
+          className="pile-niveau-hitbox"
+          onMouseDown={startDrag("waterNap", input.waterNap)}
+        />
+      )}
       <polygon
         points={`${MARGIN.left + 10},${yWater - 6} ${MARGIN.left + 16},${yWater} ${MARGIN.left + 4},${yWater}`}
         className="pile-cpt-marker-water"
@@ -344,8 +448,18 @@ function CptOverlayChart({ cpt, input, result }: ChartProps) {
         x2={MARGIN.left + PLOT_W}
         y1={yNkBot}
         y2={yNkBot}
-        className="pile-cpt-line-negkleef"
+        className={`pile-cpt-line-negkleef${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "negKleefBottomNap" ? " pile-niveau-dragging" : ""}`}
       />
+      {draggable && (
+        <line
+          x1={MARGIN.left}
+          x2={MARGIN.left + PLOT_W}
+          y1={yNkBot}
+          y2={yNkBot}
+          className="pile-niveau-hitbox"
+          onMouseDown={startDrag("negKleefBottomNap", input.negKleefBottomNap)}
+        />
+      )}
       <text
         x={MARGIN.left + 4}
         y={yNkBot - 4}
@@ -360,8 +474,18 @@ function CptOverlayChart({ cpt, input, result }: ChartProps) {
         x2={MARGIN.left + PLOT_W}
         y1={yPileToe}
         y2={yPileToe}
-        className="pile-cpt-line-paalpunt"
+        className={`pile-cpt-line-paalpunt${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "pileToeNap" ? " pile-niveau-dragging" : ""}`}
       />
+      {draggable && (
+        <line
+          x1={MARGIN.left}
+          x2={MARGIN.left + PLOT_W}
+          y1={yPileToe}
+          y2={yPileToe}
+          className="pile-niveau-hitbox"
+          onMouseDown={startDrag("pileToeNap", input.pileToeNap)}
+        />
+      )}
       <text
         x={MARGIN.left + 4}
         y={yPileToe + 14}
@@ -415,7 +539,7 @@ function CptOverlayChart({ cpt, input, result }: ChartProps) {
 
 // ─── Top-level VisualPanel ───────────────────────────────────────
 
-export function VisualPanel({ input, result }: PanelProps<PileInput, PileResult>) {
+export function VisualPanel({ input, result, onChange }: PanelProps<PileInput, PileResult>) {
   const cpt = useCptStore((s) => (input.cptId ? s.cpts.get(input.cptId) : null));
 
   if (!cpt) {
@@ -448,7 +572,7 @@ export function VisualPanel({ input, result }: PanelProps<PileInput, PileResult>
     <div className="pile-visual">
       <h3>Sondering: {cpt.id}</h3>
       <div className="pile-cpt-chart">
-        <CptOverlayChart cpt={cpt} input={input} result={result} />
+        <CptOverlayChart cpt={cpt} input={input} result={result} onChange={onChange} />
       </div>
       <p className="pile-visual-footnote">
         q<sub>c;I</sub>={result.base.qcIGemMpa.toFixed(2)} /
