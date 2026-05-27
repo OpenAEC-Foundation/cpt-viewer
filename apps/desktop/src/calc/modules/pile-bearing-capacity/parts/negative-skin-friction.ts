@@ -14,14 +14,24 @@ export function computeNegKleef(input: PileInput): NegKleefResult {
     (l) => l.endNap < zoneTop && l.startNap > zoneBot,
   );
 
-  // σ-stack opbouwen — top naar bottom (afnemende NAP)
+  // σ-stack opbouwen — top naar bottom (afnemende NAP).
+  // BELANGRIJK: per laag KLIP de top/bot op de neg-kleef-zonegrens
+  // zodat een laag die buiten de zone uitsteekt (bv. één laag van
+  // paalkop tot paalpunt terwijl de neg-kleef-zone alleen tussen
+  // paalkop en negKleefBottomNap loopt) alleen voor het zone-gedeelte
+  // bijdraagt. Zonder deze clip werd de volledige laagdikte gebruikt,
+  // wat leidde tot een sterke overschatting van Fnk.
   let sigmaCum = 0;
   const layers: NegKleefLayerResult[] = inZone.map((l) => {
-    const thickness = l.startNap - l.endNap; // m
+    const layerTop = Math.min(l.startNap, zoneTop); // hoogste NAP binnen zone
+    const layerBot = Math.max(l.endNap, zoneBot);   // laagste NAP binnen zone
+    const thickness = Math.max(0, layerTop - layerBot);
     const sigmaTop = sigmaCum;
     const dSigma = thickness * (l.gammaK - l.gammaW);
     const sigmaBot = sigmaTop + dSigma;
-    const sigmaGem = ((sigmaTop + sigmaBot) / 2) * thickness; // kPa·m
+    // sigmaGemRep = integraal van σ over de laag (= σ_gem × h) — wordt
+    // direct gebruikt in fsNkRep, daarom multipliciren met thickness hier.
+    const sigmaGemRep = ((sigmaTop + sigmaBot) / 2) * thickness; // kPa·m
 
     const phiRad = toRad(l.phi);
     const k0 = 1 - Math.sin(phiRad);
@@ -30,7 +40,7 @@ export function computeNegKleef(input: PileInput): NegKleefResult {
     const k0TanDeltaRaw = k0 * tanDelta;
     const k0TanDelta = Math.max(k0TanDeltaRaw, input.ksMinFactor);
 
-    const fsNkRep = sigmaGem * Os * k0TanDelta; // kN
+    const fsNkRep = sigmaGemRep * Os * k0TanDelta; // kN
 
     sigmaCum = sigmaBot;
 
@@ -39,7 +49,7 @@ export function computeNegKleef(input: PileInput): NegKleefResult {
       thickness,
       sigmaRepTop: sigmaTop,
       sigmaRepBottom: sigmaBot,
-      sigmaGemRep: sigmaGem,
+      sigmaGemRep,
       k0,
       delta,
       k0TanDelta,

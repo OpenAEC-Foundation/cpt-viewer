@@ -52,15 +52,46 @@ export function buildDefaultSoilLayers(
   pileToeNap: number,
   waterNap: number,
 ): SoilLayer[] {
-  // Conservatieve default: alles tussen paalkop en paalpunt als "klei nat"
-  // (geeft hoge neg.kleef). Engineer past dit aan in de UI.
-  const layer: SoilLayer = {
-    kind: "clay",
-    startNap: pileTopNap,
-    endNap: pileToeNap,
-    gammaK: SOIL_DEFAULTS.clay.gammaK,
-    gammaW: pileTopNap > waterNap ? 0 : SOIL_DEFAULTS.clay.gammaW,
-    phi: SOIL_DEFAULTS.clay.phi,
-  };
-  return [layer];
+  // Conservatieve default: alles tussen paalkop en paalpunt als "klei nat".
+  // SPLITS op het waterniveau zodat het effectieve gewicht klopt:
+  //   - Boven GWS: gammaW = 0 (geen waterspanning-aftrek)
+  //   - Onder GWS: gammaW = SOIL_DEFAULTS.clay.gammaW (=10) — effectief
+  //     gewicht γ' = γ_k − γ_w wordt correct toegepast door computeNegKleef
+  //     en computeShaftFriction.
+  // Zonder deze split gaf de oude implementatie (gammaW = 0 als pileTop
+  // > waterNap) voor een paal met paalkop boven water EN paalpunt onder
+  // water een veel te grote overburden-stress → enorm overschatte Fnk.
+  const clayDef = SOIL_DEFAULTS.clay;
+  const layers: SoilLayer[] = [];
+  if (waterNap > pileToeNap && waterNap < pileTopNap) {
+    // Water doorkruist het profiel → twee lagen.
+    layers.push({
+      kind: "clay",
+      startNap: pileTopNap,
+      endNap: waterNap,
+      gammaK: clayDef.gammaK,
+      gammaW: 0,
+      phi: clayDef.phi,
+    });
+    layers.push({
+      kind: "clay",
+      startNap: waterNap,
+      endNap: pileToeNap,
+      gammaK: clayDef.gammaK,
+      gammaW: clayDef.gammaW,
+      phi: clayDef.phi,
+    });
+  } else {
+    // Volledig boven (paalpunt boven water) of volledig onder.
+    const fullyDry = pileToeNap >= waterNap;
+    layers.push({
+      kind: "clay",
+      startNap: pileTopNap,
+      endNap: pileToeNap,
+      gammaK: clayDef.gammaK,
+      gammaW: fullyDry ? 0 : clayDef.gammaW,
+      phi: clayDef.phi,
+    });
+  }
+  return layers;
 }
