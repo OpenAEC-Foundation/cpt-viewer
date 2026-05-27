@@ -1,9 +1,10 @@
 // apps/desktop/src/calc/modules/pile-bearing-capacity/ui/VisualPanel.tsx
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useCptStore } from "../../../../store/useCptStore";
 import type { PanelProps } from "../../../framework/types";
 import type { Cpt, MeasurementPoint } from "../../../../types/cpt";
 import type { PileInput, PileResult } from "../types";
+import { getPileType } from "../catalog";
 import "./styles.css";
 
 /** Velden die via drag-to-edit aanpasbaar zijn in de chart. */
@@ -34,11 +35,21 @@ interface ZoomDomain {
 // ─── Chart geometry ──────────────────────────────────────────────
 // SVG-coordinates: x→right, y→down. We work in a fixed viewBox so
 // the chart scales crisply via preserveAspectRatio="xMidYMid meet".
-const VB_W = 600;
+const VB_W = 720;          // extra breedte voor pile-column + arrows
 const VB_H = 800;
-const MARGIN = { top: 36, right: 100, bottom: 28, left: 64 };
+const MARGIN = { top: 36, right: 180, bottom: 28, left: 64 };
 const PLOT_W = VB_W - MARGIN.left - MARGIN.right;
 const PLOT_H = VB_H - MARGIN.top - MARGIN.bottom;
+
+// ─── Pile-column geometry (rechts van de plot, links van labels) ───
+const PILE_COL_X = MARGIN.left + PLOT_W + 12;   // start van de pile-kolom
+const PILE_COL_W = 60;                           // pile + arrows zone breedte
+const PILE_COL_CENTER = PILE_COL_X + PILE_COL_W / 2;
+// Visuele paal-breedte: clamp tussen min/max zodat alle palen herkenbaar
+// blijven (anders zou 168 mm paal vs 1500 mm-as in pixels lachwekkend zijn).
+const PILE_GFX_MIN_W = 14;
+const PILE_GFX_MAX_W = 36;
+const PILE_PAALPUNT_HEIGHT = 18; // pixels voor de tapered tip
 
 /** Minimaal zoom-bereik in m NAP (anders wordt het onleesbaar). */
 const MIN_ZOOM_SPAN_M = 0.5;
@@ -162,6 +173,196 @@ function buildQcTicks(qcMax: number): number[] {
   return ticks;
 }
 
+// ─── Sub-component: pile graphic (rect/polygon + force arrows) ───
+// Wordt binnen de SVG van de CPT-chart gerendered zodat de pile in
+// dezelfde NAP-coordinaten als de chart staat (en mee-zoomt). Alle
+// content wordt geclipt aan het plot-bereik via #pile-plot-clip.
+
+interface PileGraphicProps {
+  input: PileInput;
+  result: PileResult;
+  material: "steel" | "concrete";
+  isCircular: boolean;
+  yPileTop: number;     // SVG-y van paalkop (na clamp)
+  yPileToe: number;     // SVG-y van paalpunt (na clamp)
+  yNkBot: number;       // SVG-y van neg.kleef-grens
+  plotTop: number;      // SVG-y van plot-rand boven (clip-grens)
+  plotBottom: number;   // SVG-y van plot-rand onder
+}
+
+function PileGraphic({
+  input,
+  result,
+  material,
+  isCircular,
+  yPileTop,
+  yPileToe,
+  yNkBot,
+  plotTop,
+  plotBottom,
+}: PileGraphicProps) {
+  // Kleurpalet per materiaal — beige voor beton (#d4a574), grijs voor staal.
+  const fill = material === "concrete" ? "#d4a574" : "#9ca3af";
+  const stroke = "#374151";
+
+  // Visuele paal-breedte — gemapped uit werkelijke diameter via min/max
+  // clamp zodat heel kleine of heel grote palen nog herkenbaar zijn.
+  const diaPx = Math.max(
+    PILE_GFX_MIN_W,
+    Math.min(PILE_GFX_MAX_W, input.diameterMm / 10),
+  );
+  const cx = PILE_COL_CENTER;
+  const xPileLeft = cx - diaPx / 2;
+  const xPileRight = cx + diaPx / 2;
+
+  // Pile-body verticaal: clamp aan plot zodat de paal niet de assen
+  // overschrijdt als hij gedeeltelijk buiten beeld valt (bij zoom).
+  // Note: yPileTop kan kleiner zijn dan plotTop bij zoom — clip dan.
+  const yTopClamped = Math.max(plotTop, Math.min(plotBottom, yPileTop));
+  const yToeClamped = Math.max(plotTop, Math.min(plotBottom, yPileToe));
+  const bodyH = yToeClamped - yTopClamped;
+
+  // Tip-tekening: voor staal een korte spitse pyramide (gesloten punt),
+  // voor beton een tapered tip (langer). Hoogte = PILE_PAALPUNT_HEIGHT,
+  // maar alleen tekenen als yToe binnen plot-bereik valt.
+  const tipVisible = yPileToe < plotBottom - 1; // niet net buiten zicht
+  const tipH = material === "concrete" ? PILE_PAALPUNT_HEIGHT : PILE_PAALPUNT_HEIGHT * 0.6;
+  const yTipBot = Math.min(plotBottom, yPileToe + tipH);
+  const tipPath = `M${xPileLeft},${yToeClamped} L${xPileRight},${yToeClamped} L${cx},${yTipBot} z`;
+
+  // ─── Force-arrows: schaal alle pijlen relatief t.o.v. de max van de
+  // drie. Maximum visuele lengte = 28 px zodat het binnen PILE_COL_W past. ──
+  const Fnk = result.negKleef.fnkD;
+  const Rs = result.shaft.rsCalMax;
+  const Rb = result.base.rbCalMax;
+  const Fmax = Math.max(Fnk, Rs, Rb, 1);
+  const arrowLenFor = (f: number) => Math.max(6, Math.min(28, (f / Fmax) * 28));
+
+  // Neg.kleef-pijl: omlaag, boven de neg.kleef-grens. Alleen tonen als de
+  // zone in zicht is en > 0 kN (anders rommel).
+  const yNkBotClamped = Math.max(plotTop, Math.min(plotBottom, yNkBot));
+  const yNkMid = (yTopClamped + yNkBotClamped) / 2;
+  const showFnk = Fnk > 0.5 && yNkBot > yPileTop && yNkBot < plotBottom && yPileTop > plotTop - 1;
+
+  // Schacht-pijlen (omhoog): 2-3 pijlen verdeeld over de shaft-zone.
+  // De shaft-zone loopt van neg.kleef-grens tot paalpunt.
+  const shaftTop = Math.max(plotTop, yNkBotClamped);
+  const shaftBot = yToeClamped;
+  const shaftH = shaftBot - shaftTop;
+  const showRs = Rs > 0.5 && shaftH > 30;
+  const shaftArrowYs: number[] = [];
+  if (showRs) {
+    // Aantal pijlen schalen met zone-hoogte (1 per 60 px, min 1, max 3).
+    const n = Math.max(1, Math.min(3, Math.floor(shaftH / 60)));
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n;
+      shaftArrowYs.push(shaftTop + t * shaftH);
+    }
+  }
+
+  // Paalpunt-pijl (omhoog onder paalpunt) — alleen als tip in zicht.
+  const showRb = Rb > 0.5 && tipVisible && yPileToe < plotBottom - 20;
+
+  // Force-arrow x-positie: nét rechts van de paal (1 px gap).
+  const xArrowStart = xPileRight + 4;
+  const xArrowLineHead = (lenPx: number) => xArrowStart + lenPx;
+
+  return (
+    <g clipPath="url(#pile-plot-clip)" className="pile-gfx">
+      {/* Pile-body: rect voor zowel rond als vierkant (visueel verschil
+          is minimaal op deze schaal; voor rond kun je later een ellips
+          gebruiken). Hoogte kan 0 zijn als paal volledig buiten zicht. */}
+      {bodyH > 0 && (
+        <rect
+          x={xPileLeft}
+          y={yTopClamped}
+          width={diaPx}
+          height={bodyH}
+          fill={fill}
+          stroke={stroke}
+          strokeWidth={1.5}
+          rx={isCircular ? diaPx / 2 : 0}
+          ry={isCircular ? Math.min(diaPx / 2, 6) : 0}
+        />
+      )}
+      {/* Tip — alleen tekenen als paalpunt in zicht is. */}
+      {tipVisible && (
+        <path d={tipPath} fill={fill} stroke={stroke} strokeWidth={1.5} />
+      )}
+
+      {/* ─── Force-arrows ─── */}
+      {showFnk && (
+        <g className="pile-gfx-arrow pile-gfx-arrow--fnk">
+          <line
+            x1={xArrowStart}
+            x2={xArrowStart + arrowLenFor(Fnk)}
+            y1={yNkMid - 8}
+            y2={yNkMid + 4}
+            stroke="#dc2626"
+            strokeWidth={1.5}
+            markerEnd="url(#pile-arrow-down)"
+          />
+          <text
+            x={xArrowLineHead(arrowLenFor(Fnk)) + 4}
+            y={yNkMid}
+            className="pile-gfx-arrow-label"
+            fill="#dc2626"
+          >
+            F_nk={Fnk.toFixed(0)} kN
+          </text>
+        </g>
+      )}
+
+      {showRs && shaftArrowYs.map((y, i) => (
+        <g key={`rs-${i}`} className="pile-gfx-arrow pile-gfx-arrow--rs">
+          <line
+            x1={xArrowStart}
+            x2={xArrowStart + arrowLenFor(Rs)}
+            y1={y + 4}
+            y2={y - 8}
+            stroke="#16a34a"
+            strokeWidth={1.2}
+            markerEnd="url(#pile-arrow-up)"
+          />
+          {/* Label alleen bij eerste pijl. */}
+          {i === 0 && (
+            <text
+              x={xArrowLineHead(arrowLenFor(Rs)) + 4}
+              y={y}
+              className="pile-gfx-arrow-label"
+              fill="#16a34a"
+            >
+              R_s={Rs.toFixed(0)} kN
+            </text>
+          )}
+        </g>
+      ))}
+
+      {showRb && (
+        <g className="pile-gfx-arrow pile-gfx-arrow--rb">
+          <line
+            x1={cx}
+            x2={cx}
+            y1={Math.min(plotBottom - 1, yPileToe + tipH + arrowLenFor(Rb) + 4)}
+            y2={Math.min(plotBottom - 1, yPileToe + tipH + 2)}
+            stroke="#16a34a"
+            strokeWidth={2}
+            markerEnd="url(#pile-arrow-up)"
+          />
+          <text
+            x={cx + 8}
+            y={Math.min(plotBottom - 4, yPileToe + tipH + arrowLenFor(Rb) / 2 + 4)}
+            className="pile-gfx-arrow-label pile-gfx-arrow-label--strong"
+            fill="#16a34a"
+          >
+            R_b={Rb.toFixed(0)} kN
+          </text>
+        </g>
+      )}
+    </g>
+  );
+}
+
 // ─── Sub-component: the actual chart ─────────────────────────────
 
 interface ChartProps {
@@ -176,6 +377,11 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [pan, setPan] = useState<PanState | null>(null);
   const [zoomDomain, setZoomDomain] = useState<ZoomDomain | null>(null);
+
+  // Paaltype voor visualisatie (material, shape).
+  const pileType = getPileType(input.pileTypeId);
+  const pileMaterial: "steel" | "concrete" = pileType?.material ?? "steel";
+  const pileIsCircular = pileType?.isCircular ?? true;
 
   const fullExtent = useMemo(
     () => computeFullExtent(cpt.points, input),
@@ -228,9 +434,9 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
   const yZoneBelowBot = bounds.napToY(zoneBelowBotClamped);
 
   // Right-margin label positions — qc;I, qc;II, qc;III, qb;max all sit
-  // somewhere inside the 8D/4D zone, so we anchor each label at the mid
-  // of its respective band (rough but readable).
-  const xRightLabel = MARGIN.left + PLOT_W + 6;
+  // somewhere inside de 8D/4D-zone. Labels staan rechts ván de pile-kolom
+  // zodat ze niet over de paal-graphic heen vallen.
+  const xRightLabel = PILE_COL_X + PILE_COL_W + 8;
 
   // Is een zone (deels) zichtbaar binnen het huidige plot-bereik?
   const zone8DVisible =
@@ -340,6 +546,53 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
     };
   }, [drag, pan]);
 
+  // ─── Shared zoom-logic — gebruikt door wheel én buttons ────────
+  // Past een zoom-factor toe rond een specifieke NAP-anker (0..1 ratio
+  // binnen huidig zicht). factor < 1 = inzoomen, factor > 1 = uitzoomen.
+  // anchorRatio = 0.5 → midden van zicht (gebruikt door + / − knoppen).
+  const applyZoom = useCallback((factor: number, anchorRatio: number = 0.5) => {
+    const currentMin = zoomDomain ? zoomDomain.napMin : fullExtent.fullNapBot;
+    const currentMax = zoomDomain ? zoomDomain.napMax : fullExtent.fullNapTop;
+    const anchorNap = currentMax - anchorRatio * (currentMax - currentMin);
+    const newSpan = (currentMax - currentMin) * factor;
+    const dataRange = fullExtent.fullNapTop - fullExtent.fullNapBot;
+    const clampedSpan = Math.max(MIN_ZOOM_SPAN_M, Math.min(dataRange, newSpan));
+    // Houd anker op dezelfde positie binnen het nieuwe bereik.
+    let nMin = anchorNap - (1 - anchorRatio) * clampedSpan;
+    let nMax = nMin + clampedSpan;
+    if (nMin < fullExtent.fullNapBot) {
+      nMin = fullExtent.fullNapBot;
+      nMax = nMin + clampedSpan;
+    }
+    if (nMax > fullExtent.fullNapTop) {
+      nMax = fullExtent.fullNapTop;
+      nMin = nMax - clampedSpan;
+    }
+    if (clampedSpan >= dataRange - 1e-6) {
+      setZoomDomain(null);
+    } else {
+      setZoomDomain({ napMin: nMin, napMax: nMax });
+    }
+  }, [zoomDomain, fullExtent.fullNapTop, fullExtent.fullNapBot]);
+
+  // Knop: zoom in op paalpunt-zone met 1 m padding boven/onder.
+  const zoomToPile = useCallback(() => {
+    const napBot = input.pileToeNap - 1;
+    const napTop = input.pileTopNap + 1;
+    // Clamp aan data-extent en min-span.
+    const dataRange = fullExtent.fullNapTop - fullExtent.fullNapBot;
+    const span = Math.max(MIN_ZOOM_SPAN_M, Math.min(dataRange, napTop - napBot));
+    let nMin = Math.max(fullExtent.fullNapBot, napBot);
+    let nMax = nMin + span;
+    if (nMax > fullExtent.fullNapTop) {
+      nMax = fullExtent.fullNapTop;
+      nMin = nMax - span;
+    }
+    setZoomDomain({ napMin: nMin, napMax: nMax });
+  }, [input.pileToeNap, input.pileTopNap, fullExtent.fullNapTop, fullExtent.fullNapBot]);
+
+  const resetZoom = useCallback(() => setZoomDomain(null), []);
+
   // ─── Mouse-wheel zoom (anchored op cursor-NAP) ─────────────────
   // Via native event-listener i.p.v. React-prop, anders kan preventDefault()
   // niet werken (React maakt 'wheel' standaard passive bij passive scroll).
@@ -354,40 +607,18 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       const vbY = (e.clientY - rect.top) * (VB_H / rect.height);
       // Outside plot-vertical-range: ignore (klikt op marges).
       if (vbY < MARGIN.top || vbY > MARGIN.top + PLOT_H) return;
-      const currentMin = zoomDomain ? zoomDomain.napMin : fullExtent.fullNapBot;
-      const currentMax = zoomDomain ? zoomDomain.napMax : fullExtent.fullNapTop;
-      const cursorNap = currentMax - ((vbY - MARGIN.top) / PLOT_H) * (currentMax - currentMin);
+      // Anchor-ratio: 0 = top van zicht, 1 = bottom van zicht.
+      const anchorRatio = (vbY - MARGIN.top) / PLOT_H;
       // Zoom-factor: scroll-up = inzoomen (0.8), scroll-down = uitzoomen (1.25).
       const factor = e.deltaY < 0 ? 0.8 : 1.25;
-      const newSpan = (currentMax - currentMin) * factor;
-      const dataRange = fullExtent.fullNapTop - fullExtent.fullNapBot;
-      const clampedSpan = Math.max(MIN_ZOOM_SPAN_M, Math.min(dataRange, newSpan));
-      // Anchor: houd cursor op dezelfde relatieve positie.
-      const ratio = (cursorNap - currentMin) / (currentMax - currentMin);
-      let nMin = cursorNap - ratio * clampedSpan;
-      let nMax = nMin + clampedSpan;
-      // Clamp aan data-extent.
-      if (nMin < fullExtent.fullNapBot) {
-        nMin = fullExtent.fullNapBot;
-        nMax = nMin + clampedSpan;
-      }
-      if (nMax > fullExtent.fullNapTop) {
-        nMax = fullExtent.fullNapTop;
-        nMin = nMax - clampedSpan;
-      }
-      // Als clampedSpan ≥ dataRange: helemaal uitgezoomd → reset domain.
-      if (clampedSpan >= dataRange - 1e-6) {
-        setZoomDomain(null);
-      } else {
-        setZoomDomain({ napMin: nMin, napMax: nMax });
-      }
+      applyZoom(factor, anchorRatio);
     };
     // Passive: false zodat preventDefault() page-scroll tegenhoudt.
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => {
       svg.removeEventListener("wheel", onWheel);
     };
-  }, [zoomDomain, fullExtent.fullNapTop, fullExtent.fullNapBot]);
+  }, [applyZoom]);
 
   // Achtergrond-mousedown → start pan (alleen als ingezoomd). Niveau-line-
   // drag heeft prioriteit via stopPropagation() in startDrag().
@@ -414,16 +645,46 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
 
   return (
     <>
-      {zoomDomain && (
+      <div className="pile-chart-controls" role="toolbar" aria-label="Chart zoom">
         <button
           type="button"
-          className="pile-chart-reset"
-          onClick={() => setZoomDomain(null)}
-          title="Reset zoom (of dubbelklik op de grafiek)"
+          className="pile-chart-ctrl-btn"
+          title="Zoom in (of scrollwiel omhoog)"
+          aria-label="Zoom in"
+          onClick={() => applyZoom(0.8)}
         >
-          Reset zoom
+          +
         </button>
-      )}
+        <button
+          type="button"
+          className="pile-chart-ctrl-btn"
+          title="Zoom uit (of scrollwiel omlaag)"
+          aria-label="Zoom uit"
+          onClick={() => applyZoom(1.25)}
+        >
+          −
+        </button>
+        <button
+          type="button"
+          className="pile-chart-ctrl-btn"
+          title="Zoom op paalpunt (1 m padding rondom de paal)"
+          aria-label="Zoom op paalpunt"
+          onClick={zoomToPile}
+        >
+          ⌂
+        </button>
+        {zoomDomain && (
+          <button
+            type="button"
+            className="pile-chart-ctrl-btn pile-chart-ctrl-btn--reset"
+            title="Reset zoom (of dubbelklik op de grafiek)"
+            aria-label="Reset zoom"
+            onClick={resetZoom}
+          >
+            ↺
+          </button>
+        )}
+      </div>
       <svg
         ref={svgRef}
         className="pile-cpt-chart-svg"
@@ -433,6 +694,41 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         aria-label="CPT-grafiek met paaloverlays"
         onDoubleClick={handleDoubleClick}
       >
+        <defs>
+          {/* Clip-path: pile en arrows clippen aan het plot-bereik
+              zodat ze niet over de assen heen tekenen bij zoom. */}
+          <clipPath id="pile-plot-clip">
+            <rect
+              x={MARGIN.left + PLOT_W + 4}
+              y={MARGIN.top}
+              width={PILE_COL_W + 60}
+              height={PLOT_H}
+            />
+          </clipPath>
+          {/* Arrowhead marker — pijl-omlaag voor Fnk + omhoog voor Rs/Rb. */}
+          <marker
+            id="pile-arrow-down"
+            viewBox="0 0 10 10"
+            refX="5"
+            refY="9"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto"
+          >
+            <path d="M0,0 L10,0 L5,10 z" fill="#dc2626" />
+          </marker>
+          <marker
+            id="pile-arrow-up"
+            viewBox="0 0 10 10"
+            refX="5"
+            refY="1"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto"
+          >
+            <path d="M0,10 L10,10 L5,0 z" fill="#16a34a" />
+          </marker>
+        </defs>
         {/* ─── Plot background (ook pan-hitbox) ─── */}
         <rect
           x={MARGIN.left}
@@ -755,6 +1051,19 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       >
         Paalpunt {formatNap(input.pileToeNap)} (D_eq = {result.base.deqMm.toFixed(0)} mm)
       </text>
+
+      {/* ─── Pile graphic — paal-doorsnede in eigen kolom rechts van plot ─── */}
+      <PileGraphic
+        input={input}
+        result={result}
+        material={pileMaterial}
+        isCircular={pileIsCircular}
+        yPileTop={yPileTop}
+        yPileToe={yPileToe}
+        yNkBot={yNkBot}
+        plotTop={MARGIN.top}
+        plotBottom={MARGIN.top + PLOT_H}
+      />
 
       {/* ─── Right-margin: qc;I / qc;II / qc;III ─── */}
       <text

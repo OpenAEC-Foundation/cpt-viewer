@@ -1,8 +1,7 @@
 // apps/desktop/src/calc/modules/pile-bearing-capacity/catalog.ts
 import type { PileTypeSpec, SoilKind, SoilLayer } from "./types";
 
-/** Tabel 7.c uit Eurocode 7 NB:2019 — paalklassefactoren. v1: alleen
- *  stalen buispaal geheid gesloten. Uitbreidbaar in v2. */
+/** Tabel 7.c uit Eurocode 7 NB:2019 — paalklassefactoren. */
 export const PILE_TYPE_CATALOG: PileTypeSpec[] = [
   {
     id: "steel-pipe-driven-closed",
@@ -13,6 +12,18 @@ export const PILE_TYPE_CATALOG: PileTypeSpec[] = [
     beta: 1.0,
     s: 1.0,
     isCircular: true,
+    material: "steel",
+  },
+  {
+    id: "concrete-prefab-prestressed-driven",
+    name: "Prefab voorgespannen betonpaal — geheid",
+    alphaP: 0.7,
+    alphaS: 0.010,    // Tabel 7.c — voorgespannen geheide betonpaal
+    alphaT: 0.007,
+    beta: 1.0,        // s=β=1 voor zowel rond als vierkant met a=b
+    s: 1.0,
+    isCircular: false, // vierkante doorsnede — diameterMm = zijlengte a
+    material: "concrete",
   },
 ];
 

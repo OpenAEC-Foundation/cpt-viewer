@@ -1,6 +1,10 @@
 .calc-view {
   display: grid;
-  grid-template-columns: 300px 1fr 380px;
+  /* 5 columns: left | splitter | mid | splitter | right.
+     Default widths via custom-props zodat ze inline-overschreven kunnen
+     worden door React state — zonder dat we de hele grid-template-string
+     opnieuw moeten genereren. */
+  grid-template-columns: var(--calc-left-w, 300px) 5px 1fr 5px var(--calc-right-w, 380px);
   height: 100%;
   background: var(--theme-bg, #fff);
   color: var(--theme-text, #36363e);
@@ -8,11 +12,45 @@
 
 .calc-pane {
   overflow: auto;
-  border-right: 1px solid var(--theme-border, #e7e5e4);
   padding: 16px;
 }
-.calc-pane:last-child {
-  border-right: 0;
+/* Borders zaten op .calc-pane:not-last; nu vervangen door .calc-splitter
+   die zowel visueel als drag-grip dient. */
+
+/* ─── Resizable splitter — 5 px vertical bar tussen panes ─── */
+.calc-splitter {
+  background: var(--theme-border, #e7e5e4);
+  cursor: col-resize;
+  user-select: none;
+  /* Subtle hit-area expansion: 5px breed visueel, maar pointer-events
+     pakken op de volle 5px. Een 1px-line zou te smal zijn om te grijpen. */
+  transition: background 100ms ease-out;
+  position: relative;
+}
+.calc-splitter::before {
+  /* Center-grip-indicator (3 dots horizontaal) — alleen zichtbaar bij hover. */
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 28px;
+  background: var(--theme-text-secondary, #71717a);
+  border-radius: 2px;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+  pointer-events: none;
+}
+.calc-splitter:hover {
+  background: var(--amber, #d97706);
+}
+.calc-splitter:hover::before {
+  opacity: 0.6;
+  background: #fff;
+}
+.calc-splitter:active {
+  background: var(--amber, #d97706);
 }
 .calc-pane-title {
   font: 700 0.95rem var(--font-heading, "Space Grotesk"), "Inter", sans-serif;

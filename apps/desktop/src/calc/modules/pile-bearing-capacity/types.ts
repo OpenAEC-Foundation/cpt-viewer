@@ -23,7 +23,10 @@ export interface PileTypeSpec {
   alphaT: number;
   beta: number;                // 1.0 voor cilindrisch
   s: number;                   // 1.0 voor cilindrisch
-  isCircular: boolean;
+  isCircular: boolean;         // false → vierkante doorsnede; diameterMm = zijlengte a
+  /** Materiaal voor visualisatie + toekomstige EA-berekening.
+   *  Defaults naar "steel" als afwezig (back-compat oude IFCX-files). */
+  material?: "steel" | "concrete";
 }
 
 export interface PileInput {

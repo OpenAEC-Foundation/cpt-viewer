@@ -77,28 +77,66 @@
   font-family: "Inter", sans-serif;
 }
 
-/* ─── Reset-zoom button (floating top-right inside chart) ─── */
-.pile-chart-reset {
+/* ─── Zoom-controls (floating top-right inside chart) ─── */
+.pile-chart-controls {
   position: absolute;
   top: 8px;
   right: 8px;
   z-index: 2;
-  padding: 4px 10px;
+  display: flex;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(4px);
+  padding: 3px;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+.pile-chart-ctrl-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
   background: var(--theme-bg, #fff);
   border: 1px solid var(--theme-border, #cbd5e1);
   border-radius: 4px;
-  font: 600 0.75rem "Inter", sans-serif;
+  font: 700 0.95rem "Inter", sans-serif;
+  line-height: 1;
   color: var(--theme-text, #36363e);
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: background 80ms ease-out, border-color 80ms ease-out;
 }
-.pile-chart-reset:hover {
+.pile-chart-ctrl-btn:hover {
   background: var(--theme-bg-hover, #f4f4f5);
   border-color: var(--theme-border-strong, #94a3b8);
 }
-.pile-chart-reset:active {
+.pile-chart-ctrl-btn:active {
   background: var(--theme-bg-active, #e4e4e7);
+}
+.pile-chart-ctrl-btn--reset {
+  background: var(--amber, #d97706);
+  color: white;
+  border-color: var(--amber, #d97706);
+}
+.pile-chart-ctrl-btn--reset:hover {
+  background: #b45309;
+  border-color: #b45309;
+}
+
+/* ─── Pile graphic (rect + arrows in eigen kolom) ─── */
+.pile-gfx {
+  pointer-events: none;
+}
+.pile-gfx-arrow-label {
+  font-size: 9px;
+  font-weight: 600;
+  font-family: var(--font-code, "JetBrains Mono"), monospace;
+  pointer-events: none;
+}
+.pile-gfx-arrow-label--strong {
+  font-weight: 700;
+  font-size: 10px;
 }
 
 /* ─── Plot frame ─── */

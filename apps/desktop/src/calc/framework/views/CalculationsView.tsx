@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode, type MouseEvent as ReactMouseEvent } from "react";
 import { useCalculationsStore } from "../store";
 import { getCalcModule } from "../registry";
 import { useCptStore } from "../../../store/useCptStore";
@@ -7,6 +7,32 @@ import { ProjectTreePanel } from "./ProjectTreePanel";
 import { NewCalculationDialog } from "./NewCalculationDialog";
 import type { ProjectContext } from "../types";
 import "./CalculationsView.css";
+
+/** Min/max breedte voor de zij-panelen (px). Onder min wordt het paneel
+ *  onleesbaar; boven max verdwijnt de mid-pane in zicht. */
+const PANE_MIN = 200;
+const PANE_MAX = 600;
+const LS_KEY_LEFT = "calc.leftPaneW";
+const LS_KEY_RIGHT = "calc.rightPaneW";
+
+function loadPaneWidth(key: string, fallback: number): number {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(PANE_MIN, Math.min(PANE_MAX, n));
+  } catch {
+    return fallback;
+  }
+}
+function savePaneWidth(key: string, value: number) {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    /* ignore — private-browsing of quota */
+  }
+}
 
 /**
  * Top-level werkruimte voor de Berekeningen-tab. Toont een 3-pane
@@ -43,6 +69,20 @@ export function CalculationsView() {
 
   const [showNewDialog, setShowNewDialog] = useState(false);
 
+  // Resizable splitter-state — geladen uit localStorage zodat de
+  // voorkeur tussen sessies bewaard blijft. Lazy-init voorkomt SSR-issue.
+  const [leftWidth, setLeftWidth] = useState<number>(() =>
+    loadPaneWidth(LS_KEY_LEFT, 300),
+  );
+  const [rightWidth, setRightWidth] = useState<number>(() =>
+    loadPaneWidth(LS_KEY_RIGHT, 380),
+  );
+
+  // Persist na elke wijziging — debouncing zou hier overkill zijn (drag
+  // levert ~60 calls/sec maar localStorage.setItem is <0,1 ms in Chrome).
+  useEffect(() => savePaneWidth(LS_KEY_LEFT, leftWidth), [leftWidth]);
+  useEffect(() => savePaneWidth(LS_KEY_RIGHT, rightWidth), [rightWidth]);
+
   // De Berekeningen-ribbon-tab dispatcht `ogs:open-new-calc` zodat de
   // "+ Nieuwe berekening"-knop daar — buiten dit component — toch deze
   // dialog opent. Voorkomt prop-drilling tussen Ribbon en CalculationsView.
@@ -51,6 +91,49 @@ export function CalculationsView() {
     window.addEventListener("ogs:open-new-calc", onOpen);
     return () => window.removeEventListener("ogs:open-new-calc", onOpen);
   }, []);
+
+  // ─── Splitter drag-handlers ───────────────────────────────────────
+  // Linker splitter: rechts slepen → linker-pane groter (delta+).
+  const handleLeftDrag = (e: ReactMouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = leftWidth;
+    const onMove = (m: MouseEvent) => {
+      const newW = Math.max(PANE_MIN, Math.min(PANE_MAX, startW + (m.clientX - startX)));
+      setLeftWidth(newW);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  // Rechter splitter: rechts slepen → rechter-pane kleiner (delta-).
+  const handleRightDrag = (e: ReactMouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = rightWidth;
+    const onMove = (m: MouseEvent) => {
+      const newW = Math.max(PANE_MIN, Math.min(PANE_MAX, startW - (m.clientX - startX)));
+      setRightWidth(newW);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
 
   const ctx: ProjectContext = useMemo(
     () => ({ cpts, activeCptId, projectMeta }),
@@ -109,12 +192,36 @@ export function CalculationsView() {
   }
 
   return (
-    <div className="calc-view">
+    <div
+      className="calc-view"
+      style={{
+        // Custom-props worden gelezen door grid-template-columns in CSS.
+        // `as never` omdat React.CSSProperties geen CSS-vars in zijn type set heeft.
+        ["--calc-left-w" as never]: `${leftWidth}px`,
+        ["--calc-right-w" as never]: `${rightWidth}px`,
+      }}
+    >
       <aside className="calc-pane calc-pane-left">
         <ProjectTreePanel onAddClick={() => setShowNewDialog(true)} />
         {leftBelowTree}
       </aside>
+      <div
+        className="calc-splitter"
+        onMouseDown={handleLeftDrag}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Linker paneel breedte aanpassen"
+        title="Sleep om de paneel-breedte aan te passen"
+      />
       <main className="calc-pane calc-pane-mid">{midContent}</main>
+      <div
+        className="calc-splitter"
+        onMouseDown={handleRightDrag}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Rechter paneel breedte aanpassen"
+        title="Sleep om de paneel-breedte aan te passen"
+      />
       <aside className="calc-pane calc-pane-right">{rightContent}</aside>
       <NewCalculationDialog
         open={showNewDialog}
