@@ -1022,7 +1022,9 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
           {/* Gradient voor pos-kleef arcering: van LINKS donker-groen (bij
               y-as = vlak naast paal) naar RECHTS licht-groen (bij qc-curve).
               Dit visualiseert dat de "wrijvings-capaciteit" sterker is dicht
-              bij de paal-as dan ver weg. */}
+              bij de paal-as dan ver weg. Opacities flink omhoog gezet
+              zodat de groene zone duidelijk zichtbaar is over de witte
+              plot-achtergrond. */}
           <linearGradient
             id="pile-cpt-poskleef-grad"
             x1="0"
@@ -1030,8 +1032,8 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
             x2="1"
             y2="0"
           >
-            <stop offset="0%" stopColor="#16a34a" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="#16a34a" stopOpacity="0.06" />
+            <stop offset="0%" stopColor="#15803d" stopOpacity="0.55" />
+            <stop offset="100%" stopColor="#22c55e" stopOpacity="0.18" />
           </linearGradient>
         </defs>
         {/* ─── Plot background (ook pan-hitbox) ─── */}
@@ -1059,40 +1061,74 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       {/* ─── Pos.kleef-zone (posKleefTopNap → paalpunt) — groen POLYGON ───
               Met linear gradient: LINKS donker-groen (bij y-as, dicht bij
               paal-as) naar RECHTS licht-groen (bij qc-curve). Polygon-stijl
-              identiek aan 8D-arcering — loopt langs de y-as en de qc-curve. */}
+              identiek aan 8D-arcering — loopt langs de y-as en de qc-curve.
+              Voorzien van een groene border + label rechts voor extra
+              herkenbaarheid. */}
       {posKleefTopNap > input.pileToeNap && (() => {
         const seg = qcSegmentPoints(posKleefTopNap, input.pileToeNap);
         if (!seg) return null;
         return (
-          <polygon
-            points={[
-              `${MARGIN.left.toFixed(1)},${yPosKleefTop.toFixed(1)}`,
-              seg,
-              `${MARGIN.left.toFixed(1)},${yPileToe.toFixed(1)}`,
-            ].join(" ")}
-            fill="url(#pile-cpt-poskleef-grad)"
-            pointerEvents="none"
-          />
+          <>
+            <polygon
+              points={[
+                `${MARGIN.left.toFixed(1)},${yPosKleefTop.toFixed(1)}`,
+                seg,
+                `${MARGIN.left.toFixed(1)},${yPileToe.toFixed(1)}`,
+              ].join(" ")}
+              fill="url(#pile-cpt-poskleef-grad)"
+              stroke="#15803d"
+              strokeWidth={0.8}
+              strokeOpacity={0.55}
+              pointerEvents="none"
+            />
+            <text
+              x={xRightLabel}
+              y={(yPosKleefTop + yPileToe) / 2}
+              className="pile-cpt-zone-label pile-cpt-zone-label--poskleef"
+              pointerEvents="none"
+            >
+              Pos.kleef
+            </text>
+          </>
         );
       })()}
 
       {/* ─── 8D zone above paalpunt — light blue POLYGON ───
-              Het polygon loopt langs de y-as (links) → langs de qc-curve
-              (rechts via qcSeg8D, gesorteerd top→bot) → terug naar start.
-              Hierdoor zit de blauwe arcering ALLEEN tussen plot-links en
-              de qc-curve — niet over de hele plot-breedte. Conform
-              ExternPakket/referentienorm visualisatiestijl voor de qc;III-invloed. */}
-      {zone8DVisible && qcSeg8D && (
-        <polygon
-          points={[
-            `${MARGIN.left.toFixed(1)},${yZoneAboveTop.toFixed(1)}`,
-            qcSeg8D,
-            `${MARGIN.left.toFixed(1)},${yPileToe.toFixed(1)}`,
-          ].join(" ")}
-          className="pile-cpt-zone-8d"
-          pointerEvents="none"
-        />
-      )}
+              Het polygon loopt langs de y-as (links) → langs de CLIPPED
+              (running-min) qc-curve (rechts) → terug naar start. Hierdoor
+              is het "afgesnuiten" gebied (tussen clipped curve en raw
+              qc-curve) NIET gearceerd — visualiseert direct dat dat deel
+              is weggekapt door de afkapregel uit NEN 9997-1 NB:2019.
+              Conform ExternPakket/referentienorm visualisatiestijl voor qc;III. */}
+      {zone8DVisible && (() => {
+        const groundNap = cpt.metadata.ground_level_nap ?? 0;
+        const pileToeDepth = groundNap - input.pileToeNap;
+        const zone8DTopDepth = pileToeDepth - 8 * (input.diameterMm / 1000);
+        const inZone = (result.base.clippedQcCurve ?? []).filter(
+          (p) => p.depth >= zone8DTopDepth - 1e-6 && p.depth <= pileToeDepth + 1e-6,
+        );
+        if (inZone.length < 2) return null;
+        // Sort by depth ASCENDING (shallow=top first → matches top-to-bot
+        // polygon-walk in SVG coordinates).
+        inZone.sort((a, b) => a.depth - b.depth);
+        const segPoints = inZone
+          .map((p) => {
+            const nap = groundNap - p.depth;
+            return `${bounds.qcToX(p.qcClipped).toFixed(1)},${bounds.napToY(nap).toFixed(1)}`;
+          })
+          .join(" ");
+        return (
+          <polygon
+            points={[
+              `${MARGIN.left.toFixed(1)},${yZoneAboveTop.toFixed(1)}`,
+              segPoints,
+              `${MARGIN.left.toFixed(1)},${yPileToe.toFixed(1)}`,
+            ].join(" ")}
+            className="pile-cpt-zone-8d"
+            pointerEvents="none"
+          />
+        );
+      })()}
 
       {/* ─── 4D MAX outer band below paalpunt — heel licht rood, dashed bounds ─── */}
       {/*    Visualiseert de outer bound waar dc maximaal naar kan reiken (4·Deq). */}

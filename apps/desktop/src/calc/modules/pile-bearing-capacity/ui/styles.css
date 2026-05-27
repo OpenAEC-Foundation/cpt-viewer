@@ -348,6 +348,10 @@
   fill: #1e3a8a;  /* donkerblauw — was #b91c1c (rood) */
   font-weight: 800;
 }
+.pile-cpt-zone-label--poskleef {
+  fill: #15803d;  /* groen-700 — matcht pos-kleef-arcering border */
+  font-weight: 700;
+}
 
 /* ─── In-chart floating qc;I/II/III labels (per ExternPakket-stijl) ─── */
 /* paint-order: stroke + witte stroke geven een halo om de tekst zodat de
