@@ -20,6 +20,17 @@ interface DragState {
   startNap: number;
 }
 
+interface PanState {
+  startClientY: number;
+  startNapMin: number;
+  startNapMax: number;
+}
+
+interface ZoomDomain {
+  napMin: number;   // lage NAP-waarde (onderkant van zicht)
+  napMax: number;   // hoge NAP-waarde (bovenkant van zicht)
+}
+
 // ─── Chart geometry ──────────────────────────────────────────────
 // SVG-coordinates: x→right, y→down. We work in a fixed viewBox so
 // the chart scales crisply via preserveAspectRatio="xMidYMid meet".
@@ -29,10 +40,18 @@ const MARGIN = { top: 36, right: 100, bottom: 28, left: 64 };
 const PLOT_W = VB_W - MARGIN.left - MARGIN.right;
 const PLOT_H = VB_H - MARGIN.top - MARGIN.bottom;
 
+/** Minimaal zoom-bereik in m NAP (anders wordt het onleesbaar). */
+const MIN_ZOOM_SPAN_M = 0.5;
+
 function formatNap(n: number): string {
   // "NAP +3,88" / "NAP -10,46" — Dutch decimal-comma, signed.
   const sign = n >= 0 ? "+" : "-";
   return `NAP ${sign}${Math.abs(n).toFixed(2).replace(".", ",")} m`;
+}
+
+function formatMeters(n: number): string {
+  // "0,88 m" — Dutch decimal-comma, 2 decimalen.
+  return `${n.toFixed(2).replace(".", ",")} m`;
 }
 
 function downsample<T>(arr: T[], target: number): T[] {
@@ -53,7 +72,12 @@ interface ChartBounds {
   qcToX: (qc: number) => number;
 }
 
-function buildBounds(points: MeasurementPoint[], input: PileInput): ChartBounds {
+interface FullDataExtent {
+  fullNapTop: number;  // hoogste NAP in data + padding
+  fullNapBot: number;  // laagste NAP in data + padding
+}
+
+function computeFullExtent(points: MeasurementPoint[], input: PileInput): FullDataExtent {
   // Find the data extent. Prefer depth_nap; fall back to depth if missing.
   const naps: number[] = [];
   for (const p of points) {
@@ -80,8 +104,21 @@ function buildBounds(points: MeasurementPoint[], input: PileInput): ChartBounds 
     napTop = 5;
     napBot = -20;
   }
+  return { fullNapTop: napTop, fullNapBot: napBot };
+}
+
+function buildBounds(
+  points: MeasurementPoint[],
+  fullExtent: FullDataExtent,
+  zoom: ZoomDomain | null,
+): ChartBounds {
+  // Use zoom-domain when active, otherwise full data extent.
+  const napTop = zoom ? zoom.napMax : fullExtent.fullNapTop;
+  const napBot = zoom ? zoom.napMin : fullExtent.fullNapBot;
 
   // qc-axis: round up to a nice number above max·1.1.
+  // NOTE: qc auto-scales op de volledige data (niet alleen op zoom-bereik),
+  // zodat de x-as niet "danst" bij zoomen.
   let qcMaxRaw = 0;
   for (const p of points) {
     if (typeof p.qc === "number" && Number.isFinite(p.qc)) {
@@ -103,7 +140,7 @@ function buildDepthTicks(napTop: number, napBot: number): number[] {
   const range = napTop - napBot;
   // Pick step so we get ~8-12 ticks.
   const candidate = range / 10;
-  const candidates = [0.5, 1, 2, 2.5, 5, 10];
+  const candidates = [0.25, 0.5, 1, 2, 2.5, 5, 10];
   let step = 1;
   for (const c of candidates) {
     if (c >= candidate) { step = c; break; }
@@ -112,7 +149,8 @@ function buildDepthTicks(napTop: number, napBot: number): number[] {
   const start = Math.ceil(napBot / step) * step;
   const ticks: number[] = [];
   for (let v = start; v <= napTop; v += step) {
-    ticks.push(Math.round(v / step) * step);
+    // Houd alleen 2 decimalen om floating-point-rommel te vermijden.
+    ticks.push(Math.round(v * 100) / 100);
   }
   return ticks;
 }
@@ -136,7 +174,17 @@ interface ChartProps {
 function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
-  const bounds = useMemo(() => buildBounds(cpt.points, input), [cpt.points, input]);
+  const [pan, setPan] = useState<PanState | null>(null);
+  const [zoomDomain, setZoomDomain] = useState<ZoomDomain | null>(null);
+
+  const fullExtent = useMemo(
+    () => computeFullExtent(cpt.points, input),
+    [cpt.points, input],
+  );
+  const bounds = useMemo(
+    () => buildBounds(cpt.points, fullExtent, zoomDomain),
+    [cpt.points, fullExtent, zoomDomain],
+  );
   const qcPath = useMemo(() => {
     // Build a polyline from the qc curve. Downsample to ~500 pts.
     const points = cpt.points.filter(
@@ -159,8 +207,10 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
 
   // Zone heights: 8·Deq above paalpunt (light blue), 4·Deq below (light red).
   const deqM = result.base.deqMm / 1000;
-  const zoneAboveTop = input.pileToeNap + 8 * deqM;
-  const zoneBelowBot = input.pileToeNap - 4 * deqM;
+  const zone8DM = 8 * deqM;
+  const zone4DM = 4 * deqM;
+  const zoneAboveTop = input.pileToeNap + zone8DM;
+  const zoneBelowBot = input.pileToeNap - zone4DM;
 
   // Convert NAP-y values up-front for readability.
   const yPileTop = bounds.napToY(input.pileTopNap);
@@ -168,13 +218,29 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
   const yWater = bounds.napToY(input.waterNap);
   const yExcavation = bounds.napToY(input.excavationNap);
   const yNkBot = bounds.napToY(input.negKleefBottomNap);
-  const yZoneAboveTop = bounds.napToY(Math.min(zoneAboveTop, bounds.napTop));
-  const yZoneBelowBot = bounds.napToY(Math.max(zoneBelowBot, bounds.napBot));
+  // Zone-grenzen worden geclamped tot het zichtbare plot-bereik, zodat de
+  // dashed boundary altijd op de plotrand zit als de zone gedeeltelijk buiten
+  // beeld valt. Voor het label-midden gebruiken we de ECHTE NAP-waarde
+  // (anders zou bij het uit-beeld scrollen het label "wegschuiven").
+  const zoneAboveTopClamped = Math.min(zoneAboveTop, bounds.napTop);
+  const zoneBelowBotClamped = Math.max(zoneBelowBot, bounds.napBot);
+  const yZoneAboveTop = bounds.napToY(zoneAboveTopClamped);
+  const yZoneBelowBot = bounds.napToY(zoneBelowBotClamped);
 
   // Right-margin label positions — qc;I, qc;II, qc;III, qb;max all sit
   // somewhere inside the 8D/4D zone, so we anchor each label at the mid
   // of its respective band (rough but readable).
   const xRightLabel = MARGIN.left + PLOT_W + 6;
+
+  // Is een zone (deels) zichtbaar binnen het huidige plot-bereik?
+  const zone8DVisible =
+    zoneAboveTop > input.pileToeNap && // zone bestaat
+    zoneAboveTopClamped > input.pileToeNap && // bovengrens van zichtbare deel > paalpunt
+    input.pileToeNap >= bounds.napBot && input.pileToeNap <= bounds.napTop;
+  const zone4DVisible =
+    zoneBelowBot < input.pileToeNap &&
+    zoneBelowBotClamped < input.pileToeNap &&
+    input.pileToeNap >= bounds.napBot && input.pileToeNap <= bounds.napTop;
 
   // ─── Drag-to-edit ──────────────────────────────────────────────
   // Mouse-Y in screen-px → viewBox-px → NAP-m via dezelfde lineaire
@@ -221,34 +287,161 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
     };
   }, [drag, onChange, input, bounds.napTop, bounds.napBot]);
 
-  // Body-cursor lock tijdens drag: voorkomt text-cursor flicker bij snel
-  // bewegen over labels of buiten de SVG.
+  // ─── Pan-to-shift (alleen bij ingezoomd) ───────────────────────
   useEffect(() => {
-    if (!drag) return;
+    if (!pan) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const onMove = (e: MouseEvent) => {
+      const rect = svg.getBoundingClientRect();
+      if (rect.height === 0) return;
+      const vbPerScreenPx = VB_H / rect.height;
+      const dyVb = (e.clientY - pan.startClientY) * vbPerScreenPx;
+      // NAP-delta: schuiven naar beneden in pixels = napMin/napMax verlagen
+      // (chart inhoud schuift mee met de muis: omlaag = lagere NAP-waarden).
+      const napPerVbPx = (pan.startNapMax - pan.startNapMin) / PLOT_H;
+      // Natural "grab"-pan: muis naar beneden slepen = data volgt mee omlaag,
+      // dus wat boven het zicht zat (hogere NAP) komt in zicht aan de bovenkant.
+      // → positief dyVb (mouse-down) → napMin/napMax stijgen.
+      const napDelta = dyVb * napPerVbPx;
+      let nMin = pan.startNapMin + napDelta;
+      let nMax = pan.startNapMax + napDelta;
+      const span = pan.startNapMax - pan.startNapMin;
+      // Clamp aan volledige data-extent.
+      if (nMax > fullExtent.fullNapTop) {
+        nMax = fullExtent.fullNapTop;
+        nMin = nMax - span;
+      }
+      if (nMin < fullExtent.fullNapBot) {
+        nMin = fullExtent.fullNapBot;
+        nMax = nMin + span;
+      }
+      setZoomDomain({ napMin: nMin, napMax: nMax });
+    };
+    const onUp = () => setPan(null);
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [pan, fullExtent.fullNapTop, fullExtent.fullNapBot]);
+
+  // Body-cursor lock tijdens drag of pan: voorkomt text-cursor flicker bij
+  // snel bewegen over labels of buiten de SVG.
+  useEffect(() => {
+    if (!drag && !pan) return;
     const prev = document.body.style.cursor;
-    document.body.style.cursor = "ns-resize";
+    document.body.style.cursor = drag ? "ns-resize" : "grabbing";
     return () => {
       document.body.style.cursor = prev;
     };
-  }, [drag]);
+  }, [drag, pan]);
+
+  // ─── Mouse-wheel zoom (anchored op cursor-NAP) ─────────────────
+  // Via native event-listener i.p.v. React-prop, anders kan preventDefault()
+  // niet werken (React maakt 'wheel' standaard passive bij passive scroll).
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = svg.getBoundingClientRect();
+      if (rect.height === 0) return;
+      // Cursor-positie in viewBox-y, omgezet naar NAP via huidige bounds.
+      const vbY = (e.clientY - rect.top) * (VB_H / rect.height);
+      // Outside plot-vertical-range: ignore (klikt op marges).
+      if (vbY < MARGIN.top || vbY > MARGIN.top + PLOT_H) return;
+      const currentMin = zoomDomain ? zoomDomain.napMin : fullExtent.fullNapBot;
+      const currentMax = zoomDomain ? zoomDomain.napMax : fullExtent.fullNapTop;
+      const cursorNap = currentMax - ((vbY - MARGIN.top) / PLOT_H) * (currentMax - currentMin);
+      // Zoom-factor: scroll-up = inzoomen (0.8), scroll-down = uitzoomen (1.25).
+      const factor = e.deltaY < 0 ? 0.8 : 1.25;
+      const newSpan = (currentMax - currentMin) * factor;
+      const dataRange = fullExtent.fullNapTop - fullExtent.fullNapBot;
+      const clampedSpan = Math.max(MIN_ZOOM_SPAN_M, Math.min(dataRange, newSpan));
+      // Anchor: houd cursor op dezelfde relatieve positie.
+      const ratio = (cursorNap - currentMin) / (currentMax - currentMin);
+      let nMin = cursorNap - ratio * clampedSpan;
+      let nMax = nMin + clampedSpan;
+      // Clamp aan data-extent.
+      if (nMin < fullExtent.fullNapBot) {
+        nMin = fullExtent.fullNapBot;
+        nMax = nMin + clampedSpan;
+      }
+      if (nMax > fullExtent.fullNapTop) {
+        nMax = fullExtent.fullNapTop;
+        nMin = nMax - clampedSpan;
+      }
+      // Als clampedSpan ≥ dataRange: helemaal uitgezoomd → reset domain.
+      if (clampedSpan >= dataRange - 1e-6) {
+        setZoomDomain(null);
+      } else {
+        setZoomDomain({ napMin: nMin, napMax: nMax });
+      }
+    };
+    // Passive: false zodat preventDefault() page-scroll tegenhoudt.
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      svg.removeEventListener("wheel", onWheel);
+    };
+  }, [zoomDomain, fullExtent.fullNapTop, fullExtent.fullNapBot]);
+
+  // Achtergrond-mousedown → start pan (alleen als ingezoomd). Niveau-line-
+  // drag heeft prioriteit via stopPropagation() in startDrag().
+  const handleBgMouseDown = (e: ReactMouseEvent<SVGRectElement>) => {
+    if (!zoomDomain) return;
+    e.preventDefault();
+    setPan({
+      startClientY: e.clientY,
+      startNapMin: zoomDomain.napMin,
+      startNapMax: zoomDomain.napMax,
+    });
+  };
+
+  const handleDoubleClick = (e: ReactMouseEvent<SVGSVGElement>) => {
+    // Niet resetten als gebruiker dubbelklikte op een niveau-line (om edit-
+    // toekomstige feature niet te blokkeren). Voor nu: altijd reset.
+    e.preventDefault();
+    setZoomDomain(null);
+  };
+
+  const bgCursorClass = zoomDomain
+    ? (pan ? "pile-cpt-bg-pan-active" : "pile-cpt-bg-pan-ready")
+    : "pile-cpt-bg-zoom-ready";
 
   return (
-    <svg
-      ref={svgRef}
-      className="pile-cpt-chart-svg"
-      viewBox={`0 0 ${VB_W} ${VB_H}`}
-      preserveAspectRatio="xMidYMid meet"
-      role="img"
-      aria-label="CPT-grafiek met paaloverlays"
-    >
-      {/* ─── Plot background ─── */}
-      <rect
-        x={MARGIN.left}
-        y={MARGIN.top}
-        width={PLOT_W}
-        height={PLOT_H}
-        className="pile-cpt-plot-bg"
-      />
+    <>
+      {zoomDomain && (
+        <button
+          type="button"
+          className="pile-chart-reset"
+          onClick={() => setZoomDomain(null)}
+          title="Reset zoom (of dubbelklik op de grafiek)"
+        >
+          Reset zoom
+        </button>
+      )}
+      <svg
+        ref={svgRef}
+        className="pile-cpt-chart-svg"
+        viewBox={`0 0 ${VB_W} ${VB_H}`}
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label="CPT-grafiek met paaloverlays"
+        onDoubleClick={handleDoubleClick}
+      >
+        {/* ─── Plot background (ook pan-hitbox) ─── */}
+        <rect
+          x={MARGIN.left}
+          y={MARGIN.top}
+          width={PLOT_W}
+          height={PLOT_H}
+          className={`pile-cpt-plot-bg ${bgCursorClass}`}
+          onMouseDown={handleBgMouseDown}
+        />
 
       {/* ─── Neg.kleef-zone (paalkop → neg.kleef-grens) — orange band ─── */}
       {input.negKleefBottomNap < input.pileTopNap && (
@@ -258,29 +451,80 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
           width={PLOT_W}
           height={Math.abs(yNkBot - yPileTop)}
           className="pile-cpt-zone-negkleef"
+          pointerEvents="none"
         />
       )}
 
       {/* ─── 8D zone above paalpunt — light blue ─── */}
-      {yZoneAboveTop < yPileToe && (
+      {zone8DVisible && (
         <rect
           x={MARGIN.left}
           y={yZoneAboveTop}
           width={PLOT_W}
           height={yPileToe - yZoneAboveTop}
           className="pile-cpt-zone-8d"
+          pointerEvents="none"
         />
       )}
 
       {/* ─── 4D zone below paalpunt — light red ─── */}
-      {yZoneBelowBot > yPileToe && (
+      {zone4DVisible && (
         <rect
           x={MARGIN.left}
           y={yPileToe}
           width={PLOT_W}
           height={yZoneBelowBot - yPileToe}
           className="pile-cpt-zone-4d"
+          pointerEvents="none"
         />
+      )}
+
+      {/* ─── 8D / 4D dashed boundary lines + right-margin labels ─── */}
+      {zone8DVisible && (
+        <>
+          {/* Bovengrens 8D-zone (alleen tekenen als de échte top in zicht is). */}
+          {zoneAboveTop <= bounds.napTop && (
+            <line
+              x1={MARGIN.left}
+              x2={MARGIN.left + PLOT_W}
+              y1={yZoneAboveTop}
+              y2={yZoneAboveTop}
+              className="pile-cpt-zone-boundary"
+              pointerEvents="none"
+            />
+          )}
+          <text
+            x={xRightLabel}
+            y={(yZoneAboveTop + yPileToe) / 2 - 18}
+            className="pile-cpt-zone-label pile-cpt-zone-label--8d"
+            pointerEvents="none"
+          >
+            8D = {formatMeters(zone8DM)}
+          </text>
+        </>
+      )}
+      {zone4DVisible && (
+        <>
+          {/* Ondergrens 4D-zone (alleen tekenen als de échte bot in zicht is). */}
+          {zoneBelowBot >= bounds.napBot && (
+            <line
+              x1={MARGIN.left}
+              x2={MARGIN.left + PLOT_W}
+              y1={yZoneBelowBot}
+              y2={yZoneBelowBot}
+              className="pile-cpt-zone-boundary"
+              pointerEvents="none"
+            />
+          )}
+          <text
+            x={xRightLabel}
+            y={(yPileToe + yZoneBelowBot) / 2 + 18}
+            className="pile-cpt-zone-label pile-cpt-zone-label--4d"
+            pointerEvents="none"
+          >
+            4D = {formatMeters(zone4DM)}
+          </text>
+        </>
       )}
 
       {/* ─── Grid lines + depth ticks (y-axis) ─── */}
@@ -295,14 +539,16 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
               y1={y}
               y2={y}
               className="pile-cpt-grid"
+              pointerEvents="none"
             />
             <text
               x={MARGIN.left - 6}
               y={y + 3}
               className="pile-cpt-axis-label"
               textAnchor="end"
+              pointerEvents="none"
             >
-              {nap.toFixed(0)}
+              {Number.isInteger(nap) ? nap.toFixed(0) : nap.toFixed(2).replace(/\.?0+$/, "")}
             </text>
           </g>
         );
@@ -319,12 +565,14 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
               y1={MARGIN.top}
               y2={MARGIN.top + PLOT_H}
               className="pile-cpt-grid-vert"
+              pointerEvents="none"
             />
             <text
               x={x}
               y={MARGIN.top - 6}
               className="pile-cpt-axis-label"
               textAnchor="middle"
+              pointerEvents="none"
             >
               {qc}
             </text>
@@ -338,6 +586,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         y={MARGIN.top - 22}
         className="pile-cpt-axis-title"
         textAnchor="middle"
+        pointerEvents="none"
       >
         q_c [MPa]
       </text>
@@ -347,6 +596,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         className="pile-cpt-axis-title"
         textAnchor="middle"
         transform={`rotate(-90 18 ${MARGIN.top + PLOT_H / 2})`}
+        pointerEvents="none"
       >
         m NAP
       </text>
@@ -357,6 +607,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
           points={qcPath}
           className="pile-cpt-qc-curve"
           fill="none"
+          pointerEvents="none"
         />
       )}
 
@@ -367,6 +618,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         y1={yPileTop}
         y2={yPileTop}
         className={`pile-cpt-line-paalkop${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "pileTopNap" ? " pile-niveau-dragging" : ""}`}
+        pointerEvents="none"
       />
       {draggable && (
         <line
@@ -382,6 +634,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         x={MARGIN.left + 4}
         y={yPileTop - 4}
         className="pile-cpt-overlay-label"
+        pointerEvents="none"
       >
         Paalkop {formatNap(input.pileTopNap)}
       </text>
@@ -393,6 +646,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         y1={yExcavation}
         y2={yExcavation}
         className={`pile-cpt-line-ontgraving${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "excavationNap" ? " pile-niveau-dragging" : ""}`}
+        pointerEvents="none"
       />
       {draggable && (
         <line
@@ -408,6 +662,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         x={MARGIN.left + 4}
         y={yExcavation - 4}
         className="pile-cpt-overlay-label"
+        pointerEvents="none"
       >
         Ontgraving {formatNap(input.excavationNap)}
       </text>
@@ -419,6 +674,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         y1={yWater}
         y2={yWater}
         className={`pile-cpt-line-water${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "waterNap" ? " pile-niveau-dragging" : ""}`}
+        pointerEvents="none"
       />
       {draggable && (
         <line
@@ -433,11 +689,13 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       <polygon
         points={`${MARGIN.left + 10},${yWater - 6} ${MARGIN.left + 16},${yWater} ${MARGIN.left + 4},${yWater}`}
         className="pile-cpt-marker-water"
+        pointerEvents="none"
       />
       <text
         x={MARGIN.left + 22}
         y={yWater + 4}
         className="pile-cpt-overlay-label"
+        pointerEvents="none"
       >
         Water {formatNap(input.waterNap)}
       </text>
@@ -449,6 +707,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         y1={yNkBot}
         y2={yNkBot}
         className={`pile-cpt-line-negkleef${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "negKleefBottomNap" ? " pile-niveau-dragging" : ""}`}
+        pointerEvents="none"
       />
       {draggable && (
         <line
@@ -464,6 +723,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         x={MARGIN.left + 4}
         y={yNkBot - 4}
         className="pile-cpt-overlay-label"
+        pointerEvents="none"
       >
         Neg.kleef-grens {formatNap(input.negKleefBottomNap)}
       </text>
@@ -475,6 +735,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         y1={yPileToe}
         y2={yPileToe}
         className={`pile-cpt-line-paalpunt${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "pileToeNap" ? " pile-niveau-dragging" : ""}`}
+        pointerEvents="none"
       />
       {draggable && (
         <line
@@ -490,8 +751,9 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         x={MARGIN.left + 4}
         y={yPileToe + 14}
         className="pile-cpt-overlay-label pile-cpt-overlay-label--strong"
+        pointerEvents="none"
       >
-        Paalpunt {formatNap(input.pileToeNap)}
+        Paalpunt {formatNap(input.pileToeNap)} (D_eq = {result.base.deqMm.toFixed(0)} mm)
       </text>
 
       {/* ─── Right-margin: qc;I / qc;II / qc;III ─── */}
@@ -499,6 +761,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         x={xRightLabel}
         y={(yZoneAboveTop + yPileToe) / 2 - 6}
         className="pile-cpt-side-label"
+        pointerEvents="none"
       >
         q_c;I={result.base.qcIGemMpa.toFixed(2)}
       </text>
@@ -506,6 +769,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         x={xRightLabel}
         y={(yZoneAboveTop + yPileToe) / 2 + 6}
         className="pile-cpt-side-label"
+        pointerEvents="none"
       >
         q_c;II={result.base.qcIIGemMpa.toFixed(2)}
       </text>
@@ -513,6 +777,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         x={xRightLabel}
         y={(yPileToe + yZoneBelowBot) / 2}
         className="pile-cpt-side-label"
+        pointerEvents="none"
       >
         q_c;III={result.base.qcIIIGemMpa.toFixed(2)}
       </text>
@@ -520,20 +785,23 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         x={xRightLabel}
         y={yPileToe + 28}
         className="pile-cpt-side-label pile-cpt-side-label--strong"
+        pointerEvents="none"
       >
         q_b;max={result.base.qbMaxMpa.toFixed(2)}
       </text>
 
-      {/* ─── Plot border ─── */}
-      <rect
-        x={MARGIN.left}
-        y={MARGIN.top}
-        width={PLOT_W}
-        height={PLOT_H}
-        className="pile-cpt-plot-border"
-        fill="none"
-      />
-    </svg>
+        {/* ─── Plot border ─── */}
+        <rect
+          x={MARGIN.left}
+          y={MARGIN.top}
+          width={PLOT_W}
+          height={PLOT_H}
+          className="pile-cpt-plot-border"
+          fill="none"
+          pointerEvents="none"
+        />
+      </svg>
+    </>
   );
 }
 
