@@ -34,18 +34,42 @@ interface ZoomDomain {
 }
 
 // ─── Chart geometry ──────────────────────────────────────────────
-// SVG-coordinates: x→right, y→down. We work in a fixed viewBox so
-// the chart scales crisply via preserveAspectRatio="xMidYMid meet".
-const VB_W = 720;          // extra breedte voor pile-column + arrows
+// SVG-coordinates: x→right, y→down. preserveAspectRatio="xMidYMid meet"
+// schaalt de SVG naar zijn wrapper-grootte.
+//
+// VB_W (= viewBox width) is DYNAMISCH op basis van de actieve zoom-
+// factor: bij verticaal inzoomen wordt de plot horizontaal ook breder
+// zodat de qc-curve meer pixels krijgt om details te tonen. De pile-
+// graphic kolom (rechts) verschuift mee naar rechts zodat hij vast aan
+// de plot-rechterrand blijft kleven. Zie computeGeometry() en useMemo
+// in CptOverlayChart.
+const VB_W_BASE = 720;     // basis (= unzoomed) viewBox-breedte
 const VB_H = 800;
 const MARGIN = { top: 36, right: 180, bottom: 28, left: 64 };
-const PLOT_W = VB_W - MARGIN.left - MARGIN.right;
 const PLOT_H = VB_H - MARGIN.top - MARGIN.bottom;
+const PILE_COL_W = 60;     // pile + arrows zone breedte (constant)
+/** Max factor waarmee de plot horizontaal mag uitbreiden bij zoom. */
+const MAX_CHART_ZOOM_X = 2.5;
 
-// ─── Pile-column geometry (rechts van de plot, links van labels) ───
-const PILE_COL_X = MARGIN.left + PLOT_W + 12;   // start van de pile-kolom
-const PILE_COL_W = 60;                           // pile + arrows zone breedte
-const PILE_COL_CENTER = PILE_COL_X + PILE_COL_W / 2;
+/** Dynamische chart-geometry — aangepast per render aan de zoom-factor. */
+interface ChartGeometry {
+  vbW: number;
+  plotW: number;
+  pileColX: number;
+  pileColCenter: number;
+}
+
+function computeGeometry(chartZoomX: number): ChartGeometry {
+  const vbW = VB_W_BASE * chartZoomX;
+  const plotW = vbW - MARGIN.left - MARGIN.right;
+  const pileColX = MARGIN.left + plotW + 12;
+  return {
+    vbW,
+    plotW,
+    pileColX,
+    pileColCenter: pileColX + PILE_COL_W / 2,
+  };
+}
 // Visuele paal-breedte: clamp tussen min/max zodat alle palen herkenbaar
 // blijven (anders zou 168 mm paal vs 1500 mm-as in pixels lachwekkend zijn).
 const PILE_GFX_MIN_W = 14;
@@ -118,32 +142,27 @@ function buildBounds(
   points: MeasurementPoint[],
   fullExtent: FullDataExtent,
   zoom: ZoomDomain | null,
+  plotW: number,
 ): ChartBounds {
   // Use zoom-domain when active, otherwise full data extent.
   const napTop = zoom ? zoom.napMax : fullExtent.fullNapTop;
   const napBot = zoom ? zoom.napMin : fullExtent.fullNapBot;
 
-  // qc-axis: auto-scaled op de qc-waarden binnen het ZICHTBARE NAP-bereik
-  // (niet meer op de volledige data zoals voorheen). Bij verticaal inzoomen
-  // op een specifieke zone (bv. paalpunt-invloed) wordt de qc-as automatisch
-  // breder uitgezoomd, zodat de qc-curve in dat bereik beter te lezen is —
-  // belangrijk voor het beoordelen van paaldraagvermogens.
+  // qc-axis: auto-scaled op de qc-waarden binnen het ZICHTBARE NAP-bereik.
   let qcMaxRaw = 0;
   for (const p of points) {
     if (typeof p.qc !== "number" || !Number.isFinite(p.qc)) continue;
     const nap = p.depth_nap ?? -p.depth;
-    // Filter alleen tijdens zoom; zonder zoom blijft het hele bereik gelden.
     if (zoom && (nap < napBot || nap > napTop)) continue;
     if (p.qc > qcMaxRaw) qcMaxRaw = p.qc;
   }
   const qcWithMargin = Math.max(5, qcMaxRaw * 1.1);
-  // Snap to next multiple of 5.
   const qcMax = Math.ceil(qcWithMargin / 5) * 5;
 
   const napToY = (nap: number) =>
     MARGIN.top + ((napTop - nap) / (napTop - napBot)) * PLOT_H;
   const qcToX = (qc: number) =>
-    MARGIN.left + (qc / qcMax) * PLOT_W;
+    MARGIN.left + (qc / qcMax) * plotW;
   return { napTop, napBot, qcMax, napToY, qcToX };
 }
 
@@ -183,18 +202,17 @@ interface PileGraphicProps {
   result: PileResult;
   material: "steel" | "concrete";
   isCircular: boolean;
-  yPileTop: number;     // SVG-y van paalkop (na clamp)
-  yPileToe: number;     // SVG-y van paalpunt (na clamp)
-  yNkBot: number;       // SVG-y van neg.kleef-grens
-  plotTop: number;      // SVG-y van plot-rand boven (clip-grens)
-  plotBottom: number;   // SVG-y van plot-rand onder
-  /** SVG-y van de onderkant van de wapeningskorf (= 4·D vanaf paalkop,
-   *  geclampt op paalpunt). Wapeningskorf-graphic wordt alleen gerenderd
-   *  voor betongevulde stalen buispalen (composiet). */
+  yPileTop: number;
+  yPileToe: number;
+  yNkBot: number;
+  plotTop: number;
+  plotBottom: number;
   yRebarBot: number;
-  /** True als deze paal een wapeningskorf heeft (betongevulde stalen
-   *  buispaal). Voor pure stalen of pure betonpalen → false. */
   hasRebarCage: boolean;
+  /** Dynamische x-positie van de pile-kolom center (afhankelijk van
+   *  chart-zoom-factor). Bij zoom-in wordt de plot breder en schuift
+   *  deze waarde mee naar rechts. */
+  pileColCenter: number;
 }
 
 function PileGraphic({
@@ -209,6 +227,7 @@ function PileGraphic({
   plotBottom,
   yRebarBot,
   hasRebarCage,
+  pileColCenter,
 }: PileGraphicProps) {
   // Kleurpalet per materiaal — beige voor beton (#d4a574), grijs voor staal.
   const fill = material === "concrete" ? "#d4a574" : "#9ca3af";
@@ -220,7 +239,7 @@ function PileGraphic({
     PILE_GFX_MIN_W,
     Math.min(PILE_GFX_MAX_W, input.diameterMm / 10),
   );
-  const cx = PILE_COL_CENTER;
+  const cx = pileColCenter;
   const xPileLeft = cx - diaPx / 2;
   const xPileRight = cx + diaPx / 2;
 
@@ -573,9 +592,26 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
     () => computeFullExtent(cpt.points, input),
     [cpt.points, input],
   );
+
+  // ─── Dynamische chart-geometry (zoomt mee met verticaal zoom) ───
+  // Bij verticaal zoom (NAP-range smaller) krijgt de qc-curve meer
+  // horizontale pixels zodat detail beter zichtbaar wordt. We schalen
+  // sqrt(zoomFactor) — bij 4× verticaal zoom is de plot ~2× breder, niet
+  // 4× (anders wordt het te extreem). Geclamped op [1, MAX_CHART_ZOOM_X].
+  const geom = useMemo(() => {
+    const fullSpan = fullExtent.fullNapTop - fullExtent.fullNapBot;
+    const zoomSpan = zoomDomain
+      ? Math.max(0.01, zoomDomain.napMax - zoomDomain.napMin)
+      : fullSpan;
+    const linearZoom = fullSpan > 0 ? fullSpan / zoomSpan : 1;
+    const chartZoomX = Math.max(1, Math.min(MAX_CHART_ZOOM_X, Math.sqrt(linearZoom)));
+    return computeGeometry(chartZoomX);
+  }, [fullExtent.fullNapTop, fullExtent.fullNapBot, zoomDomain]);
+  const { vbW, plotW, pileColCenter } = geom;
+
   const bounds = useMemo(
-    () => buildBounds(cpt.points, fullExtent, zoomDomain),
-    [cpt.points, fullExtent, zoomDomain],
+    () => buildBounds(cpt.points, fullExtent, zoomDomain, plotW),
+    [cpt.points, fullExtent, zoomDomain, plotW],
   );
   // Volledige qc-puntenlijst (gefilterd + gedownsampled) — basis voor alle
   // qc-curve-segmenten. We splitsen later op NAP-range zodat we per zone
@@ -965,8 +1001,18 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       <svg
         ref={svgRef}
         className="pile-cpt-chart-svg"
-        viewBox={`0 0 ${VB_W} ${VB_H}`}
-        preserveAspectRatio="xMidYMid meet"
+        viewBox={`0 0 ${vbW} ${VB_H}`}
+        preserveAspectRatio="xMinYMid meet"
+        // SVG-pixel-width groeit met de zoom-factor (vbW / VB_W_BASE) zodat
+        // de qc-curve fysiek MEER pixels krijgt. xMinYMid + overflow-x:auto
+        // op de wrapper zorgt dat de gebruiker links-uitgelijnd inzoomt
+        // (paalpunt-zone blijft in zicht; pile-graphic schuift naar rechts
+        // achter de scrollbar — gebruiker scrolt om hem te zien).
+        style={{
+          width: `${(vbW / VB_W_BASE) * 100}%`,
+          minWidth: "100%",
+          height: "100%",
+        }}
         role="img"
         aria-label="CPT-grafiek met paaloverlays"
         onDoubleClick={handleDoubleClick}
@@ -976,7 +1022,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
               zodat ze niet over de assen heen tekenen bij zoom. */}
           <clipPath id="pile-plot-clip">
             <rect
-              x={MARGIN.left + PLOT_W + 4}
+              x={MARGIN.left + plotW + 4}
               y={MARGIN.top}
               width={PILE_COL_W + 60}
               height={PLOT_H}
@@ -1026,7 +1072,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         <rect
           x={MARGIN.left}
           y={MARGIN.top}
-          width={PLOT_W}
+          width={plotW}
           height={PLOT_H}
           className={`pile-cpt-plot-bg ${bgCursorClass}`}
           onMouseDown={handleBgMouseDown}
@@ -1037,7 +1083,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         <rect
           x={MARGIN.left}
           y={Math.min(yPileTop, yNkBot)}
-          width={PLOT_W}
+          width={plotW}
           height={Math.abs(yNkBot - yPileTop)}
           className="pile-cpt-zone-negkleef"
           pointerEvents="none"
@@ -1114,7 +1160,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         <rect
           x={MARGIN.left}
           y={yPileToe}
-          width={PLOT_W}
+          width={plotW}
           height={yZone4DMaxBot - yPileToe}
           className="pile-cpt-zone-4d-max"
           pointerEvents="none"
@@ -1127,7 +1173,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         <rect
           x={MARGIN.left}
           y={yPileToe}
-          width={PLOT_W}
+          width={plotW}
           height={yZoneDcBot - yPileToe}
           className="pile-cpt-zone-dc"
           pointerEvents="none"
@@ -1141,7 +1187,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
           {zoneAboveTop <= bounds.napTop && (
             <line
               x1={MARGIN.left}
-              x2={MARGIN.left + PLOT_W}
+              x2={MARGIN.left + plotW}
               y1={yZoneAboveTop}
               y2={yZoneAboveTop}
               className="pile-cpt-zone-boundary"
@@ -1156,7 +1202,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
           {zone4DMaxBot >= bounds.napBot && (
             <line
               x1={MARGIN.left}
-              x2={MARGIN.left + PLOT_W}
+              x2={MARGIN.left + plotW}
               y1={yZone4DMaxBot}
               y2={yZone4DMaxBot}
               className="pile-cpt-zone-boundary pile-cpt-zone-boundary--4d-max"
@@ -1171,7 +1217,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
           {zoneDcBot >= bounds.napBot && (
             <line
               x1={MARGIN.left}
-              x2={MARGIN.left + PLOT_W}
+              x2={MARGIN.left + plotW}
               y1={yZoneDcBot}
               y2={yZoneDcBot}
               className="pile-cpt-zone-boundary pile-cpt-zone-boundary--dc"
@@ -1189,7 +1235,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
           <g key={`d-${nap}`}>
             <line
               x1={MARGIN.left}
-              x2={MARGIN.left + PLOT_W}
+              x2={MARGIN.left + plotW}
               y1={y}
               y2={y}
               className="pile-cpt-grid"
@@ -1236,7 +1282,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
 
       {/* ─── Axis titles ─── */}
       <text
-        x={MARGIN.left + PLOT_W / 2}
+        x={MARGIN.left + plotW / 2}
         y={MARGIN.top - 22}
         className="pile-cpt-axis-title"
         textAnchor="middle"
@@ -1326,7 +1372,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       {/* ─── Paalkop ─── solid */}
       <line
         x1={MARGIN.left}
-        x2={MARGIN.left + PLOT_W}
+        x2={MARGIN.left + plotW}
         y1={yPileTop}
         y2={yPileTop}
         className={`pile-cpt-line-paalkop${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "pileTopNap" ? " pile-niveau-dragging" : ""}`}
@@ -1335,7 +1381,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       {draggable && (
         <line
           x1={MARGIN.left}
-          x2={MARGIN.left + PLOT_W}
+          x2={MARGIN.left + plotW}
           y1={yPileTop}
           y2={yPileTop}
           className="pile-niveau-hitbox"
@@ -1354,7 +1400,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       {/* ─── Ontgraving ─── dashed */}
       <line
         x1={MARGIN.left}
-        x2={MARGIN.left + PLOT_W}
+        x2={MARGIN.left + plotW}
         y1={yExcavation}
         y2={yExcavation}
         className={`pile-cpt-line-ontgraving${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "excavationNap" ? " pile-niveau-dragging" : ""}`}
@@ -1363,7 +1409,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       {draggable && (
         <line
           x1={MARGIN.left}
-          x2={MARGIN.left + PLOT_W}
+          x2={MARGIN.left + plotW}
           y1={yExcavation}
           y2={yExcavation}
           className="pile-niveau-hitbox"
@@ -1382,7 +1428,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       {/* ─── Water ─── triangle marker + dotted line */}
       <line
         x1={MARGIN.left}
-        x2={MARGIN.left + PLOT_W}
+        x2={MARGIN.left + plotW}
         y1={yWater}
         y2={yWater}
         className={`pile-cpt-line-water${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "waterNap" ? " pile-niveau-dragging" : ""}`}
@@ -1391,7 +1437,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       {draggable && (
         <line
           x1={MARGIN.left}
-          x2={MARGIN.left + PLOT_W}
+          x2={MARGIN.left + plotW}
           y1={yWater}
           y2={yWater}
           className="pile-niveau-hitbox"
@@ -1415,7 +1461,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       {/* ─── Neg.kleef-grens ─── solid */}
       <line
         x1={MARGIN.left}
-        x2={MARGIN.left + PLOT_W}
+        x2={MARGIN.left + plotW}
         y1={yNkBot}
         y2={yNkBot}
         className={`pile-cpt-line-negkleef${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "negKleefBottomNap" ? " pile-niveau-dragging" : ""}`}
@@ -1424,7 +1470,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       {draggable && (
         <line
           x1={MARGIN.left}
-          x2={MARGIN.left + PLOT_W}
+          x2={MARGIN.left + plotW}
           y1={yNkBot}
           y2={yNkBot}
           className="pile-niveau-hitbox"
@@ -1446,7 +1492,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
               paalpunt en wordt visueel gevormd door de paalpunt-lijn. */}
       <line
         x1={MARGIN.left}
-        x2={MARGIN.left + PLOT_W}
+        x2={MARGIN.left + plotW}
         y1={yPosKleefTop}
         y2={yPosKleefTop}
         className={`pile-cpt-line-poskleef${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "posKleefTopNap" ? " pile-niveau-dragging" : ""}`}
@@ -1463,7 +1509,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       {draggable && (
         <line
           x1={MARGIN.left}
-          x2={MARGIN.left + PLOT_W}
+          x2={MARGIN.left + plotW}
           y1={yPosKleefTop}
           y2={yPosKleefTop}
           className="pile-niveau-hitbox"
@@ -1474,7 +1520,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       {/* ─── Paalpunt ─── bold red */}
       <line
         x1={MARGIN.left}
-        x2={MARGIN.left + PLOT_W}
+        x2={MARGIN.left + plotW}
         y1={yPileToe}
         y2={yPileToe}
         className={`pile-cpt-line-paalpunt${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "pileToeNap" ? " pile-niveau-dragging" : ""}`}
@@ -1483,7 +1529,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       {draggable && (
         <line
           x1={MARGIN.left}
-          x2={MARGIN.left + PLOT_W}
+          x2={MARGIN.left + plotW}
           y1={yPileToe}
           y2={yPileToe}
           className="pile-niveau-hitbox"
@@ -1515,6 +1561,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
           Math.max(input.pileToeNap, input.pileTopNap - 4 * (input.diameterMm / 1000)),
         )}
         hasRebarCage={pileMaterial === "steel"}
+        pileColCenter={pileColCenter}
       />
 
       {/* ─── In-chart gemiddelde qc-waarden per invloed-zone ───
@@ -1626,7 +1673,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         <rect
           x={MARGIN.left}
           y={MARGIN.top}
-          width={PLOT_W}
+          width={plotW}
           height={PLOT_H}
           className="pile-cpt-plot-border"
           fill="none"
