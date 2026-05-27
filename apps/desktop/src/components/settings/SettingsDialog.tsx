@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { LANGUAGES, changeLanguage } from "../../i18n/config";
 import { getSetting, setSetting } from "../../store";
 import { useAllExtensions, setExtension, type ExtensionId } from "../../hooks/useExtensions";
+import { CALC_REGISTRY } from "../../calc/framework/registry";
 import Modal from "../Modal";
 import ThemedSelect from "../ThemedSelect";
 import "../ThemedSelect.css";
@@ -312,6 +313,11 @@ function ExtensionsTabContent() {
       description:
         "Voegt de knop 'Offertes opvragen' toe aan de Situatietekening-ribbon (vereist de Situatietekening-extensie). Opent een dialog met de dichtsbijzijnde sondeerbedrijven + automatische mailto-offerte.",
     },
+    ...CALC_REGISTRY.map((m) => ({
+      id: `calc.${m.id}` as ExtensionId,
+      title: m.name,
+      description: `${m.subtitle} (${m.norm})${m.status === "coming-soon" ? " — komt binnenkort" : ""}`,
+    })),
   ];
 
   return (

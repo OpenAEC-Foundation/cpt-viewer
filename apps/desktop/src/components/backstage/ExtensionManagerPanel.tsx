@@ -5,6 +5,7 @@ import {
   setExtension,
   type ExtensionId,
 } from "../../hooks/useExtensions";
+import { CALC_REGISTRY } from "../../calc/framework/registry";
 import "./ExtensionManagerPanel.css";
 
 /**
@@ -12,6 +13,11 @@ import "./ExtensionManagerPanel.css";
  * Bij elke nieuwe ExtensionId die in `useExtensions.ts` wordt
  * toegevoegd hoort hier ook een entry — anders verschijnt-ie wel in de
  * lijst (via useAllExtensions) maar zónder naam/beschrijving.
+ *
+ * Calc-module entries worden automatisch gegenereerd uit
+ * `CALC_REGISTRY` zodat een nieuwe module alleen in de registry
+ * geregistreerd hoeft te worden (en als ExtensionId in
+ * useExtensions.ts) om hier te verschijnen.
  */
 interface ExtensionMeta {
   id: ExtensionId;
@@ -22,30 +28,42 @@ interface ExtensionMeta {
   category: string;
 }
 
+const TEKENING_EXT: ExtensionMeta = {
+  id: "tekening",
+  name: "Situatietekening",
+  version: "0.2.9",
+  description:
+    "CAD-papier (A2/A3/A4) met sonderingen, snap-systeem, overlays en PDF-export.",
+  author: "OpenAEC Foundation",
+  category: "Tekening",
+};
+const OFFERTES_EXT: ExtensionMeta = {
+  id: "offertes",
+  name: "Offertes opvragen",
+  version: "0.2.9",
+  description:
+    "Vraagt offertes op bij dichtsbijzijnde sondeerbedrijven.",
+  author: "OpenAEC Foundation",
+  category: "Werkflow",
+};
+
 const INSTALLED_EXTENSIONS: ExtensionMeta[] = [
-  {
-    id: "tekening",
-    name: "Situatietekening",
-    version: "0.2.8",
-    description:
-      "CAD-papier (A2/A3/A4) met sonderingen op de kaart, kader, schaalbalk, snap-systeem, overlays en PDF-export.",
+  TEKENING_EXT,
+  OFFERTES_EXT,
+  ...CALC_REGISTRY.map<ExtensionMeta>((m) => ({
+    id: `calc.${m.id}` as ExtensionId,
+    name: m.name,
+    version: m.status === "available" ? "0.3.0" : "0.0.1-coming-soon",
+    description: `${m.subtitle} — ${m.norm}`,
     author: "OpenAEC Foundation",
-    category: "Tekening",
-  },
-  {
-    id: "offertes",
-    name: "Offertes opvragen",
-    version: "0.2.8",
-    description:
-      "Vraagt offertes op bij dichtsbijzijnde sondeerbedrijven via een mailto-flow (vereist de Situatietekening-extensie).",
-    author: "OpenAEC Foundation",
-    category: "Werkflow",
-  },
+    category: "Berekening",
+  })),
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
   "Tekening": "#22d3ee",
   "Werkflow": "#a78bfa",
+  "Berekening": "#f59e0b",
   "Import/Export": "#60a5fa",
   "Reporting": "#a78bfa",
   "Utility": "#a1a1aa",
