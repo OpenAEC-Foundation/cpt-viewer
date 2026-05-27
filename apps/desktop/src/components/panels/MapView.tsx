@@ -1880,9 +1880,9 @@ export default function MapView() {
           <div className="map-cursor-coords-row">
             <span className="map-cursor-coords-label">RD</span>
             <span className="map-cursor-coords-val">
-              {Number.isFinite(cursorCoords.rdX) ? cursorCoords.rdX.toFixed(0) : "—"}
+              {Number.isFinite(cursorCoords.rdX) ? cursorCoords.rdX.toFixed(1) : "—"}
               {" / "}
-              {Number.isFinite(cursorCoords.rdY) ? cursorCoords.rdY.toFixed(0) : "—"}
+              {Number.isFinite(cursorCoords.rdY) ? cursorCoords.rdY.toFixed(1) : "—"}
             </span>
           </div>
           <div className="map-cursor-coords-row">
