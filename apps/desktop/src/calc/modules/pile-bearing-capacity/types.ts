@@ -43,6 +43,13 @@ export interface PileInput {
   gammaM: number;              // 1.20
   gammaFnk: number;            // 1.00
   negKleefBottomNap: number;   // -9.00
+  /** Onderkant van het POSITIEVE schachtwrijvings-traject [m NAP]. Default
+   *  = `pileToeNap` (positieve kleef telt tot aan paalpunt). Kan door de
+   *  gebruiker omhoog worden gezet om bv. de onderste 1·D bij paalpunt uit
+   *  te sluiten (punt-invloed). Optioneel veld voor IFCX-backward-compat
+   *  met v0.3-files die dit veld niet bevatten — code valt terug op
+   *  `pileToeNap` als het ontbreekt. */
+  posKleefBottomNap?: number;
   soilProfile: SoilLayer[];    // user-editable
   ksMinFactor: number;         // 0.25 (Eurocode min-cap)
 }
@@ -77,6 +84,13 @@ export interface BaseResistanceResult {
   qbMaxMpa: number;            // na cap op 15 MPa
   abMm2: number;
   rbCalMax: number;            // kN
+  /** "Effectieve" qc-curve over de qc;II + qc;III invloed-zones na
+   *  toepassing van de running-min "afkapregel" uit NEN 9997-1 NB:2019
+   *  §7.6.2.3. Gesorteerd op stijgende depth (m onder maaiveld). Wordt
+   *  door VisualPanel gerenderd als donkerblauwe lijn binnen de 8D-zone
+   *  zodat zichtbaar is hoeveel qc er is "weggesnoept". Optioneel ivm
+   *  back-compat met eerdere PileResult-snapshots. */
+  clippedQcCurve?: Array<{ depth: number; qcClipped: number }>;
 }
 
 export interface ShaftFrictionResult {

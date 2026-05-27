@@ -10,6 +10,47 @@ interface Args {
 
 const PI = Math.PI;
 
+/**
+ * NORM-CITAAT — NEN 9997-1+C2:2017 NB:2019 §7.6.2.3 (Boer/Koppejan, "4D-8D-methode")
+ * ────────────────────────────────────────────────────────────────────────────────
+ * De maximale puntweerstand q_b;max van een paal wordt berekend uit drie
+ * "trajectgemiddelden" van de gemeten conusweerstand q_c rondom de paalpunt:
+ *
+ *   ┌─────────────────────────────────────────────────────────────────────┐
+ *   │  ← shallow                                              deep →      │
+ *   │      ↑ 8·D_eq            paalpunt (h)        ↓ d_crit (0,7..4 D_eq) │
+ *   │  ●━━━━━━━━━━━━━━━━━━━━━━━━━━━●━━━━━━━━━━━━━━━━━━━━━━━━━━━●         │
+ *   │  ←─── qc;III ──────────────→  ←─ qc;II ─→  ←─── qc;I ──→            │
+ *   │  (up-walk, running-min      (up-walk,     (down-walk,               │
+ *   │   continueert vanaf qc;II)   cap op qcI)   avg over d_crit)         │
+ *   └─────────────────────────────────────────────────────────────────────┘
+ *
+ *   q_c;I    = rekenkundig gemiddelde van q_c op het traject
+ *              [h, h + d_crit], waarbij d_crit zo gekozen wordt dat
+ *              q_c;I MINIMUM is, en d_crit ∈ [0,7·D_eq, 4·D_eq].
+ *
+ *   q_c;II   = rekenkundig gemiddelde van q_c op het traject
+ *              [h + d_crit, h] (omhoog gelopen), waarbij q_c-waarden
+ *              hoger dan een eerdere (dieper liggende) afgekapte
+ *              waarde worden vervangen door die eerdere lagere
+ *              waarde — "lopende minimum". De afkap-walk start op
+ *              q_c;I (initial running min) zodat ALLE waarden in
+ *              dit traject zijn afgekapt op het q_c;I-niveau.
+ *
+ *   q_c;III  = rekenkundig gemiddelde van q_c op het traject
+ *              [h, h − 8·D_eq] (omhoog gelopen), waarbij dezelfde
+ *              afkapregel geldt: q_c-waarden hoger dan een eerdere
+ *              lager liggende afgekapte waarde worden vervangen.
+ *              De afkap-walk CONTINUEERT vanaf de eindwaarde van
+ *              q_c;II (geen reset).
+ *
+ *   q_b;max  = ½ · α_p · β · s · ( (q_c;I + q_c;II) / 2 + q_c;III )
+ *              gecapt op 15 MPa per §7.6.2.3(e).
+ *
+ * Het "lopend-minimum" loopt dus continu DEEP→SHALLOW over de hele
+ * invloedszone, geïnitieerd op q_c;I en niet onderbroken bij de paalpunt.
+ */
+
 /** Resultaat van een afgekapte (running-min) walk-up over qc-waarden. */
 interface ClippedWalkResult {
   /** Gewogen gemiddelde van de geclipte qc-waarden over de walk. */
@@ -24,9 +65,8 @@ interface ClippedWalkResult {
 
 /**
  * Walk de qc-waarden van een CPT van DEEP → SHALLOW en pas een running-min
- * toe ("afsnuiten"): elke nieuwe qc-waarde mag niet groter zijn dan de
- * lopende min. Dit is de Boer/Koppejan procedure uit
- * NEN-EN 1997-1+C2:2017 NB:2019 §7.6.2.3 voor qc;II en qc;III.
+ * toe ("afsnuiten"). Elke nieuwe (ondiepere) qc-waarde wordt geclipt op de
+ * lopende minimum (zie norm-citaat boven dit bestand).
  *
  * Sample-strategie:
  *   - Alle CPT-meetpunten met depth ∈ (depthTop, depthBottom)
@@ -41,15 +81,15 @@ interface ClippedWalkResult {
  * @param cpt           - de CPT data
  * @param depthBottom   - diepste rand van de zone (hogere depth-waarde)
  * @param depthTop      - ondiepste rand van de zone (lagere depth-waarde)
- * @param initialMin    - start-waarde voor de runMin (Infinity = geen prior).
- *                        Voor qc;III: pass de finalMin uit de qc;II walk
- *                        zodat de runMin continueert.
+ * @param initialMin    - start-waarde voor de runMin.
+ *                        Voor qc;II: pass qcIGemMpa (cap-op-qcI conform norm).
+ *                        Voor qc;III: pass qcIIWalk.finalMin (continueert).
  */
 function clippedAvgQcUpward(
   cpt: Cpt,
   depthBottom: number,
   depthTop: number,
-  initialMin: number = Infinity,
+  initialMin: number,
 ): ClippedWalkResult {
   if (depthBottom <= depthTop) {
     return { avg: 0, finalMin: initialMin, clippedPoints: [] };
@@ -150,7 +190,8 @@ export function computeBaseResistance(cpt: Cpt, args: Args): BaseResistanceResul
     return sumW > 0 ? sumQ / sumW : 0;
   };
 
-  // qc;I: zoek de optimale critical depth dc ∈ [0,7·Deq, 4·Deq] die qb minimaliseert
+  // qc;I: zoek de optimale critical depth dc ∈ [0,7·Deq, 4·Deq] die qc;I minimaliseert.
+  // Down-walk: gewoon rekenkundig gemiddelde, GEEN running-min.
   let bestDc = 0.7 * Deq;
   let bestQc1 = avgQc(args.pileToeDepth, args.pileToeDepth + bestDc);
   for (let dc = 0.7 * Deq; dc <= 4 * Deq; dc += 0.01 * Deq) {
@@ -163,19 +204,19 @@ export function computeBaseResistance(cpt: Cpt, args: Args): BaseResistanceResul
   const qcIGemMpa = bestQc1;
 
   // qc;II: running-min walking UP van (paalpunt + bestDc) → paalpunt.
-  // Conform NEN-EN 1997-1+C2:2017 NB:2019 §7.6.2.3 (Boer/Koppejan):
-  // de qc-waarden op de "up-walk" mogen niet stijgen — elke nieuwe
-  // (ondiepere) waarde wordt geclipt op de lopende min.
+  // initialMin = qcIGemMpa: cap-op-qcI conform norm — geen enkele waarde
+  // in de qc;II-walk mag de qc;I-gemiddelde overschrijden.
   const qcIIWalk = clippedAvgQcUpward(
     cpt,
-    args.pileToeDepth + bestDc,   // diepste rand
-    args.pileToeDepth,             // ondiepste rand = paalpunt
+    args.pileToeDepth + bestDc,
+    args.pileToeDepth,
+    qcIGemMpa,
   );
   const qcIIGemMpa = qcIIWalk.avg;
 
   // qc;III: continueer de running-min vanaf paalpunt → 8·Deq omhoog.
-  // De runMin start op de eindwaarde van qc;II (continuiteit van de walk
-  // door de hele invloedszone, conform norm-procedure).
+  // De runMin start op de eindwaarde van qc;II (continuiteit van de
+  // afkap-walk door de hele invloedszone, conform norm-procedure).
   const qcIIIWalk = clippedAvgQcUpward(
     cpt,
     args.pileToeDepth,
@@ -183,6 +224,14 @@ export function computeBaseResistance(cpt: Cpt, args: Args): BaseResistanceResul
     qcIIWalk.finalMin,
   );
   const qcIIIGemMpa = qcIIIWalk.avg;
+
+  // Concatenate clipped-points van qc;II en qc;III voor visualisatie. De
+  // VisualPanel rendert deze als donkerblauwe "effectieve qc-curve" in de
+  // 8D-zone (en optioneel in de dc-zone), zodat de gebruiker grafisch ziet
+  // hoeveel qc er is afgesnuit.
+  const clippedQcCurve = [...qcIIIWalk.clippedPoints, ...qcIIWalk.clippedPoints]
+    .map((p) => ({ depth: p.depth, qcClipped: p.qcClipped }))
+    .sort((a, b) => a.depth - b.depth);
 
   // qb;max formule 7.6.2.3(e)
   const { alphaP, beta, s } = args.pileType;
@@ -201,5 +250,6 @@ export function computeBaseResistance(cpt: Cpt, args: Args): BaseResistanceResul
     qbMaxMpa,
     abMm2: Ab,
     rbCalMax,
+    clippedQcCurve,
   };
 }
