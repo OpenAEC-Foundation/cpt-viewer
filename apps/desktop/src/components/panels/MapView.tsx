@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as L from "leaflet";
+import { toPng } from "html-to-image";
 import { fetchBagPanden, fetchKadasterPercelen } from "../../utils/pdokWfs";
 import { AdressenLayer } from "../../utils/adressenLayer";
 import MapAddressSearch from "./MapAddressSearch";
@@ -307,6 +308,15 @@ export default function MapView() {
 
   const [status, setStatus] = useState("Zoom in en klik 'Laad gebied'");
   const [measureMode, setMeasureMode] = useState(false);
+  /** Live cursor-coordinaten — null wanneer de muis BUITEN de kaart is.
+   *  Wordt bijgewerkt door de mousemove-handler op de leaflet-map en
+   *  rechtsonderin getoond in zowel WGS84 (lat/lon) als RD New (x/y). */
+  const [cursorCoords, setCursorCoords] = useState<
+    { lat: number; lon: number; rdX: number; rdY: number } | null
+  >(null);
+  /** Disable export-knop tijdens bezig — voorkomt dubbele invokes als
+   *  de gebruiker meerdere keren klikt tijdens een trage canvas-render. */
+  const [exporting, setExporting] = useState(false);
 
   // CPTs from store — used to render project markers + connecting distance lines.
   // Hidden CPTs are filtered out so they don't clutter the map.
@@ -596,6 +606,24 @@ export default function MapView() {
     kadasterLayerRef.current = L.layerGroup();
 
     mapRef.current = map;
+
+    // ── Cursor-coords listener — toont live RD + WGS84 rechtsonder ──
+    // Bij elke mousemove pakken we de WGS84-coords uit het Leaflet-event
+    // en projecteren we direct naar RD New (EPSG:28992) via proj4. Bij
+    // mouseout wissen we de display zodat hij niet "stuck" achterblijft.
+    const onMapMove = (e: L.LeafletMouseEvent) => {
+      const { lat, lng } = e.latlng;
+      try {
+        const [rdX, rdY] = proj4("WGS84", "EPSG:28992", [lng, lat]) as [number, number];
+        setCursorCoords({ lat, lon: lng, rdX, rdY });
+      } catch {
+        // proj4 kan exceptions geven bij coords ver buiten RD-bereik.
+        setCursorCoords({ lat, lon: lng, rdX: NaN, rdY: NaN });
+      }
+    };
+    const onMapOut = () => setCursorCoords(null);
+    map.on("mousemove", onMapMove);
+    map.on("mouseout", onMapOut);
 
     // ── BRO load helpers ─────────────────────────────────────
     /**
@@ -1774,6 +1802,41 @@ export default function MapView() {
     };
   }, [cpts, selectedCptIds, selectCpts, clearCptSelection]);
 
+  // Export huidige kaart-view als PNG via html-to-image. We targetten de
+  // PLOT-container (zonder de overlay-controls) zodat de PNG geen knoppen
+  // / coords-display bevat — alleen de kaart + markers + tiles.
+  // `cacheBust: true` voorkomt dat oude cached tiles in de PNG eindigen
+  // wanneer de gebruiker net heeft ge-zoomed.
+  const handleExportImage = useCallback(async () => {
+    if (!containerRef.current || exporting) return;
+    setExporting(true);
+    try {
+      const dataUrl = await toPng(containerRef.current, {
+        cacheBust: true,
+        pixelRatio: 2, // 2x voor scherper resultaat op high-DPI displays
+        // Filter overlay-elements (controls / popups / coords-badge) uit
+        // de screenshot. Alleen de tile-layers + marker-icons blijven.
+        filter: (node) => {
+          if (!(node instanceof HTMLElement)) return true;
+          if (node.classList?.contains("leaflet-control-container")) return false;
+          if (node.classList?.contains("leaflet-popup-pane")) return false;
+          return true;
+        },
+      });
+      const link = document.createElement("a");
+      const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      link.download = `kaart-${ts}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error("Map export failed:", err);
+      // Niet-blokkerend — log + visueel zou ideaal zijn maar voor nu
+      // accepteren we de console-log (gebruiker krijgt geen toast).
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting]);
+
   return (
     <div className="map-view-wrap">
       <div ref={containerRef} className={`map-view-container${measureMode ? " measuring" : ""}`} />
@@ -1799,6 +1862,37 @@ export default function MapView() {
         )}
         {status}
       </div>
+      {/* ─── Export-knop top-right — neemt huidige kaart-view op als PNG. */}
+      <button
+        type="button"
+        className="map-export-btn"
+        onClick={handleExportImage}
+        disabled={exporting}
+        title={exporting ? "Bezig met exporteren…" : "Exporteer huidige kaart-view als PNG-afbeelding"}
+        aria-label="Exporteer als afbeelding"
+      >
+        {exporting ? "⏳" : "📷"}
+      </button>
+      {/* ─── Cursor-coords rechtsonder — RD + WGS84, alleen tonen
+              wanneer de muis BINNEN de kaart zit (cursorCoords != null). */}
+      {cursorCoords && (
+        <div className="map-cursor-coords" role="status" aria-label="Cursor-coördinaten">
+          <div className="map-cursor-coords-row">
+            <span className="map-cursor-coords-label">RD</span>
+            <span className="map-cursor-coords-val">
+              {Number.isFinite(cursorCoords.rdX) ? cursorCoords.rdX.toFixed(0) : "—"}
+              {" / "}
+              {Number.isFinite(cursorCoords.rdY) ? cursorCoords.rdY.toFixed(0) : "—"}
+            </span>
+          </div>
+          <div className="map-cursor-coords-row">
+            <span className="map-cursor-coords-label">WGS</span>
+            <span className="map-cursor-coords-val">
+              {cursorCoords.lat.toFixed(5)}° N / {cursorCoords.lon.toFixed(5)}° E
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

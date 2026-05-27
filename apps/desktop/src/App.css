@@ -653,6 +653,66 @@ body,
   z-index: 1000; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
+/* ── Cursor-coords (RD + WGS84) — bottom-right ──────────────── */
+.map-cursor-coords {
+  position: absolute;
+  right: 12px;
+  bottom: 96px; /* zelfde hoogte als map-status zodat Topotijdreis-slider niet overlapt */
+  background: var(--theme-bg, white);
+  color: var(--theme-text, #36363E);
+  border: 1px solid var(--theme-border, #E7E5E4);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font: 500 0.72rem var(--font-code, "JetBrains Mono");
+  z-index: 1000;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  pointer-events: none; /* mag de kaart-interactie nooit blokkeren */
+  min-width: 200px;
+  line-height: 1.45;
+}
+.map-cursor-coords-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.map-cursor-coords-label {
+  color: var(--theme-text-secondary, #71717A);
+  font-weight: 700;
+}
+.map-cursor-coords-val {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Image-export knop top-right ────────────────────────────── */
+.map-export-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1100;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: var(--theme-bg, white);
+  border: 1px solid var(--theme-border, #E7E5E4);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: background 80ms ease-out, border-color 80ms ease-out;
+}
+.map-export-btn:hover:not(:disabled) {
+  background: var(--theme-bg-hover, #f4f4f5);
+  border-color: var(--theme-border-strong, #94A3B8);
+}
+.map-export-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 /* ── Address-search box (top-left of the Map view) ──────────── */
 .map-addrsearch {
   position: absolute;
