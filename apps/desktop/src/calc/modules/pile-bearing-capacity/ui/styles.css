@@ -1,0 +1,29 @@
+/* apps/desktop/src/calc/modules/pile-bearing-capacity/ui/styles.css */
+.pile-input fieldset {
+  border: 1px solid var(--theme-border, #e7e5e4);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.pile-input legend {
+  font: 600 0.78rem "Inter", sans-serif;
+  padding: 0 6px;
+  color: var(--theme-text, #36363e);
+}
+.pile-input label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font: 500 0.82rem "Inter", sans-serif;
+  margin-bottom: 4px;
+}
+.pile-input input,
+.pile-input select {
+  flex: 1;
+  max-width: 140px;
+  padding: 3px 6px;
+  border: 1px solid var(--theme-border, #cbd5e1);
+  border-radius: 3px;
+  font: 500 0.82rem var(--font-code, "JetBrains Mono"), monospace;
+}
