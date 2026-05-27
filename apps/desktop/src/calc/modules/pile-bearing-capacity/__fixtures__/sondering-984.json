@@ -1,0 +1,41 @@
+{
+  "cpt": {
+    "id": "984-S1",
+    "metadata": {
+      "source_file": "984.pdf blad 1 — sondering 1",
+      "project_name": "Funderingsherstel",
+      "ground_level_nap": 0.84
+    },
+    "position": { "x_rd": 108159.7, "y_rd": 445889.3, "z_nap": -1.731 },
+    "points": [
+      { "depth": 0.0,  "depth_nap": 0.84,   "qc": 0.0 }
+    ]
+  },
+  "input": {
+    "cptId": "984-S1",
+    "pileTypeId": "steel-pipe-driven-closed",
+    "diameterMm": 219,
+    "wallThicknessMm": 8.0,
+    "pileTopNap": 0.34,
+    "pileToeNap": -14.5,
+    "waterNap": -0.16,
+    "excavationNap": 0.84,
+    "nEd": 324,
+    "nEk": 303,
+    "gammaM": 1.2,
+    "gammaFnk": 1.0,
+    "negKleefBottomNap": -9.0,
+    "ksMinFactor": 0.25,
+    "soilProfile": []
+  },
+  "expected": {
+    "fnkD": 35,
+    "qbMaxMpa": 11.12,
+    "rbCalMax": 419,
+    "rsCalMax": 202,
+    "rcCal": 621,
+    "rcD": 372,
+    "rcNetD": 337,
+    "unityCheck": 0.96
+  }
+}
