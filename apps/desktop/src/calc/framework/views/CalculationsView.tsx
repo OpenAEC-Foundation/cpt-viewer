@@ -1,8 +1,10 @@
-import { useMemo } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useCalculationsStore } from "../store";
 import { getCalcModule } from "../registry";
 import { useCptStore } from "../../../store/useCptStore";
 import { ComingSoonPanel } from "./ComingSoonPanel";
+import { ProjectTreePanel } from "./ProjectTreePanel";
+import { NewCalculationDialog } from "./NewCalculationDialog";
 import type { ProjectContext } from "../types";
 import "./CalculationsView.css";
 
@@ -11,6 +13,13 @@ import "./CalculationsView.css";
  * layout: library + input links, visualisatie midden, uitvoer rechts.
  * Module-specifieke panelen worden via de CalcModule's InputPanel /
  * VisualPanel / ResultPanel exports geleverd.
+ *
+ * Het linker-paneel toont altijd de `<ProjectTreePanel />` (library
+ * van calc-instances binnen het actieve project). Onder de tree
+ * verschijnt — voor zover van toepassing — de module-specifieke
+ * `<InputPanel />`. Mid en rechter paneel reageren op de geselecteerde
+ * berekening: leeg-state, coming-soon placeholder of de module-eigen
+ * Visual/Result panelen.
  */
 export function CalculationsView() {
   const active = useCalculationsStore((s) => s.getActive());
@@ -18,76 +27,76 @@ export function CalculationsView() {
   const activeCptId = useCptStore((s) => s.activeCptId);
   const projectMeta = useCptStore((s) => s.projectMeta);
 
+  const [showNewDialog, setShowNewDialog] = useState(false);
+
   const ctx: ProjectContext = useMemo(
     () => ({ cpts, activeCptId, projectMeta }),
     [cpts, activeCptId, projectMeta],
   );
 
+  // Compute left-(below-tree), mid, right panel content per branch.
+  let leftBelowTree: ReactNode = null;
+  let midContent: ReactNode;
+  let rightContent: ReactNode;
+
   if (!active) {
-    return (
-      <div className="calc-view calc-view-empty">
+    midContent = (
+      <div className="calc-empty-state">
+        <p>Geen berekening geselecteerd.</p>
+        <p className="calc-empty-hint">
+          Maak een nieuwe berekening via "+" in het project-paneel.
+        </p>
+      </div>
+    );
+    rightContent = null;
+  } else {
+    const mod = getCalcModule(active.instance.moduleId);
+    if (!mod) {
+      midContent = (
         <div className="calc-empty-state">
-          <p>Geen berekening geselecteerd.</p>
-          <p className="calc-empty-hint">
-            Maak een nieuwe berekening via "+" in het project-paneel.
+          <p>
+            Onbekend module-type: <code>{active.instance.moduleId}</code>
           </p>
         </div>
-      </div>
-    );
+      );
+      rightContent = null;
+    } else if (mod.status === "coming-soon") {
+      midContent = <ComingSoonPanel module={mod} />;
+      rightContent = <ComingSoonPanel module={mod} />;
+    } else {
+      // Available module — render alle drie de module-specifieke panelen.
+      const input = active.instance.input as never;
+      const result = mod.compute(input, ctx) as never;
+      const onChange = (next: unknown) => {
+        useCalculationsStore.getState().updateCalculation(
+          active.docId,
+          active.instance.id,
+          { input: next },
+        );
+      };
+      leftBelowTree = (
+        <>
+          <h3 className="calc-pane-title">{mod.name}</h3>
+          <mod.InputPanel input={input} result={result} onChange={onChange} />
+        </>
+      );
+      midContent = <mod.VisualPanel input={input} result={result} />;
+      rightContent = <mod.ResultPanel input={input} result={result} />;
+    }
   }
-
-  const mod = getCalcModule(active.instance.moduleId);
-  if (!mod) {
-    return (
-      <div className="calc-view calc-view-empty">
-        <div className="calc-empty-state">
-          <p>Onbekend module-type: <code>{active.instance.moduleId}</code></p>
-        </div>
-      </div>
-    );
-  }
-
-  // Coming-soon: korte placeholder in plaats van échte berekening
-  if (mod.status === "coming-soon") {
-    return (
-      <div className="calc-view">
-        <aside className="calc-pane calc-pane-left">
-          <h3 className="calc-pane-title">Project</h3>
-          <p className="calc-empty-hint">Library volgt — Task 7</p>
-        </aside>
-        <main className="calc-pane calc-pane-mid">
-          <ComingSoonPanel module={mod} />
-        </main>
-        <aside className="calc-pane calc-pane-right">
-          <ComingSoonPanel module={mod} />
-        </aside>
-      </div>
-    );
-  }
-
-  // Available module: render de drie module-specifieke panelen
-  const input = active.instance.input as never;
-  const result = mod.compute(input, ctx) as never;
-  const onChange = (next: unknown) => {
-    useCalculationsStore.getState().updateCalculation(
-      active.docId,
-      active.instance.id,
-      { input: next },
-    );
-  };
 
   return (
     <div className="calc-view">
       <aside className="calc-pane calc-pane-left">
-        <h3 className="calc-pane-title">{mod.name}</h3>
-        <mod.InputPanel input={input} result={result} onChange={onChange} />
+        <ProjectTreePanel onAddClick={() => setShowNewDialog(true)} />
+        {leftBelowTree}
       </aside>
-      <main className="calc-pane calc-pane-mid">
-        <mod.VisualPanel input={input} result={result} />
-      </main>
-      <aside className="calc-pane calc-pane-right">
-        <mod.ResultPanel input={input} result={result} />
-      </aside>
+      <main className="calc-pane calc-pane-mid">{midContent}</main>
+      <aside className="calc-pane calc-pane-right">{rightContent}</aside>
+      <NewCalculationDialog
+        open={showNewDialog}
+        onClose={() => setShowNewDialog(false)}
+      />
     </div>
   );
 }
