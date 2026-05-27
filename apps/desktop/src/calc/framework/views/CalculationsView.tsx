@@ -22,7 +22,21 @@ import "./CalculationsView.css";
  * Visual/Result panelen.
  */
 export function CalculationsView() {
-  const active = useCalculationsStore((s) => s.getActive());
+  // Subscribe naar PRIMITIEVE velden — `getActive()` als selector
+  // levert elke render een nieuw {docId, instance}-object op waardoor
+  // zustand een infinite re-render loop triggert. We pakken de bron-
+  // velden los op en bouwen `active` zelf met useMemo.
+  const activeCalcId = useCalculationsStore((s) => s.activeCalcId);
+  const byDoc = useCalculationsStore((s) => s.byDoc);
+  const active = useMemo(() => {
+    if (!activeCalcId) return null;
+    for (const [docId, list] of byDoc) {
+      const inst = list.find((c) => c.id === activeCalcId);
+      if (inst) return { docId, instance: inst };
+    }
+    return null;
+  }, [activeCalcId, byDoc]);
+
   const cpts = useCptStore((s) => s.cpts);
   const activeCptId = useCptStore((s) => s.activeCptId);
   const projectMeta = useCptStore((s) => s.projectMeta);
