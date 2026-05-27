@@ -128,14 +128,18 @@ function buildBounds(
   const napTop = zoom ? zoom.napMax : fullExtent.fullNapTop;
   const napBot = zoom ? zoom.napMin : fullExtent.fullNapBot;
 
-  // qc-axis: round up to a nice number above max·1.1.
-  // NOTE: qc auto-scales op de volledige data (niet alleen op zoom-bereik),
-  // zodat de x-as niet "danst" bij zoomen.
+  // qc-axis: auto-scaled op de qc-waarden binnen het ZICHTBARE NAP-bereik
+  // (niet meer op de volledige data zoals voorheen). Bij verticaal inzoomen
+  // op een specifieke zone (bv. paalpunt-invloed) wordt de qc-as automatisch
+  // breder uitgezoomd, zodat de qc-curve in dat bereik beter te lezen is —
+  // belangrijk voor het beoordelen van paaldraagvermogens.
   let qcMaxRaw = 0;
   for (const p of points) {
-    if (typeof p.qc === "number" && Number.isFinite(p.qc)) {
-      if (p.qc > qcMaxRaw) qcMaxRaw = p.qc;
-    }
+    if (typeof p.qc !== "number" || !Number.isFinite(p.qc)) continue;
+    const nap = p.depth_nap ?? -p.depth;
+    // Filter alleen tijdens zoom; zonder zoom blijft het hele bereik gelden.
+    if (zoom && (nap < napBot || nap > napTop)) continue;
+    if (p.qc > qcMaxRaw) qcMaxRaw = p.qc;
   }
   const qcWithMargin = Math.max(5, qcMaxRaw * 1.1);
   // Snap to next multiple of 5.
