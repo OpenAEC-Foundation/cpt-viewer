@@ -66,6 +66,20 @@ export function InputPanel({ input, onChange }: Props) {
         <label>K0·tan(δ) minimum<input type="number" step="0.01" value={input.ksMinFactor} onChange={(e) => set("ksMinFactor", +e.target.value)} /></label>
         {/* Soil layers editor — v2 */}
       </fieldset>
+
+      <fieldset>
+        <legend>Positieve kleef</legend>
+        <label>Onderkant traject [m NAP]
+          {/* Default = paalpunt. Engineer kan dit omhoog zetten om bv. de
+              onderste 1·D rond paalpunt uit te sluiten (punt-invloed). */}
+          <input
+            type="number"
+            step="0.01"
+            value={input.posKleefBottomNap ?? input.pileToeNap}
+            onChange={(e) => set("posKleefBottomNap", +e.target.value)}
+          />
+        </label>
+      </fieldset>
     </div>
   );
 }

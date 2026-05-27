@@ -12,6 +12,7 @@ type DraggableField =
   | "pileTopNap"
   | "pileToeNap"
   | "negKleefBottomNap"
+  | "posKleefBottomNap"
   | "excavationNap"
   | "waterNap";
 
@@ -188,6 +189,13 @@ interface PileGraphicProps {
   yNkBot: number;       // SVG-y van neg.kleef-grens
   plotTop: number;      // SVG-y van plot-rand boven (clip-grens)
   plotBottom: number;   // SVG-y van plot-rand onder
+  /** SVG-y van de onderkant van de wapeningskorf (= 4·D vanaf paalkop,
+   *  geclampt op paalpunt). Wapeningskorf-graphic wordt alleen gerenderd
+   *  voor betongevulde stalen buispalen (composiet). */
+  yRebarBot: number;
+  /** True als deze paal een wapeningskorf heeft (betongevulde stalen
+   *  buispaal). Voor pure stalen of pure betonpalen → false. */
+  hasRebarCage: boolean;
 }
 
 function PileGraphic({
@@ -200,6 +208,8 @@ function PileGraphic({
   yNkBot,
   plotTop,
   plotBottom,
+  yRebarBot,
+  hasRebarCage,
 }: PileGraphicProps) {
   // Kleurpalet per materiaal — beige voor beton (#d4a574), grijs voor staal.
   const fill = material === "concrete" ? "#d4a574" : "#9ca3af";
@@ -267,27 +277,111 @@ function PileGraphic({
   const xArrowStart = xPileRight + 4;
   const xArrowLineHead = (lenPx: number) => xArrowStart + lenPx;
 
+  // Wapeningskorf-geometrie binnen pile-body. Korf reikt van paalkop tot
+  // yRebarBot (= 4·D vanaf paalkop, geclampt op paalpunt). 3 verticale
+  // longitudinale staven + 3 horizontale beugels suggereren de korf.
+  const rebarTop = Math.max(plotTop, yTopClamped);
+  const rebarBot = Math.min(plotBottom, yRebarBot);
+  const rebarH = rebarBot - rebarTop;
+  const showRebar = hasRebarCage && rebarH > 6;
+  // 3 longitudinale staven verspreid over de paal-breedte. Vermijd de
+  // randstaven (vallen samen met de buis-wand).
+  const longTs = [0.28, 0.5, 0.72];
+  // 3 horizontale beugels op vaste t-fracties van de korf.
+  const stirrupTs = [0.15, 0.5, 0.85];
+
   return (
     <g clipPath="url(#pile-plot-clip)" className="pile-gfx">
-      {/* Pile-body: rect voor zowel rond als vierkant (visueel verschil
-          is minimaal op deze schaal; voor rond kun je later een ellips
-          gebruiken). Hoogte kan 0 zijn als paal volledig buiten zicht. */}
+      {/* Pile-body: voor stalen buispaal (hasRebarCage=true) tekenen we
+          het composiet: buitenste ring (staal) + binnenkern (beton). Voor
+          pure stalen of pure betonpalen: één rect met material-kleur. */}
       {bodyH > 0 && (
-        <rect
-          x={xPileLeft}
-          y={yTopClamped}
-          width={diaPx}
-          height={bodyH}
-          fill={fill}
-          stroke={stroke}
-          strokeWidth={1.5}
-          rx={isCircular ? diaPx / 2 : 0}
-          ry={isCircular ? Math.min(diaPx / 2, 6) : 0}
-        />
+        hasRebarCage ? (
+          <>
+            {/* Buitenste staal-buis: grijs */}
+            <rect
+              x={xPileLeft}
+              y={yTopClamped}
+              width={diaPx}
+              height={bodyH}
+              fill="#9ca3af"
+              stroke={stroke}
+              strokeWidth={1.5}
+              rx={isCircular ? diaPx / 2 : 0}
+              ry={isCircular ? Math.min(diaPx / 2, 6) : 0}
+            />
+            {/* Beton-vulling: beige rect binnen de staal-buis. Inset =
+                wanddikte van de paal (clamp aan visueel zinvol). */}
+            {(() => {
+              const wallPx = Math.max(1.5, Math.min(diaPx * 0.18, input.wallThicknessMm / 6));
+              const innerW = diaPx - 2 * wallPx;
+              const innerX = xPileLeft + wallPx;
+              const innerRx = isCircular ? Math.max(0, innerW / 2) : 0;
+              if (innerW <= 0) return null;
+              return (
+                <rect
+                  x={innerX}
+                  y={yTopClamped + wallPx}
+                  width={innerW}
+                  height={Math.max(0, bodyH - 2 * wallPx)}
+                  fill="#d4a574"
+                  stroke="none"
+                  rx={innerRx}
+                  ry={isCircular ? Math.min(innerRx, 6) : 0}
+                />
+              );
+            })()}
+          </>
+        ) : (
+          <rect
+            x={xPileLeft}
+            y={yTopClamped}
+            width={diaPx}
+            height={bodyH}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={1.5}
+            rx={isCircular ? diaPx / 2 : 0}
+            ry={isCircular ? Math.min(diaPx / 2, 6) : 0}
+          />
+        )
       )}
       {/* Tip — alleen tekenen als paalpunt in zicht is. */}
       {tipVisible && (
         <path d={tipPath} fill={fill} stroke={stroke} strokeWidth={1.5} />
+      )}
+
+      {/* ─── Wapeningskorf (alleen voor betongevulde stalen buispaal) ───
+          3 verticale longitudinale staven + 3 horizontale beugels over
+          de bovenste 4·D van de paal. Geeft een industrieel-uitziend
+          korf-patroon binnenin de beton-vulling. */}
+      {showRebar && (
+        <g className="pile-gfx-rebar">
+          {longTs.map((t, i) => (
+            <line
+              key={`long-${i}`}
+              x1={xPileLeft + diaPx * t}
+              x2={xPileLeft + diaPx * t}
+              y1={rebarTop}
+              y2={rebarBot}
+              className="pile-gfx-rebar-long"
+            />
+          ))}
+          {stirrupTs.map((t, i) => {
+            const y = rebarTop + rebarH * t;
+            if (y < plotTop || y > plotBottom) return null;
+            return (
+              <line
+                key={`stir-${i}`}
+                x1={xPileLeft + 1.5}
+                x2={xPileLeft + diaPx - 1.5}
+                y1={y}
+                y2={y}
+                className="pile-gfx-rebar-stir"
+              />
+            );
+          })}
+        </g>
       )}
 
       {/* ─── Force-arrows ─── */}
@@ -360,6 +454,107 @@ function PileGraphic({
         </g>
       )}
     </g>
+  );
+}
+
+// ─── Sub-component: paal-doorsnede (cross-section) ───────────────
+// Toont een schematische dwarsdoorsnede van de paal: voor een betongevulde
+// stalen buispaal (composiet) wordt de stalen ring, betonkern, longitudinale
+// wapeningsstaven en transverse beugel getekend. Voor prefab voorgespannen
+// betonpalen worden 4 hoek-voorspandraden getekend. Gerendered ONDER de
+// CPT-chart in een aparte div zodat hij niet meeschaalt met de plot-zoom.
+
+interface PileCrossSectionProps {
+  diameterMm: number;
+  wallThicknessMm: number;
+  material: "steel" | "concrete";
+  isCircular: boolean;
+  hasRebarCage: boolean;
+}
+
+function PileCrossSection({
+  diameterMm,
+  wallThicknessMm,
+  material,
+  isCircular,
+  hasRebarCage,
+}: PileCrossSectionProps) {
+  const SIZE = 120;
+  const PAD = 10;
+  const CX = SIZE / 2;
+  const CY = SIZE / 2;
+  const R = SIZE / 2 - PAD;                  // outer radius/halfwidth in px
+  // Schaal: paal-px per mm — gebruikt voor wanddikte-mapping (max 18% van R
+  // zodat smalle wanden visueel zichtbaar blijven op kleine palen).
+  const pxPerMm = (R * 2) / diameterMm;
+  const wallPx = Math.max(2, Math.min(R * 0.18, wallThicknessMm * pxPerMm));
+  const innerR = Math.max(1, R - wallPx);
+
+  // Wapeningstaven (alleen voor composiet): 6 stuks op een ring binnen beton.
+  const rebarRingR = innerR * 0.78;
+  const rebarDotR = Math.max(1.5, wallPx * 0.45);
+  const N_REBARS = 6;
+  const rebarPositions = Array.from({ length: N_REBARS }, (_, i) => {
+    const angle = (2 * Math.PI * i) / N_REBARS - Math.PI / 2; // start bovenaan
+    return {
+      cx: CX + rebarRingR * Math.cos(angle),
+      cy: CY + rebarRingR * Math.sin(angle),
+    };
+  });
+
+  return (
+    <svg
+      className="pile-cross-section-svg"
+      viewBox={`0 0 ${SIZE} ${SIZE}`}
+      role="img"
+      aria-label="Paal-doorsnede"
+    >
+      {isCircular ? (
+        material === "steel" ? (
+          <>
+            {/* Stalen buis (ring) — grijs gevuld */}
+            <circle cx={CX} cy={CY} r={R} fill="#9ca3af" stroke="#374151" strokeWidth={1.5} />
+            {/* Beton-vulling — beige binnen-cirkel */}
+            <circle cx={CX} cy={CY} r={innerR} fill="#d4a574" stroke="none" />
+            {hasRebarCage && (
+              <>
+                {/* Transverse beugel (stirrup) — donkere stippellijn */}
+                <circle
+                  cx={CX}
+                  cy={CY}
+                  r={rebarRingR}
+                  fill="none"
+                  stroke="#374151"
+                  strokeWidth={0.6}
+                  strokeDasharray="2 1.5"
+                />
+                {/* Longitudinale wapeningstaven — donkere stippen */}
+                {rebarPositions.map((p, i) => (
+                  <circle key={i} cx={p.cx} cy={p.cy} r={rebarDotR} fill="#374151" />
+                ))}
+              </>
+            )}
+          </>
+        ) : (
+          /* Pure beton ronde paal (boorpaal etc.) — beige cirkel */
+          <circle cx={CX} cy={CY} r={R} fill="#d4a574" stroke="#374151" strokeWidth={1.5} />
+        )
+      ) : (
+        <>
+          {/* Vierkante prefab betonpaal — beige rechthoek */}
+          <rect x={PAD} y={PAD} width={R * 2} height={R * 2} fill="#d4a574" stroke="#374151" strokeWidth={1.5} />
+          {/* Voorspandraden — 4 hoek-stippen */}
+          {[
+            [PAD + R * 0.4, PAD + R * 0.4],
+            [PAD + R * 1.6, PAD + R * 0.4],
+            [PAD + R * 0.4, PAD + R * 1.6],
+            [PAD + R * 1.6, PAD + R * 1.6],
+          ].map(([x, y], i) => (
+            <circle key={i} cx={x} cy={y} r={2} fill="#374151" />
+          ))}
+        </>
+      )}
+    </svg>
   );
 }
 
@@ -504,6 +699,10 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
   const yWater = bounds.napToY(input.waterNap);
   const yExcavation = bounds.napToY(input.excavationNap);
   const yNkBot = bounds.napToY(input.negKleefBottomNap);
+  // Pos-kleef ondergrens — default = paalpunt (geen extra exclusion-zone).
+  // Optional veld in PileInput voor back-compat met v0.3 IFCX-files.
+  const posKleefBottomNap = input.posKleefBottomNap ?? input.pileToeNap;
+  const yPosKleefBot = bounds.napToY(posKleefBottomNap);
   // Zone-grenzen worden geclamped tot het zichtbare plot-bereik, zodat de
   // dashed boundary altijd op de plotrand zit als de zone gedeeltelijk buiten
   // beeld valt. Voor het label-midden gebruiken we de ECHTE NAP-waarde
@@ -565,7 +764,11 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       // Snap to nearest 0,05 m.
       newNap = Math.round(newNap * 20) / 20;
       // Voorkom no-op-updates (zelfde waarde → geen onChange-storm).
-      const current = input[drag.field];
+      // posKleefBottomNap kan undefined zijn in oude IFCX-files; fall-back
+      // naar pileToeNap (default = paalpunt).
+      const current = drag.field === "posKleefBottomNap"
+        ? (input.posKleefBottomNap ?? input.pileToeNap)
+        : input[drag.field];
       if (newNap === current) return;
       onChange({ ...input, [drag.field]: newNap });
     };
@@ -837,13 +1040,19 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         />
       )}
 
-      {/* ─── 8D zone above paalpunt — light blue ─── */}
-      {zone8DVisible && (
-        <rect
-          x={MARGIN.left}
-          y={yZoneAboveTop}
-          width={PLOT_W}
-          height={yPileToe - yZoneAboveTop}
+      {/* ─── 8D zone above paalpunt — light blue POLYGON ───
+              Het polygon loopt langs de y-as (links) → langs de qc-curve
+              (rechts via qcSeg8D, gesorteerd top→bot) → terug naar start.
+              Hierdoor zit de blauwe arcering ALLEEN tussen plot-links en
+              de qc-curve — niet over de hele plot-breedte. Conform
+              ExternPakket/referentienorm visualisatiestijl voor de qc;III-invloed. */}
+      {zone8DVisible && qcSeg8D && (
+        <polygon
+          points={[
+            `${MARGIN.left.toFixed(1)},${yZoneAboveTop.toFixed(1)}`,
+            qcSeg8D,
+            `${MARGIN.left.toFixed(1)},${yPileToe.toFixed(1)}`,
+          ].join(" ")}
           className="pile-cpt-zone-8d"
           pointerEvents="none"
         />
@@ -1064,6 +1273,30 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         />
       )}
 
+      {/* ─── Clipped (running-min) qc-curve ───
+              De "effectieve" qc-curve na toepassing van de afkapregel uit
+              NEN 9997-1 NB:2019 §7.6.2.3. Wordt getekend als donkerblauwe
+              stippellijn over de qc;II + qc;III invloed-zone, zodat
+              zichtbaar is hoeveel qc er is "weggesnoept" t.o.v. de raw
+              meetwaarden. Coordinaten via depth → NAP via groundNap. */}
+      {result.base.clippedQcCurve && result.base.clippedQcCurve.length >= 2 && (() => {
+        const groundNap = cpt.metadata.ground_level_nap ?? 0;
+        const path = result.base.clippedQcCurve
+          .map((p) => {
+            const nap = groundNap - p.depth;
+            return `${bounds.qcToX(p.qcClipped).toFixed(1)},${bounds.napToY(nap).toFixed(1)}`;
+          })
+          .join(" ");
+        return (
+          <polyline
+            points={path}
+            className="pile-cpt-qc-curve pile-cpt-qc-curve--clipped"
+            fill="none"
+            pointerEvents="none"
+          />
+        );
+      })()}
+
       {/* ─── Paalkop ─── solid */}
       <line
         x1={MARGIN.left}
@@ -1181,6 +1414,39 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         Neg.kleef-grens {formatNap(input.negKleefBottomNap)}
       </text>
 
+      {/* ─── Pos.kleef-ondergrens ─── dashed groen (alleen tonen als
+              afwijkend van paalpunt, anders overlap met paalpunt-lijn). */}
+      {Math.abs(posKleefBottomNap - input.pileToeNap) > 0.001 && (
+        <>
+          <line
+            x1={MARGIN.left}
+            x2={MARGIN.left + PLOT_W}
+            y1={yPosKleefBot}
+            y2={yPosKleefBot}
+            className={`pile-cpt-line-poskleef${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "posKleefBottomNap" ? " pile-niveau-dragging" : ""}`}
+            pointerEvents="none"
+          />
+          <text
+            x={MARGIN.left + 4}
+            y={yPosKleefBot - 4}
+            className="pile-cpt-overlay-label pile-cpt-overlay-label--poskleef"
+            pointerEvents="none"
+          >
+            Pos.kleef-bot {formatNap(posKleefBottomNap)}
+          </text>
+        </>
+      )}
+      {draggable && (
+        <line
+          x1={MARGIN.left}
+          x2={MARGIN.left + PLOT_W}
+          y1={yPosKleefBot}
+          y2={yPosKleefBot}
+          className="pile-niveau-hitbox"
+          onMouseDown={startDrag("posKleefBottomNap", posKleefBottomNap)}
+        />
+      )}
+
       {/* ─── Paalpunt ─── bold red */}
       <line
         x1={MARGIN.left}
@@ -1209,7 +1475,8 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         Paalpunt {formatNap(input.pileToeNap)} (D_eq = {result.base.deqMm.toFixed(0)} mm)
       </text>
 
-      {/* ─── Pile graphic — paal-doorsnede in eigen kolom rechts van plot ─── */}
+      {/* ─── Pile graphic — paal-elevation in eigen kolom rechts van plot,
+              inclusief wapeningskorf voor betongevulde stalen buispalen ─── */}
       <PileGraphic
         input={input}
         result={result}
@@ -1220,6 +1487,10 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         yNkBot={yNkBot}
         plotTop={MARGIN.top}
         plotBottom={MARGIN.top + PLOT_H}
+        yRebarBot={bounds.napToY(
+          Math.max(input.pileToeNap, input.pileTopNap - 4 * (input.diameterMm / 1000)),
+        )}
+        hasRebarCage={pileMaterial === "steel"}
       />
 
       {/* ─── In-chart gemiddelde qc-waarden per invloed-zone ───
@@ -1345,11 +1616,63 @@ export function VisualPanel({ input, result, onChange }: PanelProps<PileInput, P
     );
   }
 
+  // Pile-type bepaalt material + vorm voor de cross-section onderaan.
+  const pileType = getPileType(input.pileTypeId);
+  const csMaterial: "steel" | "concrete" = pileType?.material ?? "steel";
+  const csIsCircular = pileType?.isCircular ?? true;
+  // Wapeningskorf alleen voor stalen buispalen (betongevulde composiet);
+  // bij prefab voorgespannen beton zien we voorspandraden i.p.v. korf.
+  const csHasRebar = csMaterial === "steel";
+  // Korf-lengte in mm voor de info-tekst — 4·D vanaf paalkop, geclampt op
+  // paallengte zodat we geen onzin-getal tonen voor korte palen.
+  const pileLengthMm = Math.max(0, (input.pileTopNap - input.pileToeNap) * 1000);
+  const rebarCageLenMm = Math.min(pileLengthMm, 4 * input.diameterMm);
+
   return (
     <div className="pile-visual">
       <h3>Sondering: {cpt.id}</h3>
       <div className="pile-cpt-chart">
         <CptOverlayChart cpt={cpt} input={input} result={result} onChange={onChange} />
+      </div>
+      <div className="pile-cross-section-row">
+        <PileCrossSection
+          diameterMm={input.diameterMm}
+          wallThicknessMm={input.wallThicknessMm}
+          material={csMaterial}
+          isCircular={csIsCircular}
+          hasRebarCage={csHasRebar}
+        />
+        <div className="pile-cross-section-info">
+          <div className="pile-cross-section-title">Doorsnede</div>
+          <table className="pile-cross-section-table">
+            <tbody>
+              <tr>
+                <td>{csIsCircular ? "ø" : "□"}</td>
+                <td>{input.diameterMm.toFixed(0)} mm</td>
+              </tr>
+              {csMaterial === "steel" && (
+                <tr>
+                  <td>wand</td>
+                  <td>{input.wallThicknessMm.toFixed(1)} mm</td>
+                </tr>
+              )}
+              {csHasRebar && (
+                <tr>
+                  <td>wapeningskorf</td>
+                  <td>4·D = {rebarCageLenMm.toFixed(0)} mm</td>
+                </tr>
+              )}
+              <tr>
+                <td>materiaal</td>
+                <td>
+                  {csMaterial === "steel"
+                    ? "Stalen buispaal, betongevuld"
+                    : "Prefab voorgespannen beton"}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       <p className="pile-visual-footnote">
         q<sub>c;I</sub>={result.base.qcIGemMpa.toFixed(2)} /
