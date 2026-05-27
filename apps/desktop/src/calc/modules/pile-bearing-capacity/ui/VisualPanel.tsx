@@ -61,11 +61,6 @@ function formatNap(n: number): string {
   return `NAP ${sign}${Math.abs(n).toFixed(2).replace(".", ",")} m`;
 }
 
-function formatMeters(n: number): string {
-  // "0,88 m" — Dutch decimal-comma, 2 decimalen.
-  return `${n.toFixed(2).replace(".", ",")} m`;
-}
-
 function downsample<T>(arr: T[], target: number): T[] {
   if (arr.length <= target) return arr;
   const step = arr.length / target;
@@ -279,7 +274,6 @@ function PileGraphic({
 
   // Force-arrow x-positie: nét rechts van de paal (1 px gap).
   const xArrowStart = xPileRight + 4;
-  const xArrowLineHead = (lenPx: number) => xArrowStart + lenPx;
 
   // Wapeningskorf-geometrie binnen pile-body. Korf reikt van paalkop tot
   // yRebarBot (= 4·D vanaf paalkop, geclampt op paalpunt). 3 verticale
@@ -389,6 +383,10 @@ function PileGraphic({
       )}
 
       {/* ─── Force-arrows ─── */}
+      {/* Force-arrows zonder tekst-labels — getalwaarden staan in de
+          footnote onder de chart (R_b, R_s, F_nk;d) en in het ResultPanel
+          rechts. De pijlen blijven, alleen de labels zijn weggehaald
+          per gebruikers-wens (visueel rustigere paal-graphic). */}
       {showFnk && (
         <g className="pile-gfx-arrow pile-gfx-arrow--fnk">
           <line
@@ -400,14 +398,6 @@ function PileGraphic({
             strokeWidth={1.5}
             markerEnd="url(#pile-arrow-down)"
           />
-          <text
-            x={xArrowLineHead(arrowLenFor(Fnk)) + 4}
-            y={yNkMid}
-            className="pile-gfx-arrow-label"
-            fill="#dc2626"
-          >
-            F_nk={Fnk.toFixed(0)} kN
-          </text>
         </g>
       )}
 
@@ -422,17 +412,6 @@ function PileGraphic({
             strokeWidth={1.2}
             markerEnd="url(#pile-arrow-up)"
           />
-          {/* Label alleen bij eerste pijl. */}
-          {i === 0 && (
-            <text
-              x={xArrowLineHead(arrowLenFor(Rs)) + 4}
-              y={y}
-              className="pile-gfx-arrow-label"
-              fill="#16a34a"
-            >
-              R_s={Rs.toFixed(0)} kN
-            </text>
-          )}
         </g>
       ))}
 
@@ -447,14 +426,6 @@ function PileGraphic({
             strokeWidth={2}
             markerEnd="url(#pile-arrow-up)"
           />
-          <text
-            x={cx + 8}
-            y={Math.min(plotBottom - 4, yPileToe + tipH + arrowLenFor(Rb) / 2 + 4)}
-            className="pile-gfx-arrow-label pile-gfx-arrow-label--strong"
-            fill="#16a34a"
-          >
-            R_b={Rb.toFixed(0)} kN
-          </text>
         </g>
       )}
     </g>
@@ -718,11 +689,6 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
   const yZoneAboveTop = bounds.napToY(zoneAboveTopClamped);
   const yZone4DMaxBot = bounds.napToY(zone4DMaxBotClamped);
   const yZoneDcBot = bounds.napToY(zoneDcBotClamped);
-
-  // Right-margin label positions — qc;I, qc;II, qc;III, qb;max all sit
-  // somewhere inside de 8D/4D-zone. Labels staan rechts ván de pile-kolom
-  // zodat ze niet over de paal-graphic heen vallen.
-  const xRightLabel = PILE_COL_X + PILE_COL_W + 8;
 
   // Is een zone (deels) zichtbaar binnen het huidige plot-bereik?
   const zone8DVisible =
@@ -1085,14 +1051,6 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
               strokeOpacity={0.55}
               pointerEvents="none"
             />
-            <text
-              x={xRightLabel}
-              y={(yPosKleefTop + yPileToe) / 2}
-              className="pile-cpt-zone-label pile-cpt-zone-label--poskleef"
-              pointerEvents="none"
-            >
-              Pos.kleef
-            </text>
           </>
         );
       })()}
@@ -1174,14 +1132,6 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
               pointerEvents="none"
             />
           )}
-          <text
-            x={xRightLabel}
-            y={(yZoneAboveTop + yPileToe) / 2 - 18}
-            className="pile-cpt-zone-label pile-cpt-zone-label--8d"
-            pointerEvents="none"
-          >
-            8D = {formatMeters(zone8DM)}
-          </text>
         </>
       )}
       {zone4DMaxVisible && (
@@ -1197,14 +1147,6 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
               pointerEvents="none"
             />
           )}
-          <text
-            x={xRightLabel}
-            y={(yPileToe + yZone4DMaxBot) / 2 + 18}
-            className="pile-cpt-zone-label pile-cpt-zone-label--4d"
-            pointerEvents="none"
-          >
-            4D max = {formatMeters(zone4DMaxM)}
-          </text>
         </>
       )}
       {zoneDcVisible && (
@@ -1220,14 +1162,6 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
               pointerEvents="none"
             />
           )}
-          <text
-            x={xRightLabel}
-            y={(yPileToe + yZoneDcBot) / 2 + 4}
-            className="pile-cpt-zone-label pile-cpt-zone-label--dc"
-            pointerEvents="none"
-          >
-            dc = {formatMeters(zoneDcM)}
-          </text>
         </>
       )}
 
@@ -1634,15 +1568,8 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         </>
       )}
 
-      {/* ─── Right-margin: qb;max (compacter — qc;I/II/III staan nu in-chart) ─── */}
-      <text
-        x={xRightLabel}
-        y={yPileToe + 28}
-        className="pile-cpt-side-label pile-cpt-side-label--strong"
-        pointerEvents="none"
-      >
-        q_b;max={result.base.qbMaxMpa.toFixed(2)}
-      </text>
+      {/* qb;max-label rechts naast paalpunt is verwijderd — de waarde
+          staat in de footnote onder de chart en in het ResultPanel. */}
 
         {/* ─── Plot border ─── */}
         <rect
