@@ -1,0 +1,41 @@
+{
+  "cpt": {
+    "id": "3BM-CGEO1",
+    "metadata": {
+      "source_file": "3151-CB-21 Constructieberekening.ods CGEO1",
+      "project_name": "Bodegraven dakopbouw",
+      "ground_level_nap": -0.5
+    },
+    "points": []
+  },
+  "input": {
+    "cptId": "3BM-CGEO1",
+    "pileTypeId": "steel-pipe-driven-closed",
+    "diameterMm": 168,
+    "wallThicknessMm": 5.6,
+    "pileTopNap": -0.5,
+    "pileToeNap": -14.0,
+    "waterNap": -2.5,
+    "excavationNap": -0.5,
+    "nEd": 110,
+    "nEk": 92,
+    "gammaM": 1.2,
+    "gammaFnk": 1.0,
+    "negKleefBottomNap": -8.0,
+    "ksMinFactor": 0.25,
+    "soilProfile": [
+      { "kind": "sand-dry", "startNap": -0.5, "endNap": -2.5, "gammaK": 17, "gammaW": 0,  "phi": 32.5 },
+      { "kind": "sand-wet", "startNap": -2.5, "endNap": -4.0, "gammaK": 17, "gammaW": 10, "phi": 32.5 },
+      { "kind": "peat",     "startNap": -4.0, "endNap": -6.0, "gammaK": 13, "gammaW": 10, "phi": 15.0 },
+      { "kind": "clay",     "startNap": -6.0, "endNap": -8.0, "gammaK": 18, "gammaW": 10, "phi": 22.5 }
+    ]
+  },
+  "expected": {
+    "negKleefPerLayer": [4.49, 7.77, 12.53, 15.44],
+    "fnkD": 40.2,
+    "rbCal": 141.1,
+    "rsCal": 79.2,
+    "rcD": 132.1,
+    "rcNetD": 91.8
+  }
+}
