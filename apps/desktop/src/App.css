@@ -807,6 +807,18 @@ body,
   letter-spacing: 0.04em;
   flex-shrink: 0;
 }
+/* Coordinaten-suggestion staat altijd bovenaan en heeft een lichte
+   accent-rand zodat duidelijk is dat het géén PDOK-adres is maar een
+   directe lat/lon fly-to. */
+.map-addrsearch-item--coord {
+  border-left: 3px solid var(--accent, #2563EB);
+  background: rgba(37, 99, 235, 0.04);
+}
+.map-addrsearch-item--coord .map-addrsearch-item-type {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--theme-text-secondary, #71717A);
+}
 
 /* ── Topotijdreis slider — lives inside the GisLayerPanel section ── */
 .topotijdreis-slider {
