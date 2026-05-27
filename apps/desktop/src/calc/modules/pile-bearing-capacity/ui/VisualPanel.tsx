@@ -1529,6 +1529,41 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
           </text>
         </>
       )}
+      {/* Pos-kleef gemiddelde qc — verticale groene stippellijn binnen de
+          pos-kleef-zone, gewogen gemiddelde van per-laag qcGemMpa. Wordt
+          alleen getekend als de shaft-friction-berekening lagen heeft. */}
+      {posKleefTopNap > input.pileToeNap && result.shaft.perLayer.length > 0 && (() => {
+        const sumQ = result.shaft.perLayer.reduce(
+          (s, l) => s + l.qcGemMpa * (l.layer.startNap - l.layer.endNap),
+          0,
+        );
+        const sumW = result.shaft.perLayer.reduce(
+          (s, l) => s + (l.layer.startNap - l.layer.endNap),
+          0,
+        );
+        if (sumW <= 0) return null;
+        const avgQc = sumQ / sumW;
+        return (
+          <>
+            <line
+              x1={bounds.qcToX(avgQc)}
+              x2={bounds.qcToX(avgQc)}
+              y1={yPosKleefTop}
+              y2={yPileToe}
+              className="pile-cpt-qc-gem pile-cpt-qc-gem--poskleef"
+              pointerEvents="none"
+            />
+            <text
+              x={bounds.qcToX(avgQc) + 6}
+              y={bounds.napToY((posKleefTopNap + input.pileToeNap) / 2)}
+              className="pile-qc-label pile-qc-label--poskleef"
+              pointerEvents="none"
+            >
+              qc;pos-kleef;gem = {avgQc.toFixed(2)} MPa
+            </text>
+          </>
+        );
+      })()}
       {zoneDcVisible && (
         <>
           {/* qc;I — gemiddelde van paalpunt tot dc-bot */}

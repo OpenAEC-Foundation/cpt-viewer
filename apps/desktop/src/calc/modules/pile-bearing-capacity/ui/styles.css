@@ -291,6 +291,12 @@
   stroke: #1e40af;       /* iets lichter blauw — verschil met qc;I */
   stroke-dasharray: 2 2;
 }
+.pile-cpt-qc-gem--poskleef {
+  /* Gewogen-gemiddelde qc over de pos-kleef-zone — groene stippellijn
+     parallel aan de qc;III/I/II conventie, matcht de pos-kleef arcering. */
+  stroke: #15803d;
+  stroke-dasharray: 4 2;
+}
 
 /* ─── Zones (background bands) ───
    Verlaagd tot zeer subtiele context-tint (opacity ~0.05–0.08) zodat de
@@ -372,6 +378,7 @@
 .pile-qc-label--8d  { fill: #1d4ed8; }   /* iets donkerder blauw dan lijn */
 .pile-qc-label--dc  { fill: #1e3a8a; }   /* donkerblauw — was rood */
 .pile-qc-label--dc2 { fill: #1e40af; }   /* iets lichter blauw voor qc;II */
+.pile-qc-label--poskleef { fill: #15803d; } /* donkergroen — matcht pos-kleef arcering */
 
 /* ─── Plot-background cursor states (zoom/pan UX) ─── */
 .pile-cpt-bg-zoom-ready {
@@ -511,28 +518,64 @@
   font-size: 10px;
   font-weight: 600;
 }
-.pile-zakking-curve {
-  stroke: var(--theme-text, #36363e);
+/* ─── Bidirectional lastzakkingsdiagram (ExternPakket-stijl) ─── */
+.pile-zakking-grid--axis {
+  stroke: #525252;
+  stroke-width: 1;
+  stroke-dasharray: none;
+  opacity: 0.6;
+}
+.pile-zakking-axis-side-label {
+  font: 700 9px var(--font-code, "JetBrains Mono"), monospace;
+}
+/* Schacht-mobilisatie-curve (links, groen). */
+.pile-zakking-curve-rs {
+  stroke: #16a34a;
+  stroke-width: 1.6;
+  fill: none;
+}
+/* Punt-mobilisatie-curve (rechts, donkerblauw). */
+.pile-zakking-curve-rb {
+  stroke: #1e3a8a;
+  stroke-width: 1.6;
+  fill: none;
+}
+.pile-zakking-workpoint {
+  stroke: #d97706;
   stroke-width: 1.4;
+  stroke-dasharray: 3 2;
 }
-.pile-zakking-line-sls {
-  stroke: var(--amber, #d97706);
-  stroke-width: 1.2;
-  stroke-dasharray: 4 2;
+.pile-zakking-workpoint--uls {
+  stroke: #1d4ed8;
+  opacity: 0.75;
 }
-.pile-zakking-line-uls {
-  stroke: #2563EB;
-  stroke-width: 1.2;
-  stroke-dasharray: 4 2;
+.pile-zakking-marker-rs {
+  fill: #16a34a;
+}
+.pile-zakking-marker-rb {
+  fill: #1e3a8a;
+}
+.pile-zakking-maxcap {
+  stroke: #94a3b8;
+  stroke-width: 0.8;
+  stroke-dasharray: 5 3;
 }
 .pile-zakking-ref-label {
   font-size: 9px;
   font-weight: 600;
   font-family: var(--font-code, "JetBrains Mono"), monospace;
   pointer-events: none;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.85);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
 }
-.pile-zakking-ref-label--sls { fill: var(--amber, #d97706); }
-.pile-zakking-ref-label--uls { fill: #2563EB; }
+.pile-zakking-ref-label--rs    { fill: #15803d; }
+.pile-zakking-ref-label--rb    { fill: #1e3a8a; }
+.pile-zakking-ref-label--total { fill: #b45309; }
+.pile-zakking-ref-label--total-uls { fill: #1d4ed8; opacity: 0.85; }
+.pile-zakking-ref-label--max-rs { fill: #525252; }
+.pile-zakking-ref-label--max-rb { fill: #525252; }
 
 /* ============================================================
    ResultPanel — shared semantics (errors, warnings, pass/fail)
@@ -569,6 +612,47 @@
   font: 500 0.82rem "Inter", sans-serif;
   color: var(--theme-text, #36363e);
 }
+/* ─── Open Calculation Studio-stijl formule rendering ───
+   3 regels per formule: symbolisch / ingevuld / uitkomst,
+   uitgelijnd op het "=" via CSS-grid. */
+.pile-formula {
+  margin: 6px 0 10px;
+  font: 500 0.78rem var(--font-code, "JetBrains Mono"), monospace;
+  color: var(--theme-text, #36363e);
+}
+.pile-formula-row {
+  display: grid;
+  grid-template-columns: minmax(72px, max-content) 14px 1fr;
+  align-items: baseline;
+  column-gap: 6px;
+  line-height: 1.55;
+}
+.pile-formula-lhs {
+  text-align: right;
+  color: var(--theme-text, #36363e);
+  font-weight: 600;
+}
+.pile-formula-eq {
+  text-align: center;
+  color: var(--theme-text-secondary, #71717a);
+}
+.pile-formula-rhs {
+  color: var(--theme-text, #36363e);
+}
+.pile-formula-row--cont .pile-formula-lhs {
+  /* continuatie-regel — geen LHS herhalen, alleen visueel gelijk uitlijnen */
+  visibility: hidden;
+}
+.pile-formula-row--result .pile-formula-rhs {
+  color: var(--theme-text, #36363e);
+}
+.pile-result-input {
+  margin: 4px 0;
+  font: 500 0.78rem var(--font-code, "JetBrains Mono"), monospace;
+  color: var(--theme-text-secondary, #71717a);
+  line-height: 1.5;
+}
+
 .pile-formula-table {
   width: 100%;
   border-collapse: collapse;

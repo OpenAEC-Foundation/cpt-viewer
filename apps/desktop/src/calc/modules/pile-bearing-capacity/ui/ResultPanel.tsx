@@ -1,61 +1,119 @@
 // apps/desktop/src/calc/modules/pile-bearing-capacity/ui/ResultPanel.tsx
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import type { PanelProps } from "../../../framework/types";
 import type { PileInput, PileResult, SettlementResult } from "../types";
 import "./styles.css";
 
-// ─── Zakkingsdiagram ─────────────────────────────────────────────
-// Compact SVG plot — totalKn (x) vs sbMm (y, positive going down).
-// Two horizontal reference lines for SLS + ULS workpoints.
+// ─── Formula-helper component (Open Calculation Studio stijl) ────
+// Toont een berekening in 3 stappen:
+//   1. Symbolisch:   F_nk;d = γ_f,nk · ΣF_s;nk
+//   2. Ingevuld:           = 1,00 · 318,3
+//   3. Uitkomst:           = 318 kN
+// Allemaal uitgelijnd op het "=" via CSS-grid zodat de symbolen netjes
+// rechts staan en de RHS-waardes mooi naast elkaar.
 
-const ZK_W = 280;
-const ZK_H = 220;
-const ZK_M = { top: 24, right: 12, bottom: 36, left: 44 };
+interface FormulaProps {
+  /** LHS — het te berekenen symbool (bv. "R_b;cal;max"). */
+  lhs: ReactNode;
+  /** Symbolische RHS (formule met variabelen). */
+  symbolic: ReactNode;
+  /** Ingevulde RHS (variabelen vervangen door getallen). Optioneel — voor
+   *  trivial-eenvoudige formules waar ingevuld == uitkomst kan dit weg. */
+  filled?: ReactNode;
+  /** Eind-uitkomst (bv. "419 kN"). Bold gerendered. */
+  result: ReactNode;
+}
+
+function Formula({ lhs, symbolic, filled, result }: FormulaProps) {
+  return (
+    <div className="pile-formula">
+      <div className="pile-formula-row">
+        <span className="pile-formula-lhs">{lhs}</span>
+        <span className="pile-formula-eq">=</span>
+        <span className="pile-formula-rhs">{symbolic}</span>
+      </div>
+      {filled !== undefined && (
+        <div className="pile-formula-row pile-formula-row--cont">
+          <span className="pile-formula-lhs" aria-hidden="true" />
+          <span className="pile-formula-eq">=</span>
+          <span className="pile-formula-rhs">{filled}</span>
+        </div>
+      )}
+      <div className="pile-formula-row pile-formula-row--cont pile-formula-row--result">
+        <span className="pile-formula-lhs" aria-hidden="true" />
+        <span className="pile-formula-eq">=</span>
+        <span className="pile-formula-rhs"><strong>{result}</strong></span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Lastzakkingsdiagram (bidirectioneel) ────────────────────────
+// Conform ExternPakket stijl (984.pdf blad 27): x-as gaat van -Rs;cal;max
+// (links) tot +Rb;cal;max (rechts) met 0 in het midden. Y-as is zakking
+// [mm] omlaag. Voor elke werkpunt-zakking wordt Rs (links) en Rb (rechts)
+// als horizontale lijn getoond. De volledige mobilisatie-curves (Rs(sb)
+// en Rb(sb)) worden ook geplot zodat de gebruiker ziet hoe Rs en Rb
+// progressief toenemen met de zakking.
+
+const ZK_W = 360;
+const ZK_H = 240;
+const ZK_M = { top: 22, right: 14, bottom: 36, left: 14 };
 const ZK_PW = ZK_W - ZK_M.left - ZK_M.right;
 const ZK_PH = ZK_H - ZK_M.top - ZK_M.bottom;
 
 interface ZakkingsChartProps {
   settlement: SettlementResult;
+  rbCalMax: number;
+  rsCalMax: number;
 }
 
-function ZakkingsChart({ settlement }: ZakkingsChartProps) {
+function ZakkingsChart({ settlement, rbCalMax, rsCalMax }: ZakkingsChartProps) {
   const { curve, sls, uls } = settlement;
 
+  // Snap x-as range op nette ronde-getallen op basis van max(Rs, Rb).
   const bounds = useMemo(() => {
-    // x-bound: max of curve totalKn + workpoint Fc.
-    const xVals = curve.map((p) => p.totalKn).concat([sls.fcTot, uls.fcTot]);
-    const xMax = Math.max(1, Math.max(...xVals) * 1.05);
-    const xStep = Math.ceil(xMax / 5 / 50) * 50;
-    const xMaxSnap = xStep * 5;
-    // y-bound: max sbMm of curve + workpoints (both positive-going-down).
-    const yVals = curve.map((p) => p.sbMm).concat([sls.sbMm, uls.sbMm]);
-    const yMax = Math.max(1, Math.max(...yVals) * 1.05);
-    return { xMax: xMaxSnap, yMax };
-  }, [curve, sls, uls]);
+    const xMaxRaw = Math.max(rsCalMax, rbCalMax) * 1.05;
+    const xStep = Math.max(50, Math.ceil(xMaxRaw / 4 / 50) * 50);
+    const xMax = xStep * 4; // 4 ticks elke kant van 0
+    const yVals = curve.map((p) => p.sbMm).concat([sls.sbMm, uls.sbMm, 20]);
+    const yMax = Math.max(20, Math.max(...yVals) * 1.10);
+    return { xMax, yMax, xStep };
+  }, [curve, sls, uls, rbCalMax, rsCalMax]);
 
-  const xToPx = (kn: number) => ZK_M.left + (kn / bounds.xMax) * ZK_PW;
+  // X-projectie: kn van -xMax tot +xMax → 0..PW.
+  const xCenter = ZK_M.left + ZK_PW / 2;
+  const xToPx = (kn: number) => xCenter + (kn / bounds.xMax) * (ZK_PW / 2);
   const yToPx = (mm: number) => ZK_M.top + (mm / bounds.yMax) * ZK_PH;
 
-  // 50 points — direct computation is faster than memoization overhead.
-  const path = curve.length === 0
-    ? ""
-    : curve
-        .map((p, i) => `${i === 0 ? "M" : "L"}${xToPx(p.totalKn).toFixed(1)},${yToPx(p.sbMm).toFixed(1)}`)
-        .join(" ");
-
-  // X-ticks: 0 .. xMax in 5 steps.
+  // X-ticks: van -xMax tot +xMax met xStep tussenruimte.
   const xTicks = useMemo(() => {
-    const step = bounds.xMax / 5;
-    return Array.from({ length: 6 }, (_, i) => Math.round(i * step));
-  }, [bounds.xMax]);
-  // Y-ticks: 0 .. yMax in 4 steps.
+    const ticks: number[] = [];
+    for (let v = -bounds.xMax; v <= bounds.xMax + 0.001; v += bounds.xStep) {
+      ticks.push(Math.round(v));
+    }
+    return ticks;
+  }, [bounds.xMax, bounds.xStep]);
   const yTicks = useMemo(() => {
     const step = bounds.yMax / 4;
     return Array.from({ length: 5 }, (_, i) => i * step);
   }, [bounds.yMax]);
 
+  // Mobilisatie-curves: Rs(sb) links (negatieve x) en Rb(sb) rechts.
+  const rsPath = curve.length === 0
+    ? ""
+    : curve
+        .map((p, i) => `${i === 0 ? "M" : "L"}${xToPx(-p.rsKn).toFixed(1)},${yToPx(p.sbMm).toFixed(1)}`)
+        .join(" ");
+  const rbPath = curve.length === 0
+    ? ""
+    : curve
+        .map((p, i) => `${i === 0 ? "M" : "L"}${xToPx(p.rbKn).toFixed(1)},${yToPx(p.sbMm).toFixed(1)}`)
+        .join(" ");
+
   const ySls = yToPx(sls.sbMm);
   const yUls = yToPx(uls.sbMm);
+  const yMaxLine = yToPx(bounds.yMax * 0.92); // Rs/Rb max-label-positie
 
   return (
     <svg
@@ -63,36 +121,28 @@ function ZakkingsChart({ settlement }: ZakkingsChartProps) {
       viewBox={`0 0 ${ZK_W} ${ZK_H}`}
       preserveAspectRatio="xMidYMid meet"
       role="img"
-      aria-label="Zakkingsdiagram"
+      aria-label="Lastzakkingsdiagram"
     >
-      {/* Plot background */}
       <rect
-        x={ZK_M.left}
-        y={ZK_M.top}
-        width={ZK_PW}
-        height={ZK_PH}
+        x={ZK_M.left} y={ZK_M.top} width={ZK_PW} height={ZK_PH}
         className="pile-zakking-plot-bg"
       />
 
       {/* Grid + ticks */}
       {xTicks.map((kn) => {
         const x = xToPx(kn);
+        const isZero = kn === 0;
         return (
           <g key={`zx-${kn}`}>
             <line
-              x1={x}
-              x2={x}
-              y1={ZK_M.top}
-              y2={ZK_M.top + ZK_PH}
-              className="pile-zakking-grid"
+              x1={x} x2={x} y1={ZK_M.top} y2={ZK_M.top + ZK_PH}
+              className={isZero ? "pile-zakking-grid pile-zakking-grid--axis" : "pile-zakking-grid"}
             />
             <text
-              x={x}
-              y={ZK_M.top + ZK_PH + 14}
-              className="pile-zakking-axis-label"
-              textAnchor="middle"
+              x={x} y={ZK_M.top + ZK_PH + 12}
+              className="pile-zakking-axis-label" textAnchor="middle"
             >
-              {kn}
+              {Math.abs(kn)}
             </text>
           </g>
         );
@@ -102,17 +152,12 @@ function ZakkingsChart({ settlement }: ZakkingsChartProps) {
         return (
           <g key={`zy-${i}`}>
             <line
-              x1={ZK_M.left}
-              x2={ZK_M.left + ZK_PW}
-              y1={y}
-              y2={y}
+              x1={ZK_M.left} x2={ZK_M.left + ZK_PW} y1={y} y2={y}
               className="pile-zakking-grid"
             />
             <text
-              x={ZK_M.left - 4}
-              y={y + 3}
-              className="pile-zakking-axis-label"
-              textAnchor="end"
+              x={ZK_M.left + 2} y={y - 2}
+              className="pile-zakking-axis-label" textAnchor="start"
             >
               {mm.toFixed(1)}
             </text>
@@ -120,72 +165,99 @@ function ZakkingsChart({ settlement }: ZakkingsChartProps) {
         );
       })}
 
-      {/* Axis titles */}
+      {/* As-titels */}
       <text
-        x={ZK_M.left + ZK_PW / 2}
-        y={ZK_H - 4}
-        className="pile-zakking-axis-title"
-        textAnchor="middle"
+        x={ZK_M.left + ZK_PW / 2} y={ZK_H - 2}
+        className="pile-zakking-axis-title" textAnchor="middle"
       >
         Belasting [kN]
       </text>
       <text
-        x={10}
-        y={ZK_M.top + ZK_PH / 2}
-        className="pile-zakking-axis-title"
-        textAnchor="middle"
-        transform={`rotate(-90 10 ${ZK_M.top + ZK_PH / 2})`}
+        x={xCenter - 60} y={ZK_M.top - 6}
+        className="pile-zakking-axis-side-label" textAnchor="middle"
+        fill="#16a34a"
       >
-        s_b [mm]
+        ← R_s schacht
       </text>
-
-      {/* SLS reference line — amber */}
-      <line
-        x1={ZK_M.left}
-        x2={ZK_M.left + ZK_PW}
-        y1={ySls}
-        y2={ySls}
-        className="pile-zakking-line-sls"
-      />
       <text
-        x={ZK_M.left + ZK_PW - 4}
-        y={ySls - 3}
-        className="pile-zakking-ref-label pile-zakking-ref-label--sls"
-        textAnchor="end"
+        x={xCenter + 60} y={ZK_M.top - 6}
+        className="pile-zakking-axis-side-label" textAnchor="middle"
+        fill="#1e3a8a"
       >
-        SLS Fc={sls.fcTot.toFixed(0)} kN · s_b={sls.sbMm.toFixed(1)} mm
+        R_b punt →
       </text>
 
-      {/* ULS reference line — blue */}
+      {/* Mobilisatie-curves */}
+      {rsPath && <path d={rsPath} className="pile-zakking-curve-rs" fill="none" />}
+      {rbPath && <path d={rbPath} className="pile-zakking-curve-rb" fill="none" />}
+
+      {/* SLS werkpunt: horizontale lijn op sb-niveau met Rs en Rb markers */}
       <line
-        x1={ZK_M.left}
-        x2={ZK_M.left + ZK_PW}
-        y1={yUls}
-        y2={yUls}
-        className="pile-zakking-line-uls"
+        x1={xToPx(-sls.rsMobil)} x2={xToPx(sls.rbMobil)}
+        y1={ySls} y2={ySls}
+        className="pile-zakking-workpoint"
       />
+      <circle cx={xToPx(-sls.rsMobil)} cy={ySls} r={2.5} className="pile-zakking-marker-rs" />
+      <circle cx={xToPx(sls.rbMobil)} cy={ySls} r={2.5} className="pile-zakking-marker-rb" />
       <text
-        x={ZK_M.left + ZK_PW - 4}
-        y={yUls - 3}
-        className="pile-zakking-ref-label pile-zakking-ref-label--uls"
-        textAnchor="end"
+        x={xToPx(-sls.rsMobil) - 3} y={ySls - 3}
+        className="pile-zakking-ref-label pile-zakking-ref-label--rs" textAnchor="end"
       >
-        ULS Fc={uls.fcTot.toFixed(0)} kN · s_b={uls.sbMm.toFixed(1)} mm
+        Rs;sls={sls.rsMobil.toFixed(0)}
+      </text>
+      <text
+        x={xToPx(sls.rbMobil) + 3} y={ySls - 3}
+        className="pile-zakking-ref-label pile-zakking-ref-label--rb" textAnchor="start"
+      >
+        Rb;sls={sls.rbMobil.toFixed(0)}
+      </text>
+      <text
+        x={xCenter} y={ySls + 10}
+        className="pile-zakking-ref-label pile-zakking-ref-label--total" textAnchor="middle"
+      >
+        SLS Fc={sls.fcTot.toFixed(0)} · s_b={sls.sbMm.toFixed(1)} mm
       </text>
 
-      {/* Load-settlement curve — black */}
-      {path && (
-        <path d={path} className="pile-zakking-curve" fill="none" />
+      {/* ULS werkpunt — zelfde stijl iets dimer */}
+      {uls.sbMm > sls.sbMm + 0.1 && (
+        <>
+          <line
+            x1={xToPx(-uls.rsMobil)} x2={xToPx(uls.rbMobil)}
+            y1={yUls} y2={yUls}
+            className="pile-zakking-workpoint pile-zakking-workpoint--uls"
+          />
+          <text
+            x={xCenter} y={yUls + 10}
+            className="pile-zakking-ref-label pile-zakking-ref-label--total-uls" textAnchor="middle"
+          >
+            ULS Fc={uls.fcTot.toFixed(0)} · s_b={uls.sbMm.toFixed(1)} mm
+          </text>
+        </>
       )}
+
+      {/* Max-capacity onderaan: -Rs;cal;max en +Rb;cal;max */}
+      <line
+        x1={xToPx(-rsCalMax)} x2={xToPx(rbCalMax)}
+        y1={yMaxLine} y2={yMaxLine}
+        className="pile-zakking-maxcap"
+      />
+      <text
+        x={xToPx(-rsCalMax)} y={yMaxLine - 3}
+        className="pile-zakking-ref-label pile-zakking-ref-label--max-rs" textAnchor="start"
+      >
+        Rs;cal;max={rsCalMax.toFixed(0)}
+      </text>
+      <text
+        x={xToPx(rbCalMax)} y={yMaxLine - 3}
+        className="pile-zakking-ref-label pile-zakking-ref-label--max-rb" textAnchor="end"
+      >
+        Rb;cal;max={rbCalMax.toFixed(0)}
+      </text>
 
       {/* Plot border */}
       <rect
-        x={ZK_M.left}
-        y={ZK_M.top}
-        width={ZK_PW}
-        height={ZK_PH}
-        className="pile-zakking-plot-border"
-        fill="none"
+        x={ZK_M.left} y={ZK_M.top} width={ZK_PW} height={ZK_PH}
+        className="pile-zakking-plot-border" fill="none"
       />
     </svg>
   );
@@ -198,6 +270,7 @@ export function ResultPanel({ result }: PanelProps<PileInput, PileResult>) {
     return <div className="pile-result-error">⚠️ {result.error}</div>;
   }
   const { negKleef, base, shaft, settlement, spring, summary } = result;
+  const rcCalMine = base.rbCalMax + shaft.rsCalMax;
   return (
     <div className="pile-result">
       {result.warnings.length > 0 && (
@@ -209,7 +282,7 @@ export function ResultPanel({ result }: PanelProps<PileInput, PileResult>) {
       <section>
         <h3>Negatieve kleef</h3>
         <table className="pile-formula-table">
-          <thead><tr><th>Laag</th><th>σ·Os·K₀tanδ</th><th>F<sub>s;nk</sub></th></tr></thead>
+          <thead><tr><th>Laag</th><th>σ·O<sub>s</sub>·K<sub>0</sub>tanδ</th><th>F<sub>s;nk</sub></th></tr></thead>
           <tbody>
             {negKleef.layers.map((l, i) => (
               <tr key={i}>
@@ -220,49 +293,123 @@ export function ResultPanel({ result }: PanelProps<PileInput, PileResult>) {
             ))}
           </tbody>
         </table>
-        <p>F<sub>nk;d</sub> = γ<sub>f,nk</sub> · ΣF<sub>s;nk</sub> = <strong>{negKleef.fnkD.toFixed(0)} kN</strong></p>
+        <Formula
+          lhs={<>F<sub>nk;d</sub></>}
+          symbolic={<>γ<sub>f,nk</sub> · ΣF<sub>s;nk</sub></>}
+          filled={<>{result.negKleef.layers.length > 0 ? `1,00 · ${negKleef.fnkRep.toFixed(1)}` : "0"}</>}
+          result={<>{negKleef.fnkD.toFixed(0)} kN</>}
+        />
       </section>
 
       <section>
         <h3>Puntdraagvermogen</h3>
-        <p>q<sub>c;I;gem</sub> = {base.qcIGemMpa.toFixed(2)} MPa, q<sub>c;II;gem</sub> = {base.qcIIGemMpa.toFixed(2)}, q<sub>c;III;gem</sub> = {base.qcIIIGemMpa.toFixed(2)}</p>
-        <p>q<sub>b;max</sub> = {base.qbMaxMpa.toFixed(2)} MPa {base.qbMaxMpaRaw > 15 && "(gecapt op 15)"}</p>
-        <p>R<sub>b;cal;max</sub> = A<sub>b</sub> · q<sub>b;max</sub> = <strong>{base.rbCalMax.toFixed(0)} kN</strong></p>
+        <p className="pile-result-input">
+          q<sub>c;I;gem</sub> = {base.qcIGemMpa.toFixed(2)} MPa, &nbsp;
+          q<sub>c;II;gem</sub> = {base.qcIIGemMpa.toFixed(2)} MPa, &nbsp;
+          q<sub>c;III;gem</sub> = {base.qcIIIGemMpa.toFixed(2)} MPa
+        </p>
+        <Formula
+          lhs={<>q<sub>b;max</sub></>}
+          symbolic={<>½ · α<sub>p</sub> · β · s · ((q<sub>c;I</sub>+q<sub>c;II</sub>)/2 + q<sub>c;III</sub>)</>}
+          filled={
+            <>
+              ½ · 0,7 · 1 · 1 · ((
+              {base.qcIGemMpa.toFixed(2)}+{base.qcIIGemMpa.toFixed(2)})/2 + {base.qcIIIGemMpa.toFixed(2)})
+            </>
+          }
+          result={
+            <>
+              {base.qbMaxMpa.toFixed(2)} MPa
+              {base.qbMaxMpaRaw > 15 && <em> &nbsp;(gecapt op 15 MPa)</em>}
+            </>
+          }
+        />
+        <Formula
+          lhs={<>R<sub>b;cal;max</sub></>}
+          symbolic={<>A<sub>b</sub> · q<sub>b;max</sub></>}
+          filled={<>{base.abMm2.toFixed(0)} · {base.qbMaxMpa.toFixed(2)} · 10⁻³</>}
+          result={<>{base.rbCalMax.toFixed(0)} kN</>}
+        />
       </section>
 
       <section>
         <h3>Maximumschachtwrijving</h3>
-        <p>R<sub>s;cal;max</sub> = <strong>{shaft.rsCalMax.toFixed(0)} kN</strong></p>
+        <Formula
+          lhs={<>R<sub>s;cal;max</sub></>}
+          symbolic={<>O<sub>s</sub> · Σ α<sub>s</sub> · q<sub>c;gem;j</sub> · Δh<sub>j</sub></>}
+          filled={
+            <>
+              {shaft.perLayer.length} laag/lagen — Σ van per-laag bijdragen
+            </>
+          }
+          result={<>{shaft.rsCalMax.toFixed(0)} kN</>}
+        />
       </section>
 
       <section>
         <h3>Maximum gronddraagvermogen</h3>
-        <p>R<sub>c;cal</sub> = <strong>{summary.rcCal.toFixed(0)} kN</strong></p>
+        <Formula
+          lhs={<>R<sub>c;cal</sub></>}
+          symbolic={<>R<sub>b;cal;max</sub> + R<sub>s;cal;max</sub></>}
+          filled={<>{base.rbCalMax.toFixed(0)} + {shaft.rsCalMax.toFixed(0)}</>}
+          result={<>{rcCalMine.toFixed(0)} kN</>}
+        />
       </section>
 
       <section>
         <h3>Zakking</h3>
-        <p>SLS: s<sub>b</sub>={settlement.sls.sbMm.toFixed(1)} mm, s<sub>1</sub>={settlement.sls.s1Mm.toFixed(1)} mm</p>
-        <p>ULS: s<sub>b</sub>={settlement.uls.sbMm.toFixed(1)} mm, s<sub>1</sub>={settlement.uls.s1Mm.toFixed(1)} mm</p>
+        <p className="pile-result-input">
+          SLS: s<sub>b</sub>={settlement.sls.sbMm.toFixed(1)} mm, s<sub>1</sub>={settlement.sls.s1Mm.toFixed(1)} mm
+          &nbsp;·&nbsp;
+          ULS: s<sub>b</sub>={settlement.uls.sbMm.toFixed(1)} mm, s<sub>1</sub>={settlement.uls.s1Mm.toFixed(1)} mm
+        </p>
         <div className="pile-zakking-chart">
-          <ZakkingsChart settlement={settlement} />
+          <ZakkingsChart
+            settlement={settlement}
+            rbCalMax={base.rbCalMax}
+            rsCalMax={shaft.rsCalMax}
+          />
         </div>
       </section>
 
       <section>
         <h3>Veerwaarde</h3>
-        <p>k<sub>SLS</sub> = <strong>{spring.kSlsKnPerM.toFixed(0)} kN/m</strong></p>
-        <p>k<sub>min</sub> = {spring.kMinKnPerM.toFixed(0)} / k<sub>max</sub> = {spring.kMaxKnPerM.toFixed(0)} kN/m</p>
+        <Formula
+          lhs={<>k<sub>SLS</sub></>}
+          symbolic={<>F<sub>c;tot</sub> / s<sub>1</sub></>}
+          filled={<>{settlement.sls.fcTot.toFixed(0)} · 10³ / {settlement.sls.s1Mm.toFixed(1)}</>}
+          result={<>{spring.kSlsKnPerM.toFixed(0)} kN/m</>}
+        />
+        <p className="pile-result-input">
+          k<sub>min</sub> = {spring.kMinKnPerM.toFixed(0)} kN/m &nbsp;·&nbsp;
+          k<sub>max</sub> = {spring.kMaxKnPerM.toFixed(0)} kN/m
+        </p>
       </section>
 
       <section>
         <h3>Samenvatting</h3>
-        <p>R<sub>c;d</sub> = {summary.rcD.toFixed(0)} kN</p>
-        <p>R<sub>c;net;d</sub> = {summary.rcNetD.toFixed(0)} kN</p>
-        <p className={summary.passes ? "pile-pass" : "pile-fail"}>
-          Unity check: N<sub>Ed</sub> / R<sub>c;net;d</sub> = <strong>{summary.unityCheck.toFixed(2)}</strong>
-          {summary.passes ? " ✓ voldoet" : " ✗ voldoet NIET"}
-        </p>
+        <Formula
+          lhs={<>R<sub>c;d</sub></>}
+          symbolic={<>R<sub>c;k</sub> / γ<sub>m</sub></>}
+          filled={<>{(summary.rcK ?? summary.rcCal).toFixed(0)} / 1,20</>}
+          result={<>{summary.rcD.toFixed(0)} kN</>}
+        />
+        <Formula
+          lhs={<>R<sub>c;net;d</sub></>}
+          symbolic={<>R<sub>c;d</sub> − F<sub>nk;d</sub></>}
+          filled={<>{summary.rcD.toFixed(0)} − {negKleef.fnkD.toFixed(0)}</>}
+          result={<>{summary.rcNetD.toFixed(0)} kN</>}
+        />
+        <Formula
+          lhs={<>U.C.</>}
+          symbolic={<>N<sub>Ed</sub> / R<sub>c;net;d</sub></>}
+          filled={<>(NEd) / {summary.rcNetD.toFixed(0)}</>}
+          result={
+            <span className={summary.passes ? "pile-pass" : "pile-fail"}>
+              {summary.unityCheck.toFixed(2)} {summary.passes ? " ✓ voldoet" : " ✗ voldoet NIET"}
+            </span>
+          }
+        />
       </section>
     </div>
   );

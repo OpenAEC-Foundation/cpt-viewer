@@ -23,6 +23,7 @@
     "html-to-image": "^1.11.13",
     "i18next": "^25.8.14",
     "i18next-browser-languagedetector": "^8.2.1",
+    "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
     "pdfjs-dist": "^5.7.284",
     "proj4": "^2.11.0",
@@ -44,7 +45,6 @@
     "@vitejs/plugin-react": "^5.1.4",
     "@vitest/ui": "^4.1.7",
     "jsdom": "^29.1.1",
-    "jspdf": "^4.2.1",
     "typescript": "~5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.1.7"
