@@ -607,6 +607,14 @@ export default function MapView() {
 
     mapRef.current = map;
 
+    // ── Schaalstok rechtsonder — metric only (geen miles); maxWidth
+    //    200 px zodat hij subtiel blijft op kleine displays. Leaflet
+    //    plaatst hem in een eigen .leaflet-control-scale-line container
+    //    die we via CSS verder kunnen stylen indien gewenst.
+    L.control
+      .scale({ position: "bottomright", imperial: false, metric: true, maxWidth: 200 })
+      .addTo(map);
+
     // ── Cursor-coords listener — toont live RD + WGS84 rechtsonder ──
     // Bij elke mousemove pakken we de WGS84-coords uit het Leaflet-event
     // en projecteren we direct naar RD New (EPSG:28992) via proj4. Bij
@@ -1804,9 +1812,14 @@ export default function MapView() {
 
   // Export huidige kaart-view als PNG via html-to-image. We targetten de
   // PLOT-container (zonder de overlay-controls) zodat de PNG geen knoppen
-  // / coords-display bevat — alleen de kaart + markers + tiles.
+  // / coords-display bevat — alleen de kaart + markers + tiles + scale.
   // `cacheBust: true` voorkomt dat oude cached tiles in de PNG eindigen
   // wanneer de gebruiker net heeft ge-zoomed.
+  //
+  // Wordt getriggerd vanuit de Ribbon (Kaart-tab → "Exporteer als
+  // afbeelding") via het `ogs:export-map` window-event — niet meer via
+  // een floating knop in de kaart-overlay zelf. Zelfde patroon als
+  // `ogs:measure-toggle` voor het meetinstrument.
   const handleExportImage = useCallback(async () => {
     if (!containerRef.current || exporting) return;
     setExporting(true);
@@ -1814,11 +1827,11 @@ export default function MapView() {
       const dataUrl = await toPng(containerRef.current, {
         cacheBust: true,
         pixelRatio: 2, // 2x voor scherper resultaat op high-DPI displays
-        // Filter overlay-elements (controls / popups / coords-badge) uit
-        // de screenshot. Alleen de tile-layers + marker-icons blijven.
+        // Filter overlay-elements (popups) uit de screenshot maar BEHOUD
+        // de leaflet-control-container voor de schaalstok rechtsonder —
+        // die hoort op het exportbeeld te staan voor schaal-context.
         filter: (node) => {
           if (!(node instanceof HTMLElement)) return true;
-          if (node.classList?.contains("leaflet-control-container")) return false;
           if (node.classList?.contains("leaflet-popup-pane")) return false;
           return true;
         },
@@ -1830,12 +1843,18 @@ export default function MapView() {
       link.click();
     } catch (err) {
       console.error("Map export failed:", err);
-      // Niet-blokkerend — log + visueel zou ideaal zijn maar voor nu
-      // accepteren we de console-log (gebruiker krijgt geen toast).
     } finally {
       setExporting(false);
     }
   }, [exporting]);
+
+  // Listen naar de export-trigger uit de Ribbon (KaartTab → "Exporteer
+  // als afbeelding"). Hetzelfde event-bus-patroon als bv. measure-toggle.
+  useEffect(() => {
+    const onExport = () => { void handleExportImage(); };
+    window.addEventListener("ogs:export-map", onExport);
+    return () => window.removeEventListener("ogs:export-map", onExport);
+  }, [handleExportImage]);
 
   return (
     <div className="map-view-wrap">
@@ -1862,17 +1881,9 @@ export default function MapView() {
         )}
         {status}
       </div>
-      {/* ─── Export-knop top-right — neemt huidige kaart-view op als PNG. */}
-      <button
-        type="button"
-        className="map-export-btn"
-        onClick={handleExportImage}
-        disabled={exporting}
-        title={exporting ? "Bezig met exporteren…" : "Exporteer huidige kaart-view als PNG-afbeelding"}
-        aria-label="Exporteer als afbeelding"
-      >
-        {exporting ? "⏳" : "📷"}
-      </button>
+      {/* Export-knop verhuisd naar de Ribbon (KaartTab) — wordt
+          getriggerd via het ogs:export-map event. Een eventuele
+          "bezig…" indicator komt later (toast/notification). */}
       {/* ─── Cursor-coords rechtsonder — RD + WGS84, alleen tonen
               wanneer de muis BINNEN de kaart zit (cursorCoords != null). */}
       {cursorCoords && (
