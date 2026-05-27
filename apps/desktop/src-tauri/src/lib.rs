@@ -118,10 +118,16 @@ fn engine_save_pdf(report: serde_json::Value, path: String) -> Result<(), String
 }
 
 /// Run as MCP server (stdio transport) — no GUI.
+///
+/// De MCP-server krijgt zowel een gedeelde TenantManager (voor PDF/branding)
+/// als een gedeelde AppState (voor CPT-cache, project-state, exports etc.)
+/// zodat hij ALLE app-functies kan bedienen — niet alleen de rapport-
+/// generatie. Beide structuren leven voor de hele levensduur van het proces.
 pub fn run_mcp() {
     let tenants_dir = resolve_tenants_dir();
     let tm = Arc::new(Mutex::new(TenantManager::new(tenants_dir)));
-    let server = mcp::server::McpServer::new(tm);
+    let app_state = Arc::new(CptAppState::default());
+    let server = mcp::server::McpServer::new(tm, app_state);
     server.run_stdio();
 }
 

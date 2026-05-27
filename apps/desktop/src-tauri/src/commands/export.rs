@@ -1,12 +1,16 @@
 //! Export commands: CSV per CPT, GeoJSON for multiple CPTs.
+//!
+//! Beide functies hebben een `*_core` variant voor gedeeld gebruik door
+//! GUI (via `tauri::command`) en MCP-server (via `&AppState`).
 
 use tauri::State;
 use crate::state::AppState;
 
-#[tauri::command]
-pub fn export_csv(cpt_id: String, path: String, state: State<'_, AppState>) -> Result<(), String> {
+// ─── Core implementations ──────────────────────────────────────────
+
+pub fn export_csv_core(cpt_id: &str, path: &str, state: &AppState) -> Result<(), String> {
     let cpts = state.cpts.lock().unwrap();
-    let cpt = cpts.get(&cpt_id).ok_or_else(|| format!("unknown CPT id: {cpt_id}"))?;
+    let cpt = cpts.get(cpt_id).ok_or_else(|| format!("unknown CPT id: {cpt_id}"))?;
     let mut s = String::new();
     s.push_str("depth,depth_nap,qc,fs,rf,u2,inclination\n");
     for p in &cpt.points {
@@ -24,12 +28,15 @@ pub fn export_csv(cpt_id: String, path: String, state: State<'_, AppState>) -> R
     std::fs::write(path, s).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn export_geojson(cpt_ids: Vec<String>, path: String, state: State<'_, AppState>) -> Result<(), String> {
+pub fn export_geojson_core(
+    cpt_ids: &[String],
+    path: &str,
+    state: &AppState,
+) -> Result<(), String> {
     use serde_json::{json, Value};
     let cpts = state.cpts.lock().unwrap();
     let mut features: Vec<Value> = Vec::new();
-    for id in &cpt_ids {
+    for id in cpt_ids {
         let Some(cpt) = cpts.get(id) else { continue };
         if let Some(pos) = cpt.position {
             let (lat, lon) = cpt_core::coords::rd_to_wgs84(pos.x_rd, pos.y_rd);
@@ -52,4 +59,20 @@ pub fn export_geojson(cpt_ids: Vec<String>, path: String, state: State<'_, AppSt
     }
     let fc = json!({ "type": "FeatureCollection", "features": features });
     std::fs::write(path, serde_json::to_string_pretty(&fc).unwrap()).map_err(|e| e.to_string())
+}
+
+// ─── Tauri command wrappers ────────────────────────────────────────
+
+#[tauri::command]
+pub fn export_csv(cpt_id: String, path: String, state: State<'_, AppState>) -> Result<(), String> {
+    export_csv_core(&cpt_id, &path, state.inner())
+}
+
+#[tauri::command]
+pub fn export_geojson(
+    cpt_ids: Vec<String>,
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    export_geojson_core(&cpt_ids, &path, state.inner())
 }

@@ -1,4 +1,8 @@
 //! Project save / open commands using the `.ifcgis` JSON container.
+//!
+//! Elke functie bestaat in twee varianten (`*_core` voor Rust-aanroepers
+//! incl. MCP, en `#[tauri::command]` als wrapper voor de frontend) zodat
+//! GUI en MCP-server dezelfde implementatie delen.
 
 use std::path::PathBuf;
 use chrono::NaiveDate;
@@ -30,14 +34,12 @@ fn parse_date(s: &str) -> NaiveDate {
         .unwrap_or_else(|_| chrono::Local::now().date_naive())
 }
 
-/// Save the current AppState (project meta + loaded CPTs) to `path` as `.ifcgis`.
-/// Project metadata comes from the frontend (Zustand store) — the Rust side only
-/// owns the CPTs, not the project meta.
-#[tauri::command]
-pub fn save_project_ifcgis(
+// ─── Core implementations ──────────────────────────────────────────
+
+pub fn save_project_ifcgis_core(
     project: ProjectMetaInput,
-    path: String,
-    state: State<'_, AppState>,
+    path: &str,
+    state: &AppState,
 ) -> Result<(), String> {
     let cpts: Vec<Cpt> = state.cpts.lock().unwrap().values().cloned().collect();
     let info = ifcgis::ProjectInfo {
@@ -53,23 +55,10 @@ pub fn save_project_ifcgis(
     std::fs::write(PathBuf::from(path), text).map_err(|e| e.to_string())
 }
 
-/// Open a `.ifcgis` file: parse, MERGE the file's CPTs into AppState's CPT
-/// cache (additive — does NOT clear), and return both the project metadata
-/// and the CPTs so the frontend can update its store in one round-trip.
-///
-/// Rust state is a flat cache of every CPT ever loaded across all open
-/// document tabs (project tabs + standalone cpt tabs). Document boundaries
-/// live on the frontend; the Rust side only needs to look up CPTs by id
-/// when generating reports / exports.
-#[tauri::command]
-pub fn open_project_ifcgis(
-    path: String,
-    state: State<'_, AppState>,
-) -> Result<ProjectOpenResult, String> {
-    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+pub fn open_project_ifcgis_core(path: &str, state: &AppState) -> Result<ProjectOpenResult, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     let file = ifcgis::load(&text).map_err(|e| e.to_string())?;
 
-    // Merge state's CPT map (additive).
     let mut cpts_map = state.cpts.lock().unwrap();
     for cpt in &file.cpts {
         cpts_map.insert(cpt.id.clone(), cpt.clone());
@@ -88,19 +77,7 @@ pub fn open_project_ifcgis(
     })
 }
 
-/// Full-fidelity save — frontend bouwt het complete ifcgis JSON payload
-/// (inclusief bores, tekening-layout, title-block, crs, gis,
-/// deliverable). De Rust-side valideert het tegen het ProjectFile
-/// schema en converteert het naar **strict IFCX (IFC5 alpha) JSON**
-/// voordat het naar schijf gaat — de wire-format van `.ifcgis` is dus
-/// echte IFC4X3-stijl `header + data[]`. Geeft een duidelijke fout
-/// terug als het schema niet klopt zodat de frontend de gebruiker iets
-/// zinnigs kan tonen.
-#[tauri::command]
-pub fn save_project_ifcgis_full(
-    payload: serde_json::Value,
-    path: String,
-) -> Result<(), String> {
+pub fn save_project_ifcgis_full_core(payload: serde_json::Value, path: &str) -> Result<(), String> {
     let file: ifcgis::ProjectFile = serde_json::from_value(payload)
         .map_err(|e| format!("invalid ifcgis payload: {e}"))?;
     let text = ifcgis::to_ifcx_json(&file)
@@ -108,27 +85,17 @@ pub fn save_project_ifcgis_full(
     std::fs::write(PathBuf::from(path), text).map_err(|e| e.to_string())
 }
 
-/// IFCX-preview: convert dezelfde payload als save naar de strict
-/// IFCX-JSON representatie (IFC5 alpha) zonder naar schijf te
-/// schrijven. Wordt door de Situatietekening gebruikt om de gebruiker
-/// live te tonen welke IFC-entities er in het .ifcgis-bestand komen.
-#[tauri::command]
-pub fn preview_project_ifcx(payload: serde_json::Value) -> Result<String, String> {
+pub fn preview_project_ifcx_core(payload: serde_json::Value) -> Result<String, String> {
     let file: ifcgis::ProjectFile = serde_json::from_value(payload)
         .map_err(|e| format!("invalid ifcgis payload: {e}"))?;
     ifcgis::to_ifcx_json(&file).map_err(|e| format!("ifcgis serialize: {e}"))
 }
 
-/// Full-fidelity open — leest een `.ifcgis` van schijf, valideert tegen
-/// het schema, mergeed de CPTs in de Rust-cache, en geeft het complete
-/// JSON document terug aan de frontend zodat tekening / bores / title-
-/// block ook hersteld kunnen worden.
-#[tauri::command]
-pub fn open_project_ifcgis_full(
-    path: String,
-    state: State<'_, AppState>,
+pub fn open_project_ifcgis_full_core(
+    path: &str,
+    state: &AppState,
 ) -> Result<serde_json::Value, String> {
-    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     let file = ifcgis::load(&text).map_err(|e| e.to_string())?;
     let mut cpts_map = state.cpts.lock().unwrap();
     for cpt in &file.cpts {
@@ -136,4 +103,55 @@ pub fn open_project_ifcgis_full(
     }
     drop(cpts_map);
     serde_json::to_value(&file).map_err(|e| format!("serialize for return: {e}"))
+}
+
+// ─── Tauri command wrappers ────────────────────────────────────────
+
+/// Save the current AppState (project meta + loaded CPTs) to `path` as `.ifcgis`.
+#[tauri::command]
+pub fn save_project_ifcgis(
+    project: ProjectMetaInput,
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    save_project_ifcgis_core(project, &path, state.inner())
+}
+
+/// Open a `.ifcgis` file: parse, MERGE the file's CPTs into AppState's CPT
+/// cache (additive — does NOT clear), and return both the project metadata
+/// and the CPTs so the frontend can update its store in one round-trip.
+#[tauri::command]
+pub fn open_project_ifcgis(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<ProjectOpenResult, String> {
+    open_project_ifcgis_core(&path, state.inner())
+}
+
+/// Full-fidelity save — frontend bouwt het complete ifcgis JSON payload
+/// (inclusief bores, tekening-layout, title-block, crs, gis, deliverable).
+#[tauri::command]
+pub fn save_project_ifcgis_full(
+    payload: serde_json::Value,
+    path: String,
+) -> Result<(), String> {
+    save_project_ifcgis_full_core(payload, &path)
+}
+
+/// IFCX-preview: convert dezelfde payload als save naar de strict
+/// IFCX-JSON representatie (IFC5 alpha) zonder naar schijf te schrijven.
+#[tauri::command]
+pub fn preview_project_ifcx(payload: serde_json::Value) -> Result<String, String> {
+    preview_project_ifcx_core(payload)
+}
+
+/// Full-fidelity open — leest een `.ifcgis` van schijf, valideert tegen
+/// het schema, mergeed de CPTs in de Rust-cache, en geeft het complete
+/// JSON document terug aan de frontend.
+#[tauri::command]
+pub fn open_project_ifcgis_full(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    open_project_ifcgis_full_core(&path, state.inner())
 }
