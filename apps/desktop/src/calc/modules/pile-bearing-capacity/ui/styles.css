@@ -27,3 +27,266 @@
   border-radius: 3px;
   font: 500 0.82rem var(--font-code, "JetBrains Mono"), monospace;
 }
+
+/* ============================================================
+   VisualPanel — CPT-chart met paaloverlays
+   ============================================================ */
+
+.pile-visual {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 8px;
+}
+.pile-visual h3 {
+  margin: 0;
+  font: 700 0.95rem "Inter", sans-serif;
+  color: var(--theme-text, #36363e);
+}
+.pile-visual-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--theme-text-secondary, #71717a);
+  font: 500 0.85rem "Inter", sans-serif;
+  font-style: italic;
+}
+.pile-visual-footnote {
+  margin: 0;
+  font: 500 0.78rem var(--font-code, "JetBrains Mono"), monospace;
+  color: var(--theme-text-secondary, #71717a);
+  line-height: 1.5;
+}
+
+/* ─── CPT-chart container + SVG ─── */
+.pile-cpt-chart {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  background: var(--theme-bg-lighter, #fff);
+  border: 1px solid var(--theme-border, #e7e5e4);
+  border-radius: 4px;
+  padding: 4px;
+  overflow: hidden;
+}
+.pile-cpt-chart-svg {
+  width: 100%;
+  height: 100%;
+  font-family: "Inter", sans-serif;
+}
+
+/* ─── Plot frame ─── */
+.pile-cpt-plot-bg {
+  fill: var(--theme-bg-lighter, #fff);
+}
+.pile-cpt-plot-border {
+  stroke: var(--theme-border, #e7e5e4);
+  stroke-width: 1;
+}
+
+/* ─── Grid + axis labels ─── */
+.pile-cpt-grid,
+.pile-cpt-grid-vert {
+  stroke: var(--theme-border, #e7e5e4);
+  stroke-width: 0.5;
+  stroke-dasharray: 2 3;
+}
+.pile-cpt-axis-label {
+  fill: var(--theme-text-secondary, #71717a);
+  font-size: 10px;
+}
+.pile-cpt-axis-title {
+  fill: var(--theme-text, #36363e);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ─── qc curve ─── */
+.pile-cpt-qc-curve {
+  stroke: var(--amber, #d97706);
+  stroke-width: 1.4;
+}
+
+/* ─── Zones (background bands) ─── */
+.pile-cpt-zone-negkleef {
+  fill: rgba(245, 158, 11, 0.10);  /* warm gold, subtle */
+}
+.pile-cpt-zone-8d {
+  fill: rgba(37, 99, 235, 0.08);   /* info blue, light */
+}
+.pile-cpt-zone-4d {
+  fill: rgba(220, 38, 38, 0.08);   /* danger red, light */
+}
+
+/* ─── Overlay lines ─── */
+.pile-cpt-line-paalkop {
+  stroke: var(--theme-text, #36363e);
+  stroke-width: 1.2;
+}
+.pile-cpt-line-ontgraving {
+  stroke: var(--theme-text-secondary, #71717a);
+  stroke-width: 1;
+  stroke-dasharray: 5 3;
+}
+.pile-cpt-line-water {
+  stroke: #2563EB; /* info blue */
+  stroke-width: 0.8;
+  stroke-dasharray: 1 3;
+}
+.pile-cpt-marker-water {
+  fill: #2563EB;
+  stroke: #2563EB;
+  stroke-width: 1;
+}
+.pile-cpt-line-negkleef {
+  stroke: #F59E0B; /* warm gold */
+  stroke-width: 1.2;
+}
+.pile-cpt-line-paalpunt {
+  stroke: #DC2626; /* danger red */
+  stroke-width: 2;
+}
+
+/* ─── Overlay labels ─── */
+.pile-cpt-overlay-label {
+  fill: var(--theme-text, #36363e);
+  font-size: 10px;
+  font-weight: 500;
+  pointer-events: none;
+}
+.pile-cpt-overlay-label--strong {
+  fill: #DC2626;
+  font-weight: 700;
+}
+
+/* ─── Right-side numbered labels (qc;I / qc;II / qc;III / qb;max) ─── */
+.pile-cpt-side-label {
+  fill: var(--theme-text-secondary, #71717a);
+  font-size: 10px;
+  font-weight: 500;
+  font-family: var(--font-code, "JetBrains Mono"), monospace;
+}
+.pile-cpt-side-label--strong {
+  fill: var(--theme-text, #36363e);
+  font-weight: 700;
+}
+
+/* ============================================================
+   ResultPanel — Zakkingsdiagram
+   ============================================================ */
+
+.pile-zakking-chart {
+  margin-top: 8px;
+  display: flex;
+  justify-content: center;
+  background: var(--theme-bg-lighter, #fff);
+  border: 1px solid var(--theme-border, #e7e5e4);
+  border-radius: 4px;
+  padding: 4px;
+}
+.pile-zakking-chart-svg {
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+  font-family: "Inter", sans-serif;
+}
+
+.pile-zakking-plot-bg {
+  fill: var(--theme-bg-lighter, #fff);
+}
+.pile-zakking-plot-border {
+  stroke: var(--theme-border, #e7e5e4);
+  stroke-width: 1;
+}
+.pile-zakking-grid {
+  stroke: var(--theme-border, #e7e5e4);
+  stroke-width: 0.5;
+  stroke-dasharray: 2 3;
+}
+.pile-zakking-axis-label {
+  fill: var(--theme-text-secondary, #71717a);
+  font-size: 9px;
+  font-family: var(--font-code, "JetBrains Mono"), monospace;
+}
+.pile-zakking-axis-title {
+  fill: var(--theme-text, #36363e);
+  font-size: 10px;
+  font-weight: 600;
+}
+.pile-zakking-curve {
+  stroke: var(--theme-text, #36363e);
+  stroke-width: 1.4;
+}
+.pile-zakking-line-sls {
+  stroke: var(--amber, #d97706);
+  stroke-width: 1.2;
+  stroke-dasharray: 4 2;
+}
+.pile-zakking-line-uls {
+  stroke: #2563EB;
+  stroke-width: 1.2;
+  stroke-dasharray: 4 2;
+}
+.pile-zakking-ref-label {
+  font-size: 9px;
+  font-weight: 600;
+  font-family: var(--font-code, "JetBrains Mono"), monospace;
+  pointer-events: none;
+}
+.pile-zakking-ref-label--sls { fill: var(--amber, #d97706); }
+.pile-zakking-ref-label--uls { fill: #2563EB; }
+
+/* ============================================================
+   ResultPanel — shared semantics (errors, warnings, pass/fail)
+   ============================================================ */
+
+.pile-result {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.pile-result section h3 {
+  margin: 0 0 6px;
+  font: 700 0.82rem "Inter", sans-serif;
+  color: var(--theme-text, #36363e);
+}
+.pile-result section p {
+  margin: 4px 0;
+  font: 500 0.82rem var(--font-code, "JetBrains Mono"), monospace;
+  color: var(--theme-text, #36363e);
+  line-height: 1.5;
+}
+.pile-result-error {
+  padding: 12px;
+  background: rgba(220, 38, 38, 0.08);
+  color: #DC2626;
+  border-radius: 4px;
+  font: 500 0.85rem "Inter", sans-serif;
+}
+.pile-warnings {
+  padding: 8px 12px;
+  background: rgba(217, 119, 6, 0.08);
+  border-left: 3px solid var(--amber, #d97706);
+  border-radius: 0 4px 4px 0;
+  font: 500 0.82rem "Inter", sans-serif;
+  color: var(--theme-text, #36363e);
+}
+.pile-formula-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 500 0.78rem var(--font-code, "JetBrains Mono"), monospace;
+  margin-bottom: 6px;
+}
+.pile-formula-table th,
+.pile-formula-table td {
+  text-align: left;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--theme-border-subtle, rgba(0, 0, 0, 0.06));
+}
+.pile-formula-table th {
+  font-weight: 700;
+  color: var(--theme-text-secondary, #71717a);
+}
+.pile-pass { color: #16A34A; }
+.pile-fail { color: #DC2626; }
