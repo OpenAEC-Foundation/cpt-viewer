@@ -9,10 +9,12 @@ use crate::commands::{
     bro_api as bro_cmd,
     cpt as cpt_cmd,
     export as export_cmd,
+    extensions as ext_cmd,
     ifc as ifc_cmd,
     project as project_cmd,
     report as report_cmd,
 };
+use std::collections::HashMap as StdHashMap;
 use crate::pdf::model::{ReportData, TenantInfo};
 use crate::pdf::tenant::TenantManager;
 use crate::state::AppState;
@@ -440,6 +442,33 @@ impl McpServer {
                     report_cmd::generate_report_core(cpts, project, output_path.clone()),
                 )?;
                 Ok(format!("PDF report saved to {}", output_path))
+            }
+
+            // ─── Extensions (sync) ─────────────────────────────────────
+            "extensions_list" => {
+                let entries = ext_cmd::extensions_list_core(&self.app_state);
+                serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())
+            }
+            "extension_set" => {
+                let id = arg_str("id")?;
+                let enabled = args
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .ok_or_else(|| "Missing or non-boolean 'enabled' argument".to_string())?;
+                ext_cmd::extension_set_core(&id, enabled, &self.app_state)?;
+                Ok(format!("Extension '{}' set to {}", id, enabled))
+            }
+            "extensions_set_bulk" => {
+                let payload_val = arg_value("payload")?;
+                let payload: StdHashMap<String, bool> = serde_json::from_value(payload_val)
+                    .map_err(|e| format!("Invalid payload: {}", e))?;
+                let count = payload.len();
+                ext_cmd::extensions_set_bulk_core(payload, &self.app_state);
+                Ok(format!("Updated {} extension state(s)", count))
+            }
+            "extensions_reset_defaults" => {
+                ext_cmd::extensions_reset_defaults_core(&self.app_state);
+                Ok("All extensions reset to default (all disabled)".to_string())
             }
 
             _ => Err(format!("Unknown tool: {}", name)),

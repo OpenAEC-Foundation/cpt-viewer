@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 
 /// Return MCP tool definitions for the tools/list endpoint.
 ///
-/// Tools zijn gegroepeerd per domein (totaal 27):
+/// Tools zijn gegroepeerd per domein (totaal 31):
 ///   - tenant (5): list_tenants, list_templates, get_brand, generate_report, get_app_state
 ///   - cpt (5): cpt_open, cpt_close, cpt_list, cpt_detect_layers, cpt_save_as
 ///   - project (5): project_save_ifcgis, project_open_ifcgis,
@@ -12,6 +12,8 @@ use serde_json::{json, Value};
 ///     bro_fetch_bore, bro_fetch_object_metadata
 ///   - ifc (3): ifc_generate, ifc_list_generated, ifc_read_generated
 ///   - report (2): report_preview, report_generate
+///   - extensions (4): extensions_list, extension_set,
+///     extensions_set_bulk, extensions_reset_defaults
 pub fn tool_definitions() -> Vec<Value> {
     let mut tools = Vec::new();
     tools.extend(tenant_tools());
@@ -21,6 +23,7 @@ pub fn tool_definitions() -> Vec<Value> {
     tools.extend(bro_tools());
     tools.extend(ifc_tools());
     tools.extend(report_tools());
+    tools.extend(extension_tools());
     tools
 }
 
@@ -358,6 +361,48 @@ fn ifc_tools() -> Vec<Value> {
                 },
                 "required": ["full_path"]
             }
+        }),
+    ]
+}
+
+fn extension_tools() -> Vec<Value> {
+    vec![
+        json!({
+            "name": "extensions_list",
+            "description": "Lijst alle bekende app-extensies (tekening, offertes, calc-modules) met hun huidige enabled/disabled status. Onbekende custom-IDs die via extension_set zijn ingesteld worden ook gerapporteerd met known=false. NB: deze state is op dit moment MCP-lokaal — sync met de GUI-preferences.json is een vervolg-feature.",
+            "inputSchema": { "type": "object", "properties": {}, "required": [] }
+        }),
+        json!({
+            "name": "extension_set",
+            "description": "Zet de enabled-state van één extension. Bekende IDs: 'tekening', 'offertes', 'calc.pile-bearing-capacity', 'calc.spread-foundation-drained', 'calc.spread-foundation-undrained', 'calc.laterally-loaded-pile', 'calc.sheet-pile-wall', 'calc.ground-anchor'. Custom IDs zijn toegestaan.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "ExtensionId (string)" },
+                    "enabled": { "type": "boolean" }
+                },
+                "required": ["id", "enabled"]
+            }
+        }),
+        json!({
+            "name": "extensions_set_bulk",
+            "description": "Zet meerdere extension-states tegelijk via een map { id: enabled }. Handig om bv. de GUI-state in één call te kopiëren naar de MCP-state.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "payload": {
+                        "type": "object",
+                        "description": "Map met ExtensionId-strings als keys en booleans als values",
+                        "additionalProperties": { "type": "boolean" }
+                    }
+                },
+                "required": ["payload"]
+            }
+        }),
+        json!({
+            "name": "extensions_reset_defaults",
+            "description": "Reset alle extension-states naar de default (alles UIT — zelfde gedrag als een fresh-install GUI). Onbekende custom-IDs worden verwijderd.",
+            "inputSchema": { "type": "object", "properties": {}, "required": [] }
         }),
     ]
 }
