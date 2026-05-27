@@ -8,6 +8,8 @@ import {
   tekeningStateFromIfcgis,
   titleBlockFromIfcgis,
 } from "./tekeningState";
+import { useCalculationsStore } from "../calc/framework/store";
+import { fromIfcxArray } from "../calc/framework/persistence";
 
 // ─── Document model ──────────────────────────────────────────────
 //
@@ -1014,6 +1016,9 @@ export async function openProjectIfcgis(path: string): Promise<void> {
     crs?: { epsg: number; name?: string };
     tekening?: unknown;
     title_block?: unknown;
+    /** ifcgis-0.4: berekeningen die bij dit project horen. Snake_case
+     *  IFCX-vorm — `fromIfcxArray` zet ze om naar `CalculationInstance`. */
+    calculations?: unknown[];
   };
   const result = await invoke<IfcgisFile>("open_project_ifcgis_full", { path });
   const projectMeta: ProjectMeta = {
@@ -1058,6 +1063,14 @@ export async function openProjectIfcgis(path: string): Promise<void> {
   if (createdDoc) {
     schedulePdfPreview(createdDoc);
     scheduleIfcGenerate(createdDoc);
+    // ifcgis-0.4: berekeningen herstellen in de calculations-store
+    // zodat de Berekeningen-tab ze ziet zodra de gebruiker hem opent.
+    // `fromIfcxArray` is tolerant — onbekende velden worden genegeerd
+    // en een ontbrekend `calculations`-veld levert simpelweg [] op.
+    if (result.calculations && Array.isArray(result.calculations)) {
+      const docId: string = (createdDoc as ProjectDocument).id;
+      useCalculationsStore.getState().loadFromIfcx(docId, fromIfcxArray(result.calculations));
+    }
   }
   // Tekening + title-block in de singleton zetten zodat
   // SonderingstekeningView ze bij mount kan herstellen.

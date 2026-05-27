@@ -20,6 +20,8 @@ import {
   getEnabledLayerIds,
 } from "../../store/tekeningState";
 import { catalogToIfcgisLayers } from "../../utils/gisLayerCatalog";
+import { useCalculationsStore } from "../../calc/framework/store";
+import { toIfcxArray } from "../../calc/framework/persistence";
 import ExtensionManagerPanel from "./ExtensionManagerPanel";
 import "./Backstage.css";
 
@@ -181,9 +183,15 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
             activeLayerIds: getEnabledLayerIds(),
           })
         : null;
+      // Berekeningen (ifcgis-0.4): alle CalculationInstance-records voor
+      // dit document, geserialiseerd naar snake_case IFCX-vorm. Rust
+      // (`#[serde(default, skip_serializing_if = "Vec::is_empty")]`)
+      // accepteert een lege array zonder klagen — bij nieuwe projecten
+      // landt er dus simpelweg geen `calculations`-veld op disk.
+      const calcs = useCalculationsStore.getState().byDoc.get(activeDoc.id) ?? [];
       const payload = {
         header: {
-          schema: "ifcgis-0.3",
+          schema: "ifcgis-0.4",
           originating_system: "Open Geotechniek Studio",
           timestamp: new Date().toISOString(),
         },
@@ -195,6 +203,7 @@ export default function Backstage({ open, onClose, onOpenSettings, onOpenFile }:
         ...(tekening ? { tekening } : {}),
         ...(titleBlock ? { title_block: titleBlock } : {}),
         ...(deliverable ? { deliverable } : {}),
+        calculations: toIfcxArray(calcs),
       };
       if (IS_TAURI && tauriDst) {
         await invoke("save_project_ifcgis_full", {
