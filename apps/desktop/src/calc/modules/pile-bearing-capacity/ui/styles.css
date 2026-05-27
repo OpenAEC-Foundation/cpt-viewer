@@ -243,27 +243,31 @@
   stroke: #2563eb;       /* info blue */
   stroke-width: 2.5;
 }
-/* dc-zone (qc;I + qc;II invloed): bold rood, direct onder paalpunt. */
+/* dc-zone (qc;I + qc;II invloed): bold donkerblauw, direct onder paalpunt.
+   Voorheen rood — nu donkerblauw per gebruikers-wens (consistentie met de
+   8D-blauw, en visueel onderscheidbaar van de rode paalpunt-lijn). */
 .pile-cpt-qc-curve--dc {
-  stroke: #dc2626;       /* danger red */
+  stroke: #1e3a8a;       /* indigo-900 */
   stroke-width: 2.5;
 }
-/* 4D-max outer: dunne rode dashed, tussen dc-bot en 4·Deq onder paalpunt.
-   Visualiseert de outer bound waar dc maximaal naar kan reiken. */
+/* 4D-max outer: dunne donkerblauwe dashed, tussen dc-bot en 4·Deq onder
+   paalpunt. Visualiseert de outer bound waar dc maximaal naar kan reiken. */
 .pile-cpt-qc-curve--4d-outer {
-  stroke: #dc2626;
+  stroke: #1e3a8a;
   stroke-width: 1;
   stroke-dasharray: 4 3;
   opacity: 0.7;
 }
 /* Clipped (running-min) qc-curve — "effectieve" qc na afsnuiten conform
-   NEN 9997-1 NB:2019 §7.6.2.3. Donkerblauwe stippellijn over de qc;II +
-   qc;III invloed-zone zodat zichtbaar is hoeveel qc er is weggesnoept. */
+   NEN 9997-1 NB:2019 §7.6.2.3. PROMINENT donkerblauwe vol-lijn over de
+   qc;II + qc;III invloed-zone zodat in één oogopslag zichtbaar is welke
+   qc-waarde werkelijk gebruikt is in de berekening (na clipping). */
 .pile-cpt-qc-curve--clipped {
-  stroke: #1e3a8a;       /* indigo-900 — donkerder dan 8D-zone-blauw */
-  stroke-width: 1.6;
-  stroke-dasharray: 5 2;
-  opacity: 0.85;
+  stroke: #0f172a;       /* slate-900 — bijna zwart-blauw, MAX contrast */
+  stroke-width: 2.8;
+  opacity: 1;
+  /* halo voor leesbaarheid bovenop andere curves */
+  paint-order: stroke;
 }
 
 /* ─── Vertikale gemiddelde qc-lijnen ───
@@ -280,11 +284,11 @@
   stroke-dasharray: 4 2;
 }
 .pile-cpt-qc-gem--dc {
-  stroke: #dc2626;
+  stroke: #1e3a8a;       /* donkerblauw — was rood */
   stroke-dasharray: 4 2;
 }
 .pile-cpt-qc-gem--dc2 {
-  stroke: #b91c1c;       /* iets donkerder rood — verschil met qc;I */
+  stroke: #1e40af;       /* iets lichter blauw — verschil met qc;I */
   stroke-dasharray: 2 2;
 }
 
@@ -303,10 +307,12 @@
   fill: rgba(37, 99, 235, 0.18);
 }
 .pile-cpt-zone-4d-max {
-  fill: rgba(220, 38, 38, 0.04);
+  /* Was rgba(220, 38, 38, 0.04) (rood) — nu donkerblauw per gebruikers-wens. */
+  fill: rgba(30, 58, 138, 0.04);
 }
 .pile-cpt-zone-dc {
-  fill: rgba(220, 38, 38, 0.08);
+  /* Was rgba(220, 38, 38, 0.08) (rood) — nu donkerblauw. */
+  fill: rgba(30, 58, 138, 0.08);
 }
 /* Dashed boundary-lijn op top/bottom van zones. */
 .pile-cpt-zone-boundary {
@@ -323,7 +329,7 @@
   opacity: 0.6;
 }
 .pile-cpt-zone-boundary--dc {
-  stroke: #b91c1c; /* donkerder rood — geeft duidelijker aan dat dít de actieve grens is */
+  stroke: #1e3a8a; /* donkerblauw — geeft duidelijker aan dat dít de actieve grens is */
   stroke-width: 1;
   opacity: 0.85;
 }
@@ -336,10 +342,10 @@
   fill: #2563EB;
 }
 .pile-cpt-zone-label--4d {
-  fill: #DC2626;
+  fill: #1e3a8a;  /* donkerblauw — was #DC2626 (rood) */
 }
 .pile-cpt-zone-label--dc {
-  fill: #b91c1c;
+  fill: #1e3a8a;  /* donkerblauw — was #b91c1c (rood) */
   font-weight: 800;
 }
 
@@ -360,8 +366,8 @@
 /* Per-zone-kleuren voor de labels — match met de vertikale gemiddelde-
    lijnen zodat lijn + label visueel bij elkaar horen. */
 .pile-qc-label--8d  { fill: #1d4ed8; }   /* iets donkerder blauw dan lijn */
-.pile-qc-label--dc  { fill: #b91c1c; }
-.pile-qc-label--dc2 { fill: #991b1b; }   /* nog iets donkerder voor qc;II */
+.pile-qc-label--dc  { fill: #1e3a8a; }   /* donkerblauw — was rood */
+.pile-qc-label--dc2 { fill: #1e40af; }   /* iets lichter blauw voor qc;II */
 
 /* ─── Plot-background cursor states (zoom/pan UX) ─── */
 .pile-cpt-bg-zoom-ready {
@@ -404,7 +410,7 @@
   stroke-dasharray: 6 3;
 }
 .pile-cpt-line-paalpunt {
-  stroke: #DC2626; /* danger red */
+  stroke: #1e3a8a; /* donkerblauw — was rood (gebruikers-wens, consistent met dc-zone) */
   stroke-width: 2;
 }
 
@@ -439,7 +445,7 @@
   pointer-events: none;
 }
 .pile-cpt-overlay-label--strong {
-  fill: #DC2626;
+  fill: #1e3a8a;  /* donkerblauw — was rood, matcht paalpunt-lijn */
   font-weight: 700;
 }
 .pile-cpt-overlay-label--poskleef {

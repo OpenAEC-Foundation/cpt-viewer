@@ -27,11 +27,12 @@ function defaultInput(ctx: ProjectContext): PileInput {
     gammaM: 1.20,
     gammaFnk: 1.00,
     negKleefBottomNap: groundNap - 8,
-    // Default: positieve kleef telt tot aan paalpunt (geen extra exclusion-
-    // zone bovenin paalpunt). Engineer kan dit omhoog zetten via de
-    // draggable lijn in VisualPanel om bv. de onderste 1·D paal-zone uit
-    // te sluiten i.v.m. punt-invloed.
-    posKleefBottomNap: pileToe,
+    // Default: pos-kleef-bovenkant valt samen met neg-kleef-ondergrens.
+    // Ondergrens van pos-kleef is altijd paalpunt (hard-coded in compute).
+    // Engineer kan de bovenkant onafhankelijk omlaag zetten via de
+    // draggable groene lijn in VisualPanel als er een zwakke laag tussen
+    // neg-kleef en pos-kleef zit.
+    posKleefTopNap: groundNap - 8,
     ksMinFactor: 0.25,
     soilProfile: buildDefaultSoilLayers(pileTop, pileToe, water),
   };

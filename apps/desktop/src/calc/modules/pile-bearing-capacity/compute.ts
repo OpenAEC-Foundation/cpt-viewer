@@ -60,16 +60,17 @@ export function computePile(input: PileInput, cpt: Cpt | null): PileResult {
     diameterMm: input.diameterMm,
     pileType,
   });
-  // Positief schachtwrijvings-traject: van negKleefBottomNap (boven) tot
-  // posKleefBottomNap (onder). Default = pileToeNap (positieve kleef geldt
-  // tot aan paalpunt). Gebruiker kan dit omhoog zetten om bv. de onderste
-  // 1·D rond de paalpunt uit te sluiten i.v.m. punt-invloed.
-  const posKleefBottomNap = input.posKleefBottomNap ?? input.pileToeNap;
+  // Positief schachtwrijvings-traject: van posKleefTopNap (boven, default
+  // = negKleefBottomNap) tot pileToeNap (onder, ALTIJD paalpunt — geen
+  // exclusion-zone bij paalpunt per gebruikers-wens). Engineer kan de
+  // bovenkant onafhankelijk omlaag zetten als er een zwakke laag tussen
+  // neg-kleef en pos-kleef zit.
+  const posKleefTopNap = input.posKleefTopNap ?? input.negKleefBottomNap;
   const shaft = computeShaftFriction(cpt, {
     pileType,
     diameterMm: input.diameterMm,
-    negKleefBottomNap: input.negKleefBottomNap,
-    pileToeNap: posKleefBottomNap,
+    negKleefBottomNap: posKleefTopNap, // = top van shaft-friction-zone
+    pileToeNap: input.pileToeNap,
   }, input.soilProfile);
 
   const fcTotSls = input.nEk + negKleef.fnkD;

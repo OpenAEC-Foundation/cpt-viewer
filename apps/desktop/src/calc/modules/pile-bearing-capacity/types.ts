@@ -43,13 +43,13 @@ export interface PileInput {
   gammaM: number;              // 1.20
   gammaFnk: number;            // 1.00
   negKleefBottomNap: number;   // -9.00
-  /** Onderkant van het POSITIEVE schachtwrijvings-traject [m NAP]. Default
-   *  = `pileToeNap` (positieve kleef telt tot aan paalpunt). Kan door de
-   *  gebruiker omhoog worden gezet om bv. de onderste 1·D bij paalpunt uit
-   *  te sluiten (punt-invloed). Optioneel veld voor IFCX-backward-compat
-   *  met v0.3-files die dit veld niet bevatten — code valt terug op
-   *  `pileToeNap` als het ontbreekt. */
-  posKleefBottomNap?: number;
+  /** Bovenkant van het POSITIEVE schachtwrijvings-traject [m NAP].
+   *  Default = `negKleefBottomNap` (pos-kleef begint waar neg-kleef
+   *  ophoudt). Engineer kan dit ONAFHANKELIJK omlaag zetten als er een
+   *  zwakke laag in een tussenstuk zit waar geen wrijving werkt.
+   *  De ONDERGRENS van pos-kleef is altijd paalpunt (`pileToeNap`).
+   *  Optioneel veld voor IFCX-backward-compat. */
+  posKleefTopNap?: number;
   soilProfile: SoilLayer[];    // user-editable
   ksMinFactor: number;         // 0.25 (Eurocode min-cap)
 }

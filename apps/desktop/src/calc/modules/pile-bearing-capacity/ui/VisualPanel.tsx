@@ -12,7 +12,7 @@ type DraggableField =
   | "pileTopNap"
   | "pileToeNap"
   | "negKleefBottomNap"
-  | "posKleefBottomNap"
+  | "posKleefTopNap"
   | "excavationNap"
   | "waterNap";
 
@@ -699,10 +699,11 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
   const yWater = bounds.napToY(input.waterNap);
   const yExcavation = bounds.napToY(input.excavationNap);
   const yNkBot = bounds.napToY(input.negKleefBottomNap);
-  // Pos-kleef ondergrens — default = paalpunt (geen extra exclusion-zone).
-  // Optional veld in PileInput voor back-compat met v0.3 IFCX-files.
-  const posKleefBottomNap = input.posKleefBottomNap ?? input.pileToeNap;
-  const yPosKleefBot = bounds.napToY(posKleefBottomNap);
+  // Pos-kleef BOVENKANT — default = neg-kleef-ondergrens (pos-kleef begint
+  // waar neg-kleef ophoudt). Optional veld in PileInput voor back-compat.
+  // Ondergrens van pos-kleef is altijd paalpunt (hard-coded in compute).
+  const posKleefTopNap = input.posKleefTopNap ?? input.negKleefBottomNap;
+  const yPosKleefTop = bounds.napToY(posKleefTopNap);
   // Zone-grenzen worden geclamped tot het zichtbare plot-bereik, zodat de
   // dashed boundary altijd op de plotrand zit als de zone gedeeltelijk buiten
   // beeld valt. Voor het label-midden gebruiken we de ECHTE NAP-waarde
@@ -764,10 +765,11 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       // Snap to nearest 0,05 m.
       newNap = Math.round(newNap * 20) / 20;
       // Voorkom no-op-updates (zelfde waarde → geen onChange-storm).
-      // posKleefBottomNap kan undefined zijn in oude IFCX-files; fall-back
-      // naar pileToeNap (default = paalpunt).
-      const current = drag.field === "posKleefBottomNap"
-        ? (input.posKleefBottomNap ?? input.pileToeNap)
+      // posKleefTopNap kan undefined zijn in oude IFCX-files; fall-back
+      // naar negKleefBottomNap (default = pos-kleef begint waar neg-kleef
+      // ophoudt).
+      const current = drag.field === "posKleefTopNap"
+        ? (input.posKleefTopNap ?? input.negKleefBottomNap)
         : input[drag.field];
       if (newNap === current) return;
       onChange({ ...input, [drag.field]: newNap });
@@ -1017,6 +1019,20 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
           >
             <path d="M0,10 L10,10 L5,0 z" fill="#16a34a" />
           </marker>
+          {/* Gradient voor pos-kleef arcering: van LINKS donker-groen (bij
+              y-as = vlak naast paal) naar RECHTS licht-groen (bij qc-curve).
+              Dit visualiseert dat de "wrijvings-capaciteit" sterker is dicht
+              bij de paal-as dan ver weg. */}
+          <linearGradient
+            id="pile-cpt-poskleef-grad"
+            x1="0"
+            y1="0"
+            x2="1"
+            y2="0"
+          >
+            <stop offset="0%" stopColor="#16a34a" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#16a34a" stopOpacity="0.06" />
+          </linearGradient>
         </defs>
         {/* ─── Plot background (ook pan-hitbox) ─── */}
         <rect
@@ -1039,6 +1055,26 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
           pointerEvents="none"
         />
       )}
+
+      {/* ─── Pos.kleef-zone (posKleefTopNap → paalpunt) — groen POLYGON ───
+              Met linear gradient: LINKS donker-groen (bij y-as, dicht bij
+              paal-as) naar RECHTS licht-groen (bij qc-curve). Polygon-stijl
+              identiek aan 8D-arcering — loopt langs de y-as en de qc-curve. */}
+      {posKleefTopNap > input.pileToeNap && (() => {
+        const seg = qcSegmentPoints(posKleefTopNap, input.pileToeNap);
+        if (!seg) return null;
+        return (
+          <polygon
+            points={[
+              `${MARGIN.left.toFixed(1)},${yPosKleefTop.toFixed(1)}`,
+              seg,
+              `${MARGIN.left.toFixed(1)},${yPileToe.toFixed(1)}`,
+            ].join(" ")}
+            fill="url(#pile-cpt-poskleef-grad)"
+            pointerEvents="none"
+          />
+        );
+      })()}
 
       {/* ─── 8D zone above paalpunt — light blue POLYGON ───
               Het polygon loopt langs de y-as (links) → langs de qc-curve
@@ -1414,36 +1450,34 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         Neg.kleef-grens {formatNap(input.negKleefBottomNap)}
       </text>
 
-      {/* ─── Pos.kleef-ondergrens ─── dashed groen (alleen tonen als
-              afwijkend van paalpunt, anders overlap met paalpunt-lijn). */}
-      {Math.abs(posKleefBottomNap - input.pileToeNap) > 0.001 && (
-        <>
-          <line
-            x1={MARGIN.left}
-            x2={MARGIN.left + PLOT_W}
-            y1={yPosKleefBot}
-            y2={yPosKleefBot}
-            className={`pile-cpt-line-poskleef${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "posKleefBottomNap" ? " pile-niveau-dragging" : ""}`}
-            pointerEvents="none"
-          />
-          <text
-            x={MARGIN.left + 4}
-            y={yPosKleefBot - 4}
-            className="pile-cpt-overlay-label pile-cpt-overlay-label--poskleef"
-            pointerEvents="none"
-          >
-            Pos.kleef-bot {formatNap(posKleefBottomNap)}
-          </text>
-        </>
-      )}
+      {/* ─── Pos.kleef-bovenkant ─── dashed groen, altijd zichtbaar (ook
+              als gelijk aan neg-kleef-bot — anders weet de gebruiker niet
+              dat hij hem kan slepen). Ondergrens van pos-kleef is altijd
+              paalpunt en wordt visueel gevormd door de paalpunt-lijn. */}
+      <line
+        x1={MARGIN.left}
+        x2={MARGIN.left + PLOT_W}
+        y1={yPosKleefTop}
+        y2={yPosKleefTop}
+        className={`pile-cpt-line-poskleef${draggable ? " pile-niveau-draggable" : ""}${drag?.field === "posKleefTopNap" ? " pile-niveau-dragging" : ""}`}
+        pointerEvents="none"
+      />
+      <text
+        x={MARGIN.left + 4}
+        y={yPosKleefTop - 4}
+        className="pile-cpt-overlay-label pile-cpt-overlay-label--poskleef"
+        pointerEvents="none"
+      >
+        Pos.kleef-top {formatNap(posKleefTopNap)}
+      </text>
       {draggable && (
         <line
           x1={MARGIN.left}
           x2={MARGIN.left + PLOT_W}
-          y1={yPosKleefBot}
-          y2={yPosKleefBot}
+          y1={yPosKleefTop}
+          y2={yPosKleefTop}
           className="pile-niveau-hitbox"
-          onMouseDown={startDrag("posKleefBottomNap", posKleefBottomNap)}
+          onMouseDown={startDrag("posKleefTopNap", posKleefTopNap)}
         />
       )}
 

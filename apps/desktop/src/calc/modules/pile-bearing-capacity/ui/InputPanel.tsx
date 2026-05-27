@@ -69,14 +69,16 @@ export function InputPanel({ input, onChange }: Props) {
 
       <fieldset>
         <legend>Positieve kleef</legend>
-        <label>Onderkant traject [m NAP]
-          {/* Default = paalpunt. Engineer kan dit omhoog zetten om bv. de
-              onderste 1·D rond paalpunt uit te sluiten (punt-invloed). */}
+        <label>Bovenkant traject [m NAP]
+          {/* Default = neg-kleef-ondergrens (pos-kleef begint waar neg-kleef
+              ophoudt). Engineer kan dit ONAFHANKELIJK omlaag zetten als er
+              een zwakke laag in een tussenstuk zit. Ondergrens van pos-kleef
+              is altijd paalpunt (vast). */}
           <input
             type="number"
             step="0.01"
-            value={input.posKleefBottomNap ?? input.pileToeNap}
-            onChange={(e) => set("posKleefBottomNap", +e.target.value)}
+            value={input.posKleefTopNap ?? input.negKleefBottomNap}
+            onChange={(e) => set("posKleefTopNap", +e.target.value)}
           />
         </label>
       </fieldset>
