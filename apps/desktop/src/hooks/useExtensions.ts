@@ -14,11 +14,25 @@
 import { useEffect, useState } from "react";
 import { getSetting, setSetting } from "../store";
 
-export type ExtensionId = "tekening" | "offertes";
+export type ExtensionId =
+  | "tekening"
+  | "offertes"
+  | "calc.pile-bearing-capacity"
+  | "calc.spread-foundation-drained"
+  | "calc.spread-foundation-undrained"
+  | "calc.laterally-loaded-pile"
+  | "calc.sheet-pile-wall"
+  | "calc.ground-anchor";
 
 const SETTING_KEYS: Record<ExtensionId, string> = {
   tekening: "ext.tekening.enabled",
   offertes: "ext.offertes.enabled",
+  "calc.pile-bearing-capacity": "ext.calc.pile-bearing-capacity.enabled",
+  "calc.spread-foundation-drained": "ext.calc.spread-foundation-drained.enabled",
+  "calc.spread-foundation-undrained": "ext.calc.spread-foundation-undrained.enabled",
+  "calc.laterally-loaded-pile": "ext.calc.laterally-loaded-pile.enabled",
+  "calc.sheet-pile-wall": "ext.calc.sheet-pile-wall.enabled",
+  "calc.ground-anchor": "ext.calc.ground-anchor.enabled",
 };
 
 /** Default state: alles UIT (gebruiker-verzoek). Rapport is GEEN
@@ -27,6 +41,12 @@ const SETTING_KEYS: Record<ExtensionId, string> = {
 const DEFAULTS: Record<ExtensionId, boolean> = {
   tekening: false,
   offertes: false,
+  "calc.pile-bearing-capacity": false,
+  "calc.spread-foundation-drained": false,
+  "calc.spread-foundation-undrained": false,
+  "calc.laterally-loaded-pile": false,
+  "calc.sheet-pile-wall": false,
+  "calc.ground-anchor": false,
 };
 
 const EVENT_NAME = "ogs:extensions-changed";
@@ -67,7 +87,16 @@ export function useAllExtensions(): Record<ExtensionId, boolean> {
 
   useEffect(() => {
     let cancelled = false;
-    const ids: ExtensionId[] = ["tekening", "offertes"];
+    const ids: ExtensionId[] = [
+      "tekening",
+      "offertes",
+      "calc.pile-bearing-capacity",
+      "calc.spread-foundation-drained",
+      "calc.spread-foundation-undrained",
+      "calc.laterally-loaded-pile",
+      "calc.sheet-pile-wall",
+      "calc.ground-anchor",
+    ];
     Promise.all(
       ids.map(async (id) => [id, await getSetting(SETTING_KEYS[id], DEFAULTS[id])] as const),
     ).then((entries) => {
