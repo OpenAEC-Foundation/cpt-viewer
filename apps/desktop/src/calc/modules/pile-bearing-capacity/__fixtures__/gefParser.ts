@@ -19,6 +19,8 @@ interface ParsedHeader {
   groundLevelNap: number;
   depthColIdx: number;
   qcColIdx: number;
+  fsColIdx: number;  // -1 als niet aanwezig
+  rfColIdx: number;  // -1 als niet aanwezig (wrijvingsgetal %)
   voidValues: Record<number, number>; // 1-based kolom-idx → void waarde
   separator: string;
 }
@@ -27,6 +29,8 @@ function parseHeader(headerLines: string[]): ParsedHeader {
   let groundLevelNap = 0;
   let depthColIdx = -1;
   let qcColIdx = -1;
+  let fsColIdx = -1;
+  let rfColIdx = -1;
   const voidValues: Record<number, number> = {};
   let separator = " "; // default — whitespace
 
@@ -40,8 +44,10 @@ function parseHeader(headerLines: string[]): ParsedHeader {
         if (Number.isFinite(n)) groundLevelNap = n;
       }
     } else if (line.startsWith("#COLUMNINFO=")) {
-      // "#COLUMNINFO= 1, m, sondeerlengte, 1"  → col 1 = depth
-      // "#COLUMNINFO= 2, MPa, Puntdruk, 2"      → col 2 = qc
+      // "#COLUMNINFO= 1, m, sondeerlengte, 1"        → col 1 = depth
+      // "#COLUMNINFO= 2, MPa, Puntdruk, 2"            → col 2 = qc
+      // "#COLUMNINFO= 3, Mpa, Lokale wrijving, 3"     → col 3 = fs
+      // "#COLUMNINFO= 8, %, Wrijvingsgetal, 4"        → col 8 = rf
       const parts = line.slice(12).split(",").map((s) => s.trim());
       if (parts.length >= 4) {
         const colIdx = Number(parts[0]);
@@ -50,6 +56,10 @@ function parseHeader(headerLines: string[]): ParsedHeader {
           depthColIdx = colIdx;
         } else if (label.includes("puntdruk") || label === "qc") {
           qcColIdx = colIdx;
+        } else if (label.includes("lokale wrijving") || label === "fs") {
+          fsColIdx = colIdx;
+        } else if (label.includes("wrijvingsgetal") || label === "rf") {
+          rfColIdx = colIdx;
         }
       }
     } else if (line.startsWith("#COLUMNVOID=")) {
@@ -72,7 +82,7 @@ function parseHeader(headerLines: string[]): ParsedHeader {
       `GEF parse: kon depth/qc kolommen niet vinden (depth=${depthColIdx}, qc=${qcColIdx})`,
     );
   }
-  return { groundLevelNap, depthColIdx, qcColIdx, voidValues, separator };
+  return { groundLevelNap, depthColIdx, qcColIdx, fsColIdx, rfColIdx, voidValues, separator };
 }
 
 export function parseGef(content: string, idHint: string): Cpt {
@@ -100,13 +110,28 @@ export function parseGef(content: string, idHint: string): Cpt {
       const qcVoid = header.voidValues[header.qcColIdx];
       if (depthVoid !== undefined && depth === depthVoid) return null;
       if (qcVoid !== undefined && qc === qcVoid) return null;
+      // Optional fs / rf — return null als void.
+      let fs: number | undefined;
+      let rf: number | undefined;
+      if (header.fsColIdx > 0) {
+        const v = Number(cols[header.fsColIdx - 1]);
+        const voidV = header.voidValues[header.fsColIdx];
+        if (Number.isFinite(v) && v !== voidV) fs = v < 0 ? 0 : v;
+      }
+      if (header.rfColIdx > 0) {
+        const v = Number(cols[header.rfColIdx - 1]);
+        const voidV = header.voidValues[header.rfColIdx];
+        if (Number.isFinite(v) && v !== voidV) rf = v < 0 ? 0 : v;
+      }
       return {
         depth,
         depth_nap: header.groundLevelNap - depth,
         qc: qc < 0 ? 0 : qc, // clip negatieve qc (meetfouten) op 0
+        ...(fs !== undefined ? { fs } : {}),
+        ...(rf !== undefined ? { rf } : {}),
       };
     })
-    .filter((p): p is { depth: number; depth_nap: number; qc: number } => p !== null);
+    .filter((p): p is { depth: number; depth_nap: number; qc: number; fs?: number; rf?: number } => p !== null);
 
   return {
     id: idHint,
