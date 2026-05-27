@@ -391,19 +391,73 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
     () => buildBounds(cpt.points, fullExtent, zoomDomain),
     [cpt.points, fullExtent, zoomDomain],
   );
-  const qcPath = useMemo(() => {
-    // Build a polyline from the qc curve. Downsample to ~500 pts.
-    const points = cpt.points.filter(
+  // Volledige qc-puntenlijst (gefilterd + gedownsampled) — basis voor alle
+  // qc-curve-segmenten. We splitsen later op NAP-range zodat we per zone
+  // (8D / dc / 4D-max / overig) een andere kleur kunnen geven, conform de
+  // norm-visualisatie in ExternPakket + referentienorm.
+  const qcPoints = useMemo(() => {
+    const filtered = cpt.points.filter(
       (p) => typeof p.qc === "number" && Number.isFinite(p.qc),
     );
-    const sample = downsample(points, 500);
-    return sample
-      .map((p) => {
-        const nap = p.depth_nap ?? -p.depth;
-        return `${bounds.qcToX(p.qc as number).toFixed(1)},${bounds.napToY(nap).toFixed(1)}`;
-      })
+    const sample = downsample(filtered, 500);
+    return sample.map((p) => ({
+      nap: p.depth_nap ?? -p.depth,
+      qc: p.qc as number,
+    }));
+  }, [cpt.points]);
+
+  // Bouw een polyline-points-string voor punten waarvan NAP in [napBot, napTop]
+  // valt. We snijden ook op de zone-grenzen via lineaire interpolatie zodat
+  // de gekleurde segmenten exact tot aan de paalpunt/zone-grens lopen
+  // (anders zou de bold-segment net binnen of buiten de zone eindigen).
+  const qcSegmentPoints = useCallback(
+    (napTop: number, napBot: number): string => {
+      // napTop > napBot (NAP is opwaarts; top is hoger). We willen alle
+      // punten waarvan nap ∈ [napBot, napTop], inclusief geïnterpoleerde
+      // grenspunten op napTop en napBot.
+      const lo = Math.min(napTop, napBot);
+      const hi = Math.max(napTop, napBot);
+      const inside: { nap: number; qc: number }[] = [];
+      for (let i = 0; i < qcPoints.length; i++) {
+        const p = qcPoints[i];
+        if (p.nap >= lo && p.nap <= hi) inside.push(p);
+        // Detecteer kruisingen met de boven- en ondergrens en voeg
+        // geïnterpoleerde punten toe zodat het segment netjes tot aan
+        // de grens loopt (anders ontstaat er een gat op de grens).
+        if (i > 0) {
+          const prev = qcPoints[i - 1];
+          for (const bound of [lo, hi]) {
+            const a = prev.nap - bound;
+            const b = p.nap - bound;
+            if (a === 0 || b === 0) continue; // al meegenomen via inside
+            if ((a < 0 && b > 0) || (a > 0 && b < 0)) {
+              const t = a / (a - b);
+              const qcAtBound = prev.qc + t * (p.qc - prev.qc);
+              inside.push({ nap: bound, qc: qcAtBound });
+            }
+          }
+        }
+      }
+      // Sorteer op NAP aflopend (top → bot) zodat de polyline-volgorde
+      // overeenkomt met de visuele top-naar-onder volgorde.
+      inside.sort((a, b) => b.nap - a.nap);
+      if (inside.length < 2) return "";
+      return inside
+        .map((p) => `${bounds.qcToX(p.qc).toFixed(1)},${bounds.napToY(p.nap).toFixed(1)}`)
+        .join(" ");
+    },
+    [qcPoints, bounds],
+  );
+
+  // Basis-curve (alle punten, dunne grijze lijn) — onveranderd t.o.v.
+  // origineel maar nu zonder zone-kleuring (die komt eroverheen als
+  // afzonderlijke gekleurde segmenten).
+  const qcPathFull = useMemo(() => {
+    if (qcPoints.length < 2) return "";
+    return qcPoints
+      .map((p) => `${bounds.qcToX(p.qc).toFixed(1)},${bounds.napToY(p.nap).toFixed(1)}`)
       .join(" ");
-  }, [cpt.points, bounds]);
+  }, [qcPoints, bounds]);
 
   const depthTicks = useMemo(
     () => buildDepthTicks(bounds.napTop, bounds.napBot),
@@ -423,6 +477,26 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
   const zoneAboveTop = input.pileToeNap + zone8DM;
   const zone4DMaxBot = input.pileToeNap - zone4DMaxM;
   const zoneDcBot = input.pileToeNap - zoneDcM;
+
+  // Gekleurde qc-curve-segmenten per zone. Berekend in useMemo zodat ze
+  // alleen herberekenen wanneer de relevante NAP-grens of qc-data wijzigt.
+  // Volgorde van renderen (grijs → 4D-outer dashed → dc bold → 8D bold)
+  // bepaalt overschilder-priorit; bold-segmenten komen bovenop grijs.
+  const qcSeg8D = useMemo(
+    () => qcSegmentPoints(zoneAboveTop, input.pileToeNap),
+    [qcSegmentPoints, zoneAboveTop, input.pileToeNap],
+  );
+  const qcSegDc = useMemo(
+    () => qcSegmentPoints(input.pileToeNap, zoneDcBot),
+    [qcSegmentPoints, input.pileToeNap, zoneDcBot],
+  );
+  // 4D-outer: alleen het deel BUITEN dc (van dc-bot tot 4D-max-bot)
+  // wordt als dunne dashed-rode lijn getekend, anders zou de bold dc-lijn
+  // gewoon overschreven worden door deze faint outer.
+  const qcSeg4DOuter = useMemo(
+    () => qcSegmentPoints(zoneDcBot, zone4DMaxBot),
+    [qcSegmentPoints, zoneDcBot, zone4DMaxBot],
+  );
 
   // Convert NAP-y values up-front for readability.
   const yPileTop = bounds.napToY(input.pileTopNap);
@@ -946,11 +1020,45 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         m NAP
       </text>
 
-      {/* ─── qc curve ─── */}
-      {qcPath && (
+      {/* ─── qc curve ───
+          Conform ExternPakket + referentienorm-norm-visualisatie: de qc-polyline is
+          opgesplitst in gekleurde segmenten per invloed-zone. De basis is
+          dun grijs (overal), en de zone-segmenten worden er bovenop
+          getekend in zone-kleur.
+          Rendering volgorde (achter → voor):
+            1. grijze basis-curve (alle punten)
+            2. 4D-max outer (dashed dun rood, dc-bot → 4D-bot)
+            3. dc-zone (bold rood, paalpunt → dc-bot)
+            4. 8D-zone (bold blauw, paalpunt → 8D-top)
+          */}
+      {qcPathFull && (
         <polyline
-          points={qcPath}
-          className="pile-cpt-qc-curve"
+          points={qcPathFull}
+          className="pile-cpt-qc-curve pile-cpt-qc-curve--base"
+          fill="none"
+          pointerEvents="none"
+        />
+      )}
+      {qcSeg4DOuter && (
+        <polyline
+          points={qcSeg4DOuter}
+          className="pile-cpt-qc-curve pile-cpt-qc-curve--4d-outer"
+          fill="none"
+          pointerEvents="none"
+        />
+      )}
+      {qcSegDc && (
+        <polyline
+          points={qcSegDc}
+          className="pile-cpt-qc-curve pile-cpt-qc-curve--dc"
+          fill="none"
+          pointerEvents="none"
+        />
+      )}
+      {qcSeg8D && (
+        <polyline
+          points={qcSeg8D}
+          className="pile-cpt-qc-curve pile-cpt-qc-curve--8d"
           fill="none"
           pointerEvents="none"
         />
@@ -1114,33 +1222,66 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         plotBottom={MARGIN.top + PLOT_H}
       />
 
-      {/* ─── In-chart floating qc;I/II/III labels per ExternPakket-stijl ─── */}
-      {/*    Geplaatst bij de qc-curve op de hoogte van hun invloed-zone, met */}
-      {/*    witte halo via paint-order:stroke voor leesbaarheid op bands.   */}
+      {/* ─── In-chart gemiddelde qc-waarden per invloed-zone ───
+          Voor elke zone tekenen we een vertikale dashed lijn op
+          x = xScale(gemiddelde) over de zone-hoogte, plus een tekst-label
+          met halo voor leesbaarheid. Dit is hoe ExternPakket + referentienorm de
+          gemiddelde qc-waarde "rechtuit" tegenover de werkelijke curve
+          visualiseren — zie verification-files/Constructieberekeningen/
+          Funderingspaal/984.pdf.
+       */}
       {zone8DVisible && (
-        <text
-          x={bounds.qcToX(result.base.qcIIIGemMpa) + 6}
-          y={bounds.napToY((input.pileToeNap + zoneAboveTopClamped) / 2)}
-          className="pile-qc-label"
-          pointerEvents="none"
-        >
-          qc;III;gem = {result.base.qcIIIGemMpa.toFixed(2)} MPa
-        </text>
+        <>
+          <line
+            x1={bounds.qcToX(result.base.qcIIIGemMpa)}
+            x2={bounds.qcToX(result.base.qcIIIGemMpa)}
+            y1={yZoneAboveTop}
+            y2={yPileToe}
+            className="pile-cpt-qc-gem pile-cpt-qc-gem--8d"
+            pointerEvents="none"
+          />
+          <text
+            x={bounds.qcToX(result.base.qcIIIGemMpa) + 6}
+            y={bounds.napToY((input.pileToeNap + zoneAboveTopClamped) / 2)}
+            className="pile-qc-label pile-qc-label--8d"
+            pointerEvents="none"
+          >
+            qc;III;gem = {result.base.qcIIIGemMpa.toFixed(2)} MPa
+          </text>
+        </>
       )}
       {zoneDcVisible && (
         <>
+          {/* qc;I — gemiddelde van paalpunt tot dc-bot */}
+          <line
+            x1={bounds.qcToX(result.base.qcIGemMpa)}
+            x2={bounds.qcToX(result.base.qcIGemMpa)}
+            y1={yPileToe}
+            y2={yZoneDcBot}
+            className="pile-cpt-qc-gem pile-cpt-qc-gem--dc"
+            pointerEvents="none"
+          />
           <text
             x={bounds.qcToX(result.base.qcIGemMpa) + 6}
             y={bounds.napToY(input.pileToeNap - zoneDcM / 2)}
-            className="pile-qc-label"
+            className="pile-qc-label pile-qc-label--dc"
             pointerEvents="none"
           >
             qc;I;gem = {result.base.qcIGemMpa.toFixed(2)} MPa
           </text>
+          {/* qc;II — zelfde verticale range als qc;I, eigen kleur/dasharray */}
+          <line
+            x1={bounds.qcToX(result.base.qcIIGemMpa)}
+            x2={bounds.qcToX(result.base.qcIIGemMpa)}
+            y1={yPileToe}
+            y2={yZoneDcBot}
+            className="pile-cpt-qc-gem pile-cpt-qc-gem--dc2"
+            pointerEvents="none"
+          />
           <text
             x={bounds.qcToX(result.base.qcIIGemMpa) + 6}
             y={bounds.napToY(input.pileToeNap - zoneDcM / 2) + 14}
-            className="pile-qc-label"
+            className="pile-qc-label pile-qc-label--dc2"
             pointerEvents="none"
           >
             qc;II;gem = {result.base.qcIIGemMpa.toFixed(2)} MPa

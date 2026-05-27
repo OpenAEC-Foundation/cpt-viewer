@@ -165,27 +165,78 @@
   font-weight: 600;
 }
 
-/* ─── qc curve ─── */
+/* ─── qc curve ───
+   Multi-segment rendering conform ExternPakket + referentienorm-norm-visualisatie:
+   de qc-curve is opgedeeld in een dunne grijze basis (overal) + gekleurde
+   bold segmenten voor de 8D-, dc- en 4D-max-zones rondom de paalpunt.
+*/
 .pile-cpt-qc-curve {
-  stroke: var(--amber, #d97706);
-  stroke-width: 1.4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  fill: none;
+}
+/* Basis: dunne grijze lijn over de hele sondering. */
+.pile-cpt-qc-curve--base {
+  stroke: #9ca3af;       /* slate-400 */
+  stroke-width: 1;
+}
+/* 8D-zone (qc;III invloed): bold blauw, boven paalpunt. */
+.pile-cpt-qc-curve--8d {
+  stroke: #2563eb;       /* info blue */
+  stroke-width: 2.5;
+}
+/* dc-zone (qc;I + qc;II invloed): bold rood, direct onder paalpunt. */
+.pile-cpt-qc-curve--dc {
+  stroke: #dc2626;       /* danger red */
+  stroke-width: 2.5;
+}
+/* 4D-max outer: dunne rode dashed, tussen dc-bot en 4·Deq onder paalpunt.
+   Visualiseert de outer bound waar dc maximaal naar kan reiken. */
+.pile-cpt-qc-curve--4d-outer {
+  stroke: #dc2626;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.7;
 }
 
-/* ─── Zones (background bands) ─── */
+/* ─── Vertikale gemiddelde qc-lijnen ───
+   Voor elke invloed-zone een vertikale dashed lijn op x=xScale(gemiddelde)
+   over de zone-hoogte. Visualiseert de "rechtuit-gemiddelde-waarde"
+   tegenover de werkelijke curve, conform ExternPakket + referentienorm.
+*/
+.pile-cpt-qc-gem {
+  stroke-width: 1.6;
+  fill: none;
+}
+.pile-cpt-qc-gem--8d {
+  stroke: #2563eb;
+  stroke-dasharray: 4 2;
+}
+.pile-cpt-qc-gem--dc {
+  stroke: #dc2626;
+  stroke-dasharray: 4 2;
+}
+.pile-cpt-qc-gem--dc2 {
+  stroke: #b91c1c;       /* iets donkerder rood — verschil met qc;I */
+  stroke-dasharray: 2 2;
+}
+
+/* ─── Zones (background bands) ───
+   Verlaagd tot zeer subtiele context-tint (opacity ~0.05–0.08) zodat de
+   gekleurde qc-curve-segmenten de hoofdvisualisatie blijven. De zones
+   geven nog wel een vage achtergrond-hint van waar 8D/dc/4D zich bevinden.
+*/
 .pile-cpt-zone-negkleef {
   fill: rgba(245, 158, 11, 0.10);  /* warm gold, subtle */
 }
 .pile-cpt-zone-8d {
-  fill: rgba(37, 99, 235, 0.20);   /* info blue — bumped van .08 zodat band duidelijk zichtbaar is */
+  fill: rgba(37, 99, 235, 0.06);   /* info blue — heel faint */
 }
-/* Outer 4D-max band: heel licht/transparant — alleen als visuele referentie
-   waar dc MAX kan landen. */
 .pile-cpt-zone-4d-max {
-  fill: rgba(220, 38, 38, 0.08);
+  fill: rgba(220, 38, 38, 0.04);
 }
-/* Inner dc-band (actueel gekozen kritische diepte): lichtrood, opacity hoger. */
 .pile-cpt-zone-dc {
-  fill: rgba(220, 38, 38, 0.22);
+  fill: rgba(220, 38, 38, 0.08);
 }
 /* Dashed boundary-lijn op top/bottom van zones. */
 .pile-cpt-zone-boundary {
@@ -224,17 +275,23 @@
 
 /* ─── In-chart floating qc;I/II/III labels (per ExternPakket-stijl) ─── */
 /* paint-order: stroke + witte stroke geven een halo om de tekst zodat de
-   labels leesbaar zijn bovenop gekleurde zone-bands. */
+   labels leesbaar zijn bovenop gekleurde zone-bands en de qc-segmenten.
+*/
 .pile-qc-label {
-  font: 600 11px var(--font-code, "JetBrains Mono"), monospace;
+  font: 700 11px var(--font-code, "JetBrains Mono"), monospace;
   fill: #1f2937;
   pointer-events: none;
   paint-order: stroke;
-  stroke: rgba(255, 255, 255, 0.85);
+  stroke: rgba(255, 255, 255, 0.92);
   stroke-width: 3;
   stroke-linecap: butt;
   stroke-linejoin: round;
 }
+/* Per-zone-kleuren voor de labels — match met de vertikale gemiddelde-
+   lijnen zodat lijn + label visueel bij elkaar horen. */
+.pile-qc-label--8d  { fill: #1d4ed8; }   /* iets donkerder blauw dan lijn */
+.pile-qc-label--dc  { fill: #b91c1c; }
+.pile-qc-label--dc2 { fill: #991b1b; }   /* nog iets donkerder voor qc;II */
 
 /* ─── Plot-background cursor states (zoom/pan UX) ─── */
 .pile-cpt-bg-zoom-ready {
