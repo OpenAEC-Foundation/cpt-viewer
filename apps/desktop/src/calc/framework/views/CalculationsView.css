@@ -138,3 +138,107 @@
   font-size: 14px;
 }
 .calc-tree-actions button:hover { color: var(--theme-text, #36363e); }
+
+.calc-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.calc-modal {
+  background: var(--theme-bg, #fff);
+  border-radius: 8px;
+  width: 540px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+.calc-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--theme-border, #e7e5e4);
+}
+.calc-modal-header h2 { margin: 0; font: 700 1.1rem "Inter", sans-serif; }
+.calc-modal-close {
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  color: var(--theme-text-secondary, #71717a);
+}
+.calc-modal-body {
+  padding: 16px 20px;
+  overflow: auto;
+}
+.calc-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+.calc-modal-field span {
+  font: 600 0.78rem "Inter", sans-serif;
+}
+.calc-modal-field input {
+  padding: 6px 8px;
+  border: 1px solid var(--theme-border, #cbd5e1);
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+.calc-modal-category {
+  margin-bottom: 12px;
+}
+.calc-modal-category-title {
+  font: 600 0.72rem "Inter", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--theme-text-secondary, #71717a);
+  margin-bottom: 4px;
+}
+.calc-modal-module {
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.calc-modal-module:hover {
+  background: var(--theme-bg-lighter, #f5f5f4);
+}
+.calc-modal-module-text small {
+  display: block;
+  font: 400 0.72rem var(--font-code, "JetBrains Mono"), monospace;
+  color: var(--theme-text-secondary, #71717a);
+}
+.calc-modal-soon { color: var(--amber, #d97706); }
+.calc-modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--theme-border, #e7e5e4);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.calc-modal-footer button {
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--theme-border, #cbd5e1);
+  background: var(--theme-bg, #fff);
+  cursor: pointer;
+  font: 600 0.85rem "Inter", sans-serif;
+}
+.calc-modal-footer button.primary {
+  background: var(--amber, #d97706);
+  color: white;
+  border-color: var(--amber, #d97706);
+}
+.calc-modal-footer button.primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
