@@ -9,13 +9,14 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { jsPDF } from "jspdf";
 
 import { parseGef } from "./__fixtures__/gefParser";
 import { detectSoilLayers } from "./__fixtures__/soilDetector";
 import { computePile } from "./compute";
 import { computeMultiCptSummary, type PerCptCase } from "./parts/multi-cpt-summary";
-import type { PileInput } from "./types";
+import { generatePileReport, type PileReportSondering } from "./parts/pile-report-pdf";
+import { getPileType } from "./catalog";
+import type { PileInput, PileResult } from "./types";
 
 // ─── Project-input uit 984.pdf, blad 1 ───────────────────────────
 const PROJECT = {
@@ -91,6 +92,8 @@ interface ActualCase {
   fnkD: number;
   rcCal: number;
   soilLayerCount: number;
+  input: PileInput;
+  result: PileResult;
 }
 
 const ACTUAL: ActualCase[] = [];
@@ -146,6 +149,8 @@ beforeAll(() => {
       fnkD: result.negKleef.fnkD,
       rcCal: result.base.rbCalMax + result.shaft.rsCalMax,
       soilLayerCount: soilProfile.length,
+      input,
+      result,
     });
   }
 
@@ -192,8 +197,57 @@ describe("verification — ExternPakket 984.pdf COMPLETE BEREKENING", () => {
 });
 
 // ─── PDF-uitdraai genereren ──────────────────────────────────────
-describe("PDF-uitdraai voor visuele controle", () => {
-  it("genereert __output__/984-verification.pdf", () => {
+describe("PDF-uitdraai — ExternPakket-stijl per-sondering rapport", () => {
+  it("genereert __output__/984-rapport.pdf via generatePileReport()", () => {
+    const outDir = resolve(__dirname, "__output__");
+    mkdirSync(outDir, { recursive: true });
+    const outPath = resolve(outDir, "984-rapport.pdf");
+
+    // Bouw de PileReportSondering[] uit ACTUAL — alle CPTs + hun
+    // berekenings-resultaten.
+    const sonderingen: PileReportSondering[] = ACTUAL.map((a) => ({
+      name: a.name,
+      input: a.input,
+      result: a.result,
+    }));
+    const pileType = getPileType(PROJECT.pileTypeId)!;
+
+    const pdfBytes = generatePileReport({
+      project: {
+        number: PROJECT.number,
+        description: PROJECT.description,
+        norm: PROJECT.norm,
+        date: "26-05-2026",
+        author: "3BM Bouwtechniek",
+      },
+      sonderingen,
+      summary: MY_SUMMARY!,
+      pileTypeName: PROJECT.pileType,
+      factors: { alphaP: pileType.alphaP, alphaS: pileType.alphaS, alphaT: pileType.alphaT },
+    });
+
+    writeFileSync(outPath, Buffer.from(pdfBytes));
+    // eslint-disable-next-line no-console
+    console.log(`\n✓ ExternPakket-stijl rapport: ${outPath} (${pdfBytes.length} bytes)\n`);
+
+    // Diagnostiek
+    // eslint-disable-next-line no-console
+    console.log("─── Per sondering ───");
+    for (const a of ACTUAL) {
+      // eslint-disable-next-line no-console
+      console.log(`  ${a.name}: Rb=${a.rbCalMax.toFixed(0)} Rs=${a.rsCalMax.toFixed(0)} Fnk=${a.fnkD.toFixed(0)} Rc;cal=${a.rcCal.toFixed(0)}`);
+    }
+    // eslint-disable-next-line no-console
+    console.log(`─── Eindanalyse: Rc;d=${MY_SUMMARY!.rcD.toFixed(0)} Rc;net;d=${MY_SUMMARY!.rcNetD.toFixed(0)} UC=${MY_SUMMARY!.unityCheck.toFixed(2)} ${MY_SUMMARY!.passes ? "VOLDOET" : "NIET"}`);
+
+    expect(pdfBytes.length).toBeGreaterThan(5000); // sanity: minimaal 5 KB
+  });
+
+  // Houd de vorige verification-PDF beschikbaar voor diff-controle.
+  it("genereert __output__/984-verification.pdf (eenvoudige tabellen voor mijn vs ExternPakket)", () => {
+    // Het volgende blok was eerder de inline-PDF — laat het staan voor
+    // visuele vergelijking mijn berekende vs ExternPakket waardes.
+    const { jsPDF } = require("jspdf") as typeof import("jspdf");
     const outDir = resolve(__dirname, "__output__");
     mkdirSync(outDir, { recursive: true });
     const outPath = resolve(outDir, "984-verification.pdf");
@@ -203,7 +257,6 @@ describe("PDF-uitdraai voor visuele controle", () => {
     const M = 12;
     const PW = 210 - 2 * M;
 
-    // ─── Page 1: Header + per-sondering Rb/Rs/Fnk vergelijking ──
     doc.setFont("helvetica", "bold");
     doc.setFontSize(13);
     doc.text("Verification rapport — COMPLETE reproductie van ExternPakket 984.pdf", M, y);
