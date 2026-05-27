@@ -1,14 +1,22 @@
+import { useMemo } from "react";
 import { useCalculationsStore } from "../../calc/framework/store";
 import { useCptStore } from "../../store/useCptStore";
+import type { CalculationInstance } from "../../calc/framework/types";
+
+// Stabiele empty-array fallback om de zustand re-render loop te
+// voorkomen die `?? []` binnen een selector veroorzaakt.
+const EMPTY_LIST: readonly never[] = [];
 
 /** Ribbon-tab content voor "Berekeningen". Toont een knop "+ Nieuwe
  *  berekening" + lijst van bestaande berekeningen in het actieve
  *  project (snel-selecteer). */
 export function BerekeningenTab() {
   const activeDocId = useCptStore((s) => s.activeDocId);
-  const list = useCalculationsStore((s) =>
-    activeDocId ? s.byDoc.get(activeDocId) ?? [] : [],
-  );
+  const byDoc = useCalculationsStore((s) => s.byDoc);
+  const list = useMemo(
+    () => (activeDocId ? byDoc.get(activeDocId) ?? EMPTY_LIST : EMPTY_LIST),
+    [activeDocId, byDoc],
+  ) as CalculationInstance[];
   const setActive = useCalculationsStore((s) => s.setActive);
 
   return (

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useCalculationsStore } from "../store";
 import { useCptStore } from "../../../store/useCptStore";
 import { getCalcModule } from "../registry";
@@ -9,12 +9,22 @@ interface Props {
 }
 
 /** Library-tree per actief project — lijst van calc-instances. */
+// Stabiele referentie voor de empty-array fallback — als we `?? []`
+// binnen een zustand-selector returnen, krijgt zustand elke render een
+// nieuwe array-referentie en triggert dat een infinite re-render loop.
+const EMPTY_LIST: readonly never[] = [];
+
 export function ProjectTreePanel({ onAddClick }: Props) {
   const activeDocId = useCptStore((s) => s.activeDocId);
   const activeCalcId = useCalculationsStore((s) => s.activeCalcId);
-  const list = useCalculationsStore((s) =>
-    activeDocId ? s.byDoc.get(activeDocId) ?? [] : [],
-  );
+  // Subscribe naar byDoc als geheel (stabiele Map-referentie), derive
+  // de lijst via useMemo. Voorheen: nieuwe `[]` op elke selector-call
+  // → zustand re-render loop.
+  const byDoc = useCalculationsStore((s) => s.byDoc);
+  const list = useMemo(
+    () => (activeDocId ? byDoc.get(activeDocId) ?? EMPTY_LIST : EMPTY_LIST),
+    [activeDocId, byDoc],
+  ) as CalculationInstance[];
   const setActive = useCalculationsStore((s) => s.setActive);
   const remove = useCalculationsStore((s) => s.removeCalculation);
   const duplicate = useCalculationsStore((s) => s.duplicate);
