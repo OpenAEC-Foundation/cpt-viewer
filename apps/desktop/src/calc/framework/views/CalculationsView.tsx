@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useCalculationsStore } from "../store";
 import { getCalcModule } from "../registry";
 import { useCptStore } from "../../../store/useCptStore";
@@ -28,6 +28,15 @@ export function CalculationsView() {
   const projectMeta = useCptStore((s) => s.projectMeta);
 
   const [showNewDialog, setShowNewDialog] = useState(false);
+
+  // De Berekeningen-ribbon-tab dispatcht `ogs:open-new-calc` zodat de
+  // "+ Nieuwe berekening"-knop daar — buiten dit component — toch deze
+  // dialog opent. Voorkomt prop-drilling tussen Ribbon en CalculationsView.
+  useEffect(() => {
+    const onOpen = () => setShowNewDialog(true);
+    window.addEventListener("ogs:open-new-calc", onOpen);
+    return () => window.removeEventListener("ogs:open-new-calc", onOpen);
+  }, []);
 
   const ctx: ProjectContext = useMemo(
     () => ({ cpts, activeCptId, projectMeta }),

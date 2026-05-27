@@ -364,3 +364,69 @@
   max-width: none;
   white-space: nowrap;
 }
+
+/* ── Berekeningen-tab — eenvoudige horizontale lijst met "+ Nieuwe"
+   primary-knop, verticale scheider en snel-selecteer-tabs per
+   bestaande berekening. Geen RibbonGroups omdat de tab nog erg leeg
+   is in v1 — pas wanneer er per-berekening acties komen splitsen we
+   in groups. ──────────────────────────────────────────────────── */
+.ribbon-berekeningen {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  overflow-x: auto;
+}
+
+.ribbon-berekeningen .ribbon-btn-primary {
+  flex-direction: row;
+  height: auto;
+  padding: 6px 12px;
+  background: var(--theme-accent);
+  border-color: var(--theme-accent);
+  color: var(--theme-accent-text, #fff);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ribbon-berekeningen .ribbon-btn-primary:hover {
+  background: var(--theme-accent);
+  filter: brightness(1.08);
+}
+
+.ribbon-berekeningen .ribbon-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--theme-border, rgba(0, 0, 0, 0.12));
+  margin: 4px 0;
+}
+
+.ribbon-berekeningen .ribbon-calc-list {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.ribbon-berekeningen .ribbon-empty {
+  font-size: 11px;
+  color: var(--theme-text-secondary);
+  font-style: italic;
+  padding: 0 8px;
+}
+
+.ribbon-berekeningen .ribbon-btn-tab {
+  flex-direction: row;
+  height: auto;
+  padding: 5px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+

@@ -6,7 +6,8 @@ import KaartTab from "./KaartTab";
 import IfcTab from "./IfcTab";
 import RapportTab from "./RapportTab";
 import SonderingstekeningTab from "./SonderingstekeningTab";
-import { useExtension } from "../../hooks/useExtensions";
+import { BerekeningenTab } from "./BerekeningenTab";
+import { useExtension, useAllExtensions } from "../../hooks/useExtensions";
 import "./Ribbon.css";
 
 interface RibbonProps {
@@ -18,27 +19,38 @@ interface RibbonProps {
 }
 
 // Tab order (left → right): Home (project + chart) → Kaart (location) →
-// Rapport → Sonderingstekening (tekening) → IFC (model, always last).
-// IFC is auto-generated and rarely the active workflow target, so it
-// sits at the end where it can't get in the way.
+// Rapport → Sonderingstekening (tekening) → Berekeningen → IFC (model,
+// always last). IFC is auto-generated and rarely the active workflow
+// target, so it sits at the end where it can't get in the way.
 //
-// Sonderingstekening is een EXTENSIE (default UIT) — gebruiker zet 'm
-// aan via Instellingen → Extensies. Rapport, Home, Kaart en IFC zijn
-// kern-tabs en blijven altijd zichtbaar.
-const ALL_TABS = ["start", "kaart", "rapport", "tekening", "ifc"] as const;
+// Sonderingstekening en Berekeningen zijn EXTENSIE-gated tabs (default
+// UIT) — gebruiker zet ze aan via Instellingen → Extensies. Berekeningen
+// verschijnt zodra ÉÉN van de `calc.*` modules geactiveerd is. Rapport,
+// Home, Kaart en IFC zijn kern-tabs en blijven altijd zichtbaar.
+const ALL_TABS = ["start", "kaart", "rapport", "tekening", "berekeningen", "ifc"] as const;
 type TabId = (typeof ALL_TABS)[number];
 
 export default function Ribbon({ onFileTabClick, onProjectSettingsClick, onViewChange }: RibbonProps) {
   const { t, i18n } = useTranslation("ribbon");
   const [activeTab, setActiveTab] = useState<TabId>("start");
   const extTekening = useExtension("tekening");
+  const exts = useAllExtensions();
+  // Berekeningen-tab verschijnt zodra ÉÉN calc-module-extensie aan
+  // staat. De ID-prefix `calc.` is conventie zodra Task 12 ze toevoegt
+  // aan de `ExtensionId`-union; tot dat moment is `anyCalcEnabled` altijd
+  // false en blijft de tab dus verborgen (verwacht gedrag voor Phase 0).
+  const anyCalcEnabled = useMemo(
+    () => Object.entries(exts).some(([id, on]) => on && id.startsWith("calc.")),
+    [exts],
+  );
 
   const TABS = useMemo<readonly TabId[]>(() => {
     return ALL_TABS.filter((t) => {
       if (t === "tekening") return extTekening;
+      if (t === "berekeningen") return anyCalcEnabled;
       return true;
     });
-  }, [extTekening]);
+  }, [extTekening, anyCalcEnabled]);
 
   // Als de huidig actieve tab door een extension-toggle uit de
   // zichtbare lijst valt, schakel naar Start (default-tab).
@@ -122,6 +134,7 @@ export default function Ribbon({ onFileTabClick, onProjectSettingsClick, onViewC
     else if (newTab === "kaart") onViewChange("map");
     else if (newTab === "ifc") onViewChange("ifc");
     else if (newTab === "tekening") onViewChange("tekening");
+    else if (newTab === "berekeningen") onViewChange("calculations");
     else onViewChange("default");
   }, [activeTab, onViewChange]);
 
@@ -152,11 +165,12 @@ export default function Ribbon({ onFileTabClick, onProjectSettingsClick, onViewC
 
   const renderContent = (tab: TabId) => {
     switch (tab) {
-      case "start":    return <StartTab onViewChange={onViewChange} />;
-      case "kaart":    return <KaartTab />;
-      case "ifc":      return <IfcTab />;
-      case "rapport":  return <RapportTab onOpenProjectSettings={onProjectSettingsClick ?? (() => {})} />;
-      case "tekening": return <SonderingstekeningTab />;
+      case "start":         return <StartTab onViewChange={onViewChange} />;
+      case "kaart":         return <KaartTab />;
+      case "ifc":           return <IfcTab />;
+      case "rapport":       return <RapportTab onOpenProjectSettings={onProjectSettingsClick ?? (() => {})} />;
+      case "tekening":      return <SonderingstekeningTab />;
+      case "berekeningen":  return <BerekeningenTab />;
     }
   };
 
