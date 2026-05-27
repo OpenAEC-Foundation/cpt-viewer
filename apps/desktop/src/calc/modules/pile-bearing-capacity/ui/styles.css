@@ -178,15 +178,33 @@
 .pile-cpt-zone-8d {
   fill: rgba(37, 99, 235, 0.20);   /* info blue — bumped van .08 zodat band duidelijk zichtbaar is */
 }
-.pile-cpt-zone-4d {
-  fill: rgba(220, 38, 38, 0.22);   /* danger red — bumped van .08 voor zichtbaarheid */
+/* Outer 4D-max band: heel licht/transparant — alleen als visuele referentie
+   waar dc MAX kan landen. */
+.pile-cpt-zone-4d-max {
+  fill: rgba(220, 38, 38, 0.08);
 }
-/* Dashed boundary-lijn op top/bottom van 8D / 4D zones. */
+/* Inner dc-band (actueel gekozen kritische diepte): lichtrood, opacity hoger. */
+.pile-cpt-zone-dc {
+  fill: rgba(220, 38, 38, 0.22);
+}
+/* Dashed boundary-lijn op top/bottom van zones. */
 .pile-cpt-zone-boundary {
   stroke: #64748b; /* slate grey */
   stroke-width: 0.8;
   stroke-dasharray: 4 3;
   opacity: 0.7;
+}
+/* 4D max gebruikt een lichter/dunnere grijze rand omdat het slechts een outer
+   bound is, en de werkelijke dc-grens is wat de gebruiker moet zien. */
+.pile-cpt-zone-boundary--4d-max {
+  stroke: #cbd5e1; /* lichter slate */
+  stroke-width: 0.6;
+  opacity: 0.6;
+}
+.pile-cpt-zone-boundary--dc {
+  stroke: #b91c1c; /* donkerder rood — geeft duidelijker aan dat dít de actieve grens is */
+  stroke-width: 1;
+  opacity: 0.85;
 }
 .pile-cpt-zone-label {
   font-size: 10px;
@@ -198,6 +216,24 @@
 }
 .pile-cpt-zone-label--4d {
   fill: #DC2626;
+}
+.pile-cpt-zone-label--dc {
+  fill: #b91c1c;
+  font-weight: 800;
+}
+
+/* ─── In-chart floating qc;I/II/III labels (per ExternPakket-stijl) ─── */
+/* paint-order: stroke + witte stroke geven een halo om de tekst zodat de
+   labels leesbaar zijn bovenop gekleurde zone-bands. */
+.pile-qc-label {
+  font: 600 11px var(--font-code, "JetBrains Mono"), monospace;
+  fill: #1f2937;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.85);
+  stroke-width: 3;
+  stroke-linecap: butt;
+  stroke-linejoin: round;
 }
 
 /* ─── Plot-background cursor states (zoom/pan UX) ─── */

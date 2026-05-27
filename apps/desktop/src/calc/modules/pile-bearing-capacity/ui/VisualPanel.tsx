@@ -411,12 +411,18 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
   );
   const qcTicks = useMemo(() => buildQcTicks(bounds.qcMax), [bounds.qcMax]);
 
-  // Zone heights: 8·Deq above paalpunt (light blue), 4·Deq below (light red).
+  // Zone heights:
+  //   - 8·Deq above paalpunt (light blue) — invloed-zone qc;III
+  //   - 4·Deq MAX below paalpunt (very light red) — outer bound voor dc-zoekruimte
+  //   - dc actual below paalpunt (light red, opacity hoger) — werkelijke kritische diepte
+  //     zoals gekozen door computeBaseResistance (0,7..4·Deq, geoptimaliseerd voor qb;max-min)
   const deqM = result.base.deqMm / 1000;
   const zone8DM = 8 * deqM;
-  const zone4DM = 4 * deqM;
+  const zone4DMaxM = 4 * deqM;
+  const zoneDcM = result.base.criticalDepthM; // actual dc, ∈ [0,7·Deq..4·Deq]
   const zoneAboveTop = input.pileToeNap + zone8DM;
-  const zoneBelowBot = input.pileToeNap - zone4DM;
+  const zone4DMaxBot = input.pileToeNap - zone4DMaxM;
+  const zoneDcBot = input.pileToeNap - zoneDcM;
 
   // Convert NAP-y values up-front for readability.
   const yPileTop = bounds.napToY(input.pileTopNap);
@@ -429,9 +435,11 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
   // beeld valt. Voor het label-midden gebruiken we de ECHTE NAP-waarde
   // (anders zou bij het uit-beeld scrollen het label "wegschuiven").
   const zoneAboveTopClamped = Math.min(zoneAboveTop, bounds.napTop);
-  const zoneBelowBotClamped = Math.max(zoneBelowBot, bounds.napBot);
+  const zone4DMaxBotClamped = Math.max(zone4DMaxBot, bounds.napBot);
+  const zoneDcBotClamped = Math.max(zoneDcBot, bounds.napBot);
   const yZoneAboveTop = bounds.napToY(zoneAboveTopClamped);
-  const yZoneBelowBot = bounds.napToY(zoneBelowBotClamped);
+  const yZone4DMaxBot = bounds.napToY(zone4DMaxBotClamped);
+  const yZoneDcBot = bounds.napToY(zoneDcBotClamped);
 
   // Right-margin label positions — qc;I, qc;II, qc;III, qb;max all sit
   // somewhere inside de 8D/4D-zone. Labels staan rechts ván de pile-kolom
@@ -443,9 +451,13 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
     zoneAboveTop > input.pileToeNap && // zone bestaat
     zoneAboveTopClamped > input.pileToeNap && // bovengrens van zichtbare deel > paalpunt
     input.pileToeNap >= bounds.napBot && input.pileToeNap <= bounds.napTop;
-  const zone4DVisible =
-    zoneBelowBot < input.pileToeNap &&
-    zoneBelowBotClamped < input.pileToeNap &&
+  const zone4DMaxVisible =
+    zone4DMaxBot < input.pileToeNap &&
+    zone4DMaxBotClamped < input.pileToeNap &&
+    input.pileToeNap >= bounds.napBot && input.pileToeNap <= bounds.napTop;
+  const zoneDcVisible =
+    zoneDcBot < input.pileToeNap &&
+    zoneDcBotClamped < input.pileToeNap &&
     input.pileToeNap >= bounds.napBot && input.pileToeNap <= bounds.napTop;
 
   // ─── Drag-to-edit ──────────────────────────────────────────────
@@ -763,19 +775,33 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         />
       )}
 
-      {/* ─── 4D zone below paalpunt — light red ─── */}
-      {zone4DVisible && (
+      {/* ─── 4D MAX outer band below paalpunt — heel licht rood, dashed bounds ─── */}
+      {/*    Visualiseert de outer bound waar dc maximaal naar kan reiken (4·Deq). */}
+      {zone4DMaxVisible && (
         <rect
           x={MARGIN.left}
           y={yPileToe}
           width={PLOT_W}
-          height={yZoneBelowBot - yPileToe}
-          className="pile-cpt-zone-4d"
+          height={yZone4DMaxBot - yPileToe}
+          className="pile-cpt-zone-4d-max"
           pointerEvents="none"
         />
       )}
 
-      {/* ─── 8D / 4D dashed boundary lines + right-margin labels ─── */}
+      {/* ─── dc INNER band below paalpunt — lichtrood, opacity hoger ─── */}
+      {/*    Werkelijke kritische diepte zoals gekozen door computeBaseResistance. */}
+      {zoneDcVisible && (
+        <rect
+          x={MARGIN.left}
+          y={yPileToe}
+          width={PLOT_W}
+          height={yZoneDcBot - yPileToe}
+          className="pile-cpt-zone-dc"
+          pointerEvents="none"
+        />
+      )}
+
+      {/* ─── 8D / 4D max / dc dashed boundary lines + right-margin labels ─── */}
       {zone8DVisible && (
         <>
           {/* Bovengrens 8D-zone (alleen tekenen als de échte top in zicht is). */}
@@ -799,26 +825,49 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
           </text>
         </>
       )}
-      {zone4DVisible && (
+      {zone4DMaxVisible && (
         <>
-          {/* Ondergrens 4D-zone (alleen tekenen als de échte bot in zicht is). */}
-          {zoneBelowBot >= bounds.napBot && (
+          {/* Ondergrens 4D-max (alleen tekenen als de échte bot in zicht is). */}
+          {zone4DMaxBot >= bounds.napBot && (
             <line
               x1={MARGIN.left}
               x2={MARGIN.left + PLOT_W}
-              y1={yZoneBelowBot}
-              y2={yZoneBelowBot}
-              className="pile-cpt-zone-boundary"
+              y1={yZone4DMaxBot}
+              y2={yZone4DMaxBot}
+              className="pile-cpt-zone-boundary pile-cpt-zone-boundary--4d-max"
               pointerEvents="none"
             />
           )}
           <text
             x={xRightLabel}
-            y={(yPileToe + yZoneBelowBot) / 2 + 18}
+            y={(yPileToe + yZone4DMaxBot) / 2 + 18}
             className="pile-cpt-zone-label pile-cpt-zone-label--4d"
             pointerEvents="none"
           >
-            4D = {formatMeters(zone4DM)}
+            4D max = {formatMeters(zone4DMaxM)}
+          </text>
+        </>
+      )}
+      {zoneDcVisible && (
+        <>
+          {/* Ondergrens dc-zone (alleen tekenen als de échte bot in zicht is). */}
+          {zoneDcBot >= bounds.napBot && (
+            <line
+              x1={MARGIN.left}
+              x2={MARGIN.left + PLOT_W}
+              y1={yZoneDcBot}
+              y2={yZoneDcBot}
+              className="pile-cpt-zone-boundary pile-cpt-zone-boundary--dc"
+              pointerEvents="none"
+            />
+          )}
+          <text
+            x={xRightLabel}
+            y={(yPileToe + yZoneDcBot) / 2 + 4}
+            className="pile-cpt-zone-label pile-cpt-zone-label--dc"
+            pointerEvents="none"
+          >
+            dc = {formatMeters(zoneDcM)}
           </text>
         </>
       )}
@@ -1065,31 +1114,41 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
         plotBottom={MARGIN.top + PLOT_H}
       />
 
-      {/* ─── Right-margin: qc;I / qc;II / qc;III ─── */}
-      <text
-        x={xRightLabel}
-        y={(yZoneAboveTop + yPileToe) / 2 - 6}
-        className="pile-cpt-side-label"
-        pointerEvents="none"
-      >
-        q_c;I={result.base.qcIGemMpa.toFixed(2)}
-      </text>
-      <text
-        x={xRightLabel}
-        y={(yZoneAboveTop + yPileToe) / 2 + 6}
-        className="pile-cpt-side-label"
-        pointerEvents="none"
-      >
-        q_c;II={result.base.qcIIGemMpa.toFixed(2)}
-      </text>
-      <text
-        x={xRightLabel}
-        y={(yPileToe + yZoneBelowBot) / 2}
-        className="pile-cpt-side-label"
-        pointerEvents="none"
-      >
-        q_c;III={result.base.qcIIIGemMpa.toFixed(2)}
-      </text>
+      {/* ─── In-chart floating qc;I/II/III labels per ExternPakket-stijl ─── */}
+      {/*    Geplaatst bij de qc-curve op de hoogte van hun invloed-zone, met */}
+      {/*    witte halo via paint-order:stroke voor leesbaarheid op bands.   */}
+      {zone8DVisible && (
+        <text
+          x={bounds.qcToX(result.base.qcIIIGemMpa) + 6}
+          y={bounds.napToY((input.pileToeNap + zoneAboveTopClamped) / 2)}
+          className="pile-qc-label"
+          pointerEvents="none"
+        >
+          qc;III;gem = {result.base.qcIIIGemMpa.toFixed(2)} MPa
+        </text>
+      )}
+      {zoneDcVisible && (
+        <>
+          <text
+            x={bounds.qcToX(result.base.qcIGemMpa) + 6}
+            y={bounds.napToY(input.pileToeNap - zoneDcM / 2)}
+            className="pile-qc-label"
+            pointerEvents="none"
+          >
+            qc;I;gem = {result.base.qcIGemMpa.toFixed(2)} MPa
+          </text>
+          <text
+            x={bounds.qcToX(result.base.qcIIGemMpa) + 6}
+            y={bounds.napToY(input.pileToeNap - zoneDcM / 2) + 14}
+            className="pile-qc-label"
+            pointerEvents="none"
+          >
+            qc;II;gem = {result.base.qcIIGemMpa.toFixed(2)} MPa
+          </text>
+        </>
+      )}
+
+      {/* ─── Right-margin: qb;max (compacter — qc;I/II/III staan nu in-chart) ─── */}
       <text
         x={xRightLabel}
         y={yPileToe + 28}
