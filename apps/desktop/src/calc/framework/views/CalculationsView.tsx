@@ -38,20 +38,16 @@ function savePaneWidth(key: string, value: number) {
  * Top-level werkruimte voor de Berekeningen-tab. Toont een **4-pane**
  * layout conform Open Calculation Studio:
  *
- *   ┌──────────────┬──────────────────┬─────────────┬──────────────┐
- *   │ Verkenner    │ Sondering        │ Invoer      │ Uitkomsten   │
- *   │ (project-    │ (CPT-chart +     │ (InputPanel │ (ResultPanel │
- *   │  tree, calc- │  paal-elevation) │  per actieve│  formules +  │
- *   │  instances)  │                  │  module)    │  zakkings)   │
- *   └──────────────┴──────────────────┴─────────────┴──────────────┘
+ *   ┌──────────────┬─────────────┬──────────────────┬──────────────┐
+ *   │ Verkenner    │ Invoer      │ Sondering        │ Uitkomsten   │
+ *   │ (project-    │ (InputPanel │ (CPT-chart +     │ (ResultPanel │
+ *   │  tree, calc- │  per actieve│  paal-elevation) │  formules +  │
+ *   │  instances)  │  module)    │                  │  zakkings)   │
+ *   └──────────────┴─────────────┴──────────────────┴──────────────┘
  *
- * Voorheen zat de InputPanel in de linker pane (onder de project-tree).
- * Nu is hij verplaatst naar een eigen 3e pane direct rechts van de
- * sondering, conform de Open-Calculation-Studio conventie. Het linker
- * paneel is daarmee een pure "berekeningen-verkenner" geworden waar je
- * meerdere calc-instances kunt organiseren.
- *
- * Alle drie de zij-panelen zijn afzonderlijk resizable (3 splitters).
+ * Invoer-paneel staat DIRECT LINKS van de sondering — zo werkt de
+ * gebruiker linksom (verkenner → invoer → visualisatie sondering →
+ * uitkomsten). Alle drie de zij-panelen zijn resizable.
  */
 export function CalculationsView() {
   const activeCalcId = useCalculationsStore((s) => s.activeCalcId);
@@ -124,7 +120,8 @@ export function CalculationsView() {
   };
 
   const handleLeftDrag = makeDragHandler(setLeftWidth, leftWidth, +1);
-  const handleInputDrag = makeDragHandler(setInputWidth, inputWidth, -1);
+  // Input zit nu LINKS van de sondering — rechts slepen = input vergroten.
+  const handleInputDrag = makeDragHandler(setInputWidth, inputWidth, +1);
   const handleRightDrag = makeDragHandler(setRightWidth, rightWidth, -1);
 
   const ctx: ProjectContext = useMemo(
@@ -202,8 +199,8 @@ export function CalculationsView() {
         title="Sleep om de paneel-breedte aan te passen"
       />
 
-      {/* ─── 2. Sondering — CPT-chart + paal-elevation ─── */}
-      <main className="calc-pane calc-pane-mid">{midContent}</main>
+      {/* ─── 2. Invoer — InputPanel per actieve module (LINKS van sondering) ─── */}
+      <aside className="calc-pane calc-pane-input">{inputContent}</aside>
       <div
         className="calc-splitter"
         onMouseDown={handleInputDrag}
@@ -213,8 +210,8 @@ export function CalculationsView() {
         title="Sleep om de paneel-breedte aan te passen"
       />
 
-      {/* ─── 3. Invoer — InputPanel per actieve module ─── */}
-      <aside className="calc-pane calc-pane-input">{inputContent}</aside>
+      {/* ─── 3. Sondering — CPT-chart + paal-elevation ─── */}
+      <main className="calc-pane calc-pane-mid">{midContent}</main>
       <div
         className="calc-splitter"
         onMouseDown={handleRightDrag}

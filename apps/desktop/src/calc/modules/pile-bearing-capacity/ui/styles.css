@@ -659,6 +659,36 @@
   font: 500 0.78rem var(--font-code, "JetBrains Mono"), monospace;
   margin-bottom: 6px;
 }
+/* Brede tabel — voor neg-kleef-detail met 11 kolommen. Horizontaal
+   scrollbaar in een wrapper als de pane te smal is, anders shrink
+   tabel zelf via kleinere font-size + minder padding. */
+.pile-formula-table--wide {
+  font-size: 0.66rem;
+  table-layout: auto;
+}
+.pile-formula-table--wide th,
+.pile-formula-table--wide td {
+  padding: 2px 4px;
+  text-align: right;
+  white-space: nowrap;
+}
+.pile-formula-table--wide th:first-child,
+.pile-formula-table--wide td:first-child {
+  text-align: left;
+}
+.pile-formula-table-sum {
+  border-top: 1px solid var(--theme-border, #cbd5e1);
+  background: var(--theme-bg-lighter, #f5f5f4);
+}
+.pile-formula-table-sum td {
+  font-weight: 600;
+}
+.pile-result-footnote {
+  margin: 4px 0 8px;
+  font: 500 0.70rem var(--font-code, "JetBrains Mono"), monospace;
+  color: var(--theme-text-secondary, #71717a);
+  line-height: 1.4;
+}
 .pile-formula-table th,
 .pile-formula-table td {
   text-align: left;

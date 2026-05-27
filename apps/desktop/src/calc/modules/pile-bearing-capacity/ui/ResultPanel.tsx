@@ -265,12 +265,14 @@ function ZakkingsChart({ settlement, rbCalMax, rsCalMax }: ZakkingsChartProps) {
 
 // ─── ResultPanel ─────────────────────────────────────────────────
 
-export function ResultPanel({ result }: PanelProps<PileInput, PileResult>) {
+export function ResultPanel({ input, result }: PanelProps<PileInput, PileResult>) {
   if (!result.ok) {
     return <div className="pile-result-error">⚠️ {result.error}</div>;
   }
   const { negKleef, base, shaft, settlement, spring, summary } = result;
   const rcCalMine = base.rbCalMax + shaft.rsCalMax;
+  const D = input.diameterMm / 1000; // m
+  const Os = Math.PI * D;            // omtrek in m
   return (
     <div className="pile-result">
       {result.warnings.length > 0 && (
@@ -281,22 +283,84 @@ export function ResultPanel({ result }: PanelProps<PileInput, PileResult>) {
 
       <section>
         <h3>Negatieve kleef</h3>
-        <table className="pile-formula-table">
-          <thead><tr><th>Laag</th><th>σ·O<sub>s</sub>·K<sub>0</sub>tanδ</th><th>F<sub>s;nk</sub></th></tr></thead>
+        <p className="pile-result-input">
+          Zone: paalkop NAP {input.pileTopNap.toFixed(2)} tot NAP {input.negKleefBottomNap.toFixed(2)} —
+          ΔL<sub>nk</sub> = {negKleef.deltaLnk.toFixed(2)} m
+        </p>
+        <Formula
+          lhs={<>O<sub>s</sub></>}
+          symbolic={<>π · D</>}
+          filled={<>π · {D.toFixed(3)}</>}
+          result={<>{Os.toFixed(3)} m</>}
+        />
+        <table className="pile-formula-table pile-formula-table--wide">
+          <thead>
+            <tr>
+              <th>Laag</th>
+              <th>h [m]</th>
+              <th>γ<sub>k</sub></th>
+              <th>γ<sub>w</sub></th>
+              <th>σ<sub>top</sub></th>
+              <th>σ<sub>bot</sub></th>
+              <th>σ<sub>gem</sub></th>
+              <th>K<sub>0</sub></th>
+              <th>tan(δ)</th>
+              <th>K<sub>0</sub>tanδ</th>
+              <th>F<sub>s;nk</sub> [kN]</th>
+            </tr>
+          </thead>
           <tbody>
-            {negKleef.layers.map((l, i) => (
-              <tr key={i}>
-                <td>{l.layer.kind}</td>
-                <td>{l.sigmaGemRep.toFixed(1)} · {l.k0TanDelta.toFixed(3)}</td>
-                <td><strong>{l.fsNkRep.toFixed(1)} kN</strong></td>
+            {negKleef.layers.map((l, i) => {
+              const tanDelta = Math.tan(l.delta);
+              return (
+                <tr key={i}>
+                  <td>{l.layer.kind}</td>
+                  <td>{l.thickness.toFixed(2)}</td>
+                  <td>{l.layer.gammaK}</td>
+                  <td>{l.layer.gammaW}</td>
+                  <td>{l.sigmaRepTop.toFixed(1)}</td>
+                  <td>{l.sigmaRepBottom.toFixed(1)}</td>
+                  <td>{(l.sigmaGemRep / l.thickness).toFixed(1)}</td>
+                  <td>{l.k0.toFixed(3)}</td>
+                  <td>{tanDelta.toFixed(3)}</td>
+                  <td>
+                    {l.k0TanDelta.toFixed(3)}
+                    {l.k0TanDelta === input.ksMinFactor && (
+                      <em title={`Gecapt op ksMin=${input.ksMinFactor}`}> *</em>
+                    )}
+                  </td>
+                  <td><strong>{l.fsNkRep.toFixed(1)}</strong></td>
+                </tr>
+              );
+            })}
+            {negKleef.layers.length > 1 && (
+              <tr className="pile-formula-table-sum">
+                <td colSpan={10}>Σ F<sub>s;nk</sub></td>
+                <td><strong>{negKleef.fnkRep.toFixed(1)} kN</strong></td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
+        <p className="pile-result-footnote">
+          F<sub>s;nk;i</sub> = σ<sub>gem;i</sub> · O<sub>s</sub> · K<sub>0</sub>tan(δ)<sub>i</sub> · h<sub>i</sub>
+          {negKleef.layers.some((l) => l.k0TanDelta === input.ksMinFactor) && (
+            <em> &nbsp;· * = K<sub>0</sub>tanδ gecapt op ksMin = {input.ksMinFactor}</em>
+          )}
+        </p>
+        <Formula
+          lhs={<>F<sub>nk;rep</sub></>}
+          symbolic={<>Σ F<sub>s;nk;i</sub></>}
+          filled={
+            negKleef.layers.length > 0
+              ? <>{negKleef.layers.map((l) => l.fsNkRep.toFixed(1)).join(" + ")}</>
+              : <>0</>
+          }
+          result={<>{negKleef.fnkRep.toFixed(1)} kN</>}
+        />
         <Formula
           lhs={<>F<sub>nk;d</sub></>}
-          symbolic={<>γ<sub>f,nk</sub> · ΣF<sub>s;nk</sub></>}
-          filled={<>{result.negKleef.layers.length > 0 ? `1,00 · ${negKleef.fnkRep.toFixed(1)}` : "0"}</>}
+          symbolic={<>γ<sub>f,nk</sub> · F<sub>nk;rep</sub></>}
+          filled={<>{input.gammaFnk.toFixed(2)} · {negKleef.fnkRep.toFixed(1)}</>}
           result={<>{negKleef.fnkD.toFixed(0)} kN</>}
         />
       </section>

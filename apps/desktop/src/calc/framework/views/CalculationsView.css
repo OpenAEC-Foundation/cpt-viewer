@@ -1,15 +1,15 @@
 .calc-view {
   display: grid;
-  /* 7 columns: left | splitter | mid | splitter | input | splitter | right.
-     OCS-style 4-pane layout — verkenner / sondering / invoer / uitkomsten.
-     Widths via custom-props zodat ze inline-overschreven kunnen worden
-     door React state. */
+  /* 7 columns: left | splitter | input | splitter | mid | splitter | right.
+     OCS-style 4-pane layout — verkenner / INVOER / sondering / uitkomsten.
+     Invoer staat direct links van de sondering zodat de gebruiker links-
+     om werkt: pas inputs aan, zie effect direct in de chart ernaast. */
   grid-template-columns:
     var(--calc-left-w, 260px)
     5px
-    1fr
-    5px
     var(--calc-input-w, 300px)
+    5px
+    1fr
     5px
     var(--calc-right-w, 380px);
   height: 100%;
