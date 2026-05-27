@@ -7,9 +7,10 @@ import type { CalculationInstance } from "../../calc/framework/types";
 // voorkomen die `?? []` binnen een selector veroorzaakt.
 const EMPTY_LIST: readonly never[] = [];
 
-/** Ribbon-tab content voor "Berekeningen". Toont een knop "+ Nieuwe
- *  berekening" + lijst van bestaande berekeningen in het actieve
- *  project (snel-selecteer). */
+/** Ribbon-tab content voor "Berekeningen". Toont een snel-selecteer-lijst
+ *  van bestaande berekeningen in het actieve project. De "+ Nieuwe
+ *  berekening" knop is verwijderd uit de ribbon — die functionaliteit
+ *  zit nu enkel in het project-paneel (ProjectTreePanel). */
 export function BerekeningenTab() {
   const activeDocId = useCptStore((s) => s.activeDocId);
   const byDoc = useCalculationsStore((s) => s.byDoc);
@@ -21,15 +22,6 @@ export function BerekeningenTab() {
 
   return (
     <div className="ribbon-content ribbon-berekeningen">
-      <button
-        className="ribbon-btn ribbon-btn-primary"
-        onClick={() => {
-          window.dispatchEvent(new CustomEvent("ogs:open-new-calc"));
-        }}
-      >
-        + Nieuwe berekening
-      </button>
-      <div className="ribbon-divider" />
       <div className="ribbon-calc-list">
         {list.length === 0 && (
           <span className="ribbon-empty">Nog geen berekeningen</span>
