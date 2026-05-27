@@ -50,7 +50,7 @@ const PILE_COL_CENTER = PILE_COL_X + PILE_COL_W / 2;
 // blijven (anders zou 168 mm paal vs 1500 mm-as in pixels lachwekkend zijn).
 const PILE_GFX_MIN_W = 14;
 const PILE_GFX_MAX_W = 36;
-const PILE_PAALPUNT_HEIGHT = 18; // pixels voor de tapered tip
+// (PILE_PAALPUNT_HEIGHT verwijderd — paal heeft nu vlakke onderkant.)
 
 /** Minimaal zoom-bereik in m NAP (anders wordt het onleesbaar). */
 const MIN_ZOOM_SPAN_M = 0.5;
@@ -231,13 +231,13 @@ function PileGraphic({
   const yToeClamped = Math.max(plotTop, Math.min(plotBottom, yPileToe));
   const bodyH = yToeClamped - yTopClamped;
 
-  // Tip-tekening: voor staal een korte spitse pyramide (gesloten punt),
-  // voor beton een tapered tip (langer). Hoogte = PILE_PAALPUNT_HEIGHT,
-  // maar alleen tekenen als yToe binnen plot-bereik valt.
-  const tipVisible = yPileToe < plotBottom - 1; // niet net buiten zicht
-  const tipH = material === "concrete" ? PILE_PAALPUNT_HEIGHT : PILE_PAALPUNT_HEIGHT * 0.6;
-  const yTipBot = Math.min(plotBottom, yPileToe + tipH);
-  const tipPath = `M${xPileLeft},${yToeClamped} L${xPileRight},${yToeClamped} L${cx},${yTipBot} z`;
+  // Paal heeft VLAKKE bovenkant en VLAKKE onderkant — geen tapered tip.
+  // De daadwerkelijke paalpunt-conus zit in de werkelijkheid binnen de
+  // grond verzonken; voor schematische weergave (en consistent met
+  // gewone funderings-tekeningen) houden we de paal-body een rechte
+  // rechthoek met platte uiteinden. tipH = 0 → de paalpunt-pijl wordt
+  // direct onder yPileToe gerendered.
+  const tipH = 0;
 
   // ─── Force-arrows: schaal alle pijlen relatief t.o.v. de max van de
   // drie. Maximum visuele lengte = 28 px zodat het binnen PILE_COL_W past. ──
@@ -269,8 +269,11 @@ function PileGraphic({
     }
   }
 
-  // Paalpunt-pijl (omhoog onder paalpunt) — alleen als tip in zicht.
-  const showRb = Rb > 0.5 && tipVisible && yPileToe < plotBottom - 20;
+  // Paalpunt-pijl (omhoog onder paalpunt). Toon zolang er onder de
+  // paalpunt voldoende ruimte is binnen het plot om de pijl te tekenen.
+  // (`tipVisible` is sinds de vlakke-paal-update altijd false — daarom
+  // niet meer als gate gebruiken.)
+  const showRb = Rb > 0.5 && yPileToe < plotBottom - 20;
 
   // Force-arrow x-positie: nét rechts van de paal (1 px gap).
   const xArrowStart = xPileRight + 4;
@@ -344,10 +347,7 @@ function PileGraphic({
           />
         )
       )}
-      {/* Tip — alleen tekenen als paalpunt in zicht is. */}
-      {tipVisible && (
-        <path d={tipPath} fill={fill} stroke={stroke} strokeWidth={1.5} />
-      )}
+      {/* Geen tip-pyramide meer — paal heeft vlakke onderkant. */}
 
       {/* ─── Wapeningskorf (alleen voor betongevulde stalen buispaal) ───
           3 verticale longitudinale staven + 3 horizontale beugels over
@@ -484,13 +484,29 @@ function PileCrossSection({
       role="img"
       aria-label="Paal-doorsnede"
     >
+      <defs>
+        {/* Beton-arcering — diagonale grijze strepen + lichte grond-fill
+            achterop. Conventioneel patroon voor beton in technische
+            tekeningen (kruisende /-strepen op een licht-grijze ondergrond). */}
+        <pattern
+          id="pile-cs-concrete-hatch"
+          patternUnits="userSpaceOnUse"
+          width="6"
+          height="6"
+          patternTransform="rotate(45)"
+        >
+          <rect width="6" height="6" fill="#e5e7eb" />
+          <line x1="0" y1="0" x2="0" y2="6" stroke="#6b7280" strokeWidth="0.7" />
+          <line x1="3" y1="0" x2="3" y2="6" stroke="#9ca3af" strokeWidth="0.4" />
+        </pattern>
+      </defs>
       {isCircular ? (
         material === "steel" ? (
           <>
             {/* Stalen buis (ring) — grijs gevuld */}
             <circle cx={CX} cy={CY} r={R} fill="#9ca3af" stroke="#374151" strokeWidth={1.5} />
-            {/* Beton-vulling — beige binnen-cirkel */}
-            <circle cx={CX} cy={CY} r={innerR} fill="#d4a574" stroke="none" />
+            {/* Beton-vulling — grijze betonarcering (technisch correcte hatch) */}
+            <circle cx={CX} cy={CY} r={innerR} fill="url(#pile-cs-concrete-hatch)" stroke="none" />
             {hasRebarCage && (
               <>
                 {/* Transverse beugel (stirrup) — donkere stippellijn */}
@@ -511,13 +527,13 @@ function PileCrossSection({
             )}
           </>
         ) : (
-          /* Pure beton ronde paal (boorpaal etc.) — beige cirkel */
-          <circle cx={CX} cy={CY} r={R} fill="#d4a574" stroke="#374151" strokeWidth={1.5} />
+          /* Pure beton ronde paal (boorpaal etc.) — beton-arcering */
+          <circle cx={CX} cy={CY} r={R} fill="url(#pile-cs-concrete-hatch)" stroke="#374151" strokeWidth={1.5} />
         )
       ) : (
         <>
-          {/* Vierkante prefab betonpaal — beige rechthoek */}
-          <rect x={PAD} y={PAD} width={R * 2} height={R * 2} fill="#d4a574" stroke="#374151" strokeWidth={1.5} />
+          {/* Vierkante prefab betonpaal — beton-arcering */}
+          <rect x={PAD} y={PAD} width={R * 2} height={R * 2} fill="url(#pile-cs-concrete-hatch)" stroke="#374151" strokeWidth={1.5} />
           {/* Voorspandraden — 4 hoek-stippen */}
           {[
             [PAD + R * 0.4, PAD + R * 0.4],

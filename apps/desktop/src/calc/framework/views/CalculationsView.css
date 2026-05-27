@@ -1,10 +1,17 @@
 .calc-view {
   display: grid;
-  /* 5 columns: left | splitter | mid | splitter | right.
-     Default widths via custom-props zodat ze inline-overschreven kunnen
-     worden door React state — zonder dat we de hele grid-template-string
-     opnieuw moeten genereren. */
-  grid-template-columns: var(--calc-left-w, 300px) 5px 1fr 5px var(--calc-right-w, 380px);
+  /* 7 columns: left | splitter | mid | splitter | input | splitter | right.
+     OCS-style 4-pane layout — verkenner / sondering / invoer / uitkomsten.
+     Widths via custom-props zodat ze inline-overschreven kunnen worden
+     door React state. */
+  grid-template-columns:
+    var(--calc-left-w, 260px)
+    5px
+    1fr
+    5px
+    var(--calc-input-w, 300px)
+    5px
+    var(--calc-right-w, 380px);
   height: 100%;
   background: var(--theme-bg, #fff);
   color: var(--theme-text, #36363e);
