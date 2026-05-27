@@ -24,6 +24,9 @@ Desktop.ini
 # Local test/sample data (real CPT files — don't commit)
 sample/
 
+# Test-output (PDF verification rapporten) — lokaal artefact, niet committen
+**/__output__/
+
 # Docs work-in-progress / prompt notes
 PROMPTS.md
 # docs/* (niet docs/) zodat we kunnen white-listen — git ondersteunt

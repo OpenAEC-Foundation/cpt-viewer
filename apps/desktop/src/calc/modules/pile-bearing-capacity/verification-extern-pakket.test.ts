@@ -74,7 +74,6 @@ const CASES: ExternPakketCase[] = [
   },
 ];
 
-const PILE_TOP_NAP = 0.34;
 const PILE_TOE_NAP = -14.5;
 const DIAMETER_MM = 219;
 
