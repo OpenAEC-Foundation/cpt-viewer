@@ -133,6 +133,7 @@ export function CalculationsView() {
   let midContent: ReactNode;
   let inputContent: ReactNode = null;
   let rightContent: ReactNode = null;
+  let showExperimentalBanner = false;
 
   if (!active) {
     midContent = (
@@ -174,18 +175,26 @@ export function CalculationsView() {
         </>
       );
       rightContent = <mod.ResultPanel input={input} result={result} />;
+      showExperimentalBanner = mod.status === "experimental";
     }
   }
 
   return (
     <div
-      className="calc-view"
+      className={`calc-view${showExperimentalBanner ? " calc-view--experimental" : ""}`}
       style={{
         ["--calc-left-w" as never]: `${leftWidth}px`,
         ["--calc-input-w" as never]: `${inputWidth}px`,
         ["--calc-right-w" as never]: `${rightWidth}px`,
       }}
     >
+      {showExperimentalBanner && (
+        <div className="calc-experimental-banner" role="alert">
+          <strong>⚠ TUSSENSTAND — module in ontwikkeling.</strong>
+          &nbsp;De getoonde resultaten zijn indicatief en mogen niet
+          worden gebruikt voor toetsing bij vergunning of uitvoering.
+        </div>
+      )}
       {/* ─── 1. Verkenner — project-tree met alle berekeningen ─── */}
       <aside className="calc-pane calc-pane-left">
         <ProjectTreePanel onAddClick={() => setShowNewDialog(true)} />

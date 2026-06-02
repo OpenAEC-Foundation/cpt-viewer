@@ -45,7 +45,7 @@ const pileModuleTyped: CalcModule<PileInput, PileResult> = {
   category: "pile",
   icon: "▼",
   norm: "NEN-EN 1997-1:2005+A1:2013+NB:2019",
-  status: "available",
+  status: "experimental",
   defaultInput,
   compute: (input, ctx) => {
     const cpt = input.cptId ? ctx.cpts.get(input.cptId) ?? null : null;

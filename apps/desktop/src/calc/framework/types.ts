@@ -6,8 +6,12 @@ import type { Cpt, ProjectMeta } from "../../types/cpt";
 export type CalcCategory = "pile" | "spread" | "wall" | "anchor";
 
 /** Implementatie-status — bepaalt of de module échte UI rendert of een
- *  "Coming soon"-placeholder. */
-export type CalcStatus = "available" | "coming-soon";
+ *  "Coming soon"-placeholder.
+ *  - "experimental": module rendert wel volledig, maar getallen zijn nog
+ *    niet productie-geverifieerd. De CalculationsView toont een prominente
+ *    tussenstand-banner zodat de gebruiker weet dat resultaten indicatief
+ *    zijn en niet voor toetsing bij vergunning of uitvoering geschikt. */
+export type CalcStatus = "available" | "experimental" | "coming-soon";
 
 /** Context die de framework aan elke module-aanroep meegeeft. */
 export interface ProjectContext {

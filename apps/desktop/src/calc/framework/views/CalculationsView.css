@@ -12,9 +12,30 @@
     1fr
     5px
     var(--calc-right-w, 380px);
+  /* 2 rows: optionele banner (auto) + content (1fr). */
+  grid-template-rows: auto 1fr;
   height: 100%;
   background: var(--theme-bg, #fff);
   color: var(--theme-text, #36363e);
+}
+
+/* ─── Experimentele/tussenstand-banner — vult bovenste rij over alle
+   kolommen. Felle amber kleur zodat onmiskenbaar zichtbaar is dat de
+   getoonde resultaten indicatief zijn. */
+.calc-experimental-banner {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  padding: 10px 16px;
+  background: linear-gradient(90deg, #b45309 0%, #d97706 50%, #b45309 100%);
+  color: #fff;
+  font: 500 0.85rem "Inter", sans-serif;
+  border-bottom: 2px solid #92400e;
+  text-align: center;
+  line-height: 1.4;
+}
+.calc-experimental-banner strong {
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .calc-pane {
