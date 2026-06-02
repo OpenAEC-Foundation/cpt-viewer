@@ -221,3 +221,41 @@
 .ext-install-btn:hover {
   background: var(--theme-btn-primary-hover-bg);
 }
+
+/* ─── Locked / not-production-ready extension cards ─── */
+.ext-card--locked {
+  opacity: 0.78;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(245, 158, 11, 0.04) 0,
+    rgba(245, 158, 11, 0.04) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+}
+.ext-locked-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  margin-left: 6px;
+  background: #f59e0b;
+  color: #fff;
+  font: 700 0.68rem "Inter", sans-serif;
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+}
+.ext-desc-locked {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: rgba(245, 158, 11, 0.10);
+  border-left: 3px solid #f59e0b;
+  color: #92400e;
+  font: 500 0.78rem "Inter", sans-serif;
+  border-radius: 0 3px 3px 0;
+}
+.ext-toggle--disabled {
+  cursor: not-allowed !important;
+  opacity: 0.45;
+}
+.ext-toggle--disabled .ext-toggle-slider {
+  cursor: not-allowed !important;
+}

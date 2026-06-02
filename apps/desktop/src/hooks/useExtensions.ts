@@ -49,6 +49,38 @@ const DEFAULTS: Record<ExtensionId, boolean> = {
   "calc.ground-anchor": false,
 };
 
+/** Extensies die nog NIET productie-gereed zijn. Deze blijven altijd
+ *  uit voor de eindgebruiker — toggle is gedeactiveerd in de
+ *  ExtensionManagerPanel, en zelfs als de preference per ongeluk op
+ *  `true` staat, retourneert `useExtension()` `false`.
+ *
+ *  Voor dev-/test-doeleinden: zet in de browser-DevTools console
+ *    `localStorage.setItem("ogs.dev.unlockExperimentalExtensions", "true")`
+ *  en herlaad de app. Dan worden de toggles weer aanzetbaar. */
+export const NOT_PRODUCTION_READY: ReadonlySet<ExtensionId> = new Set<ExtensionId>([
+  "calc.pile-bearing-capacity",
+  "calc.spread-foundation-drained",
+  "calc.spread-foundation-undrained",
+  "calc.laterally-loaded-pile",
+  "calc.sheet-pile-wall",
+  "calc.ground-anchor",
+]);
+
+function devUnlockActive(): boolean {
+  try {
+    return localStorage.getItem("ogs.dev.unlockExperimentalExtensions") === "true";
+  } catch {
+    return false;
+  }
+}
+
+/** True als de extension nu daadwerkelijk aanzetbaar is (= production-
+ *  ready, of dev-unlock actief). */
+export function isExtensionSelectable(id: ExtensionId): boolean {
+  if (!NOT_PRODUCTION_READY.has(id)) return true;
+  return devUnlockActive();
+}
+
 const EVENT_NAME = "ogs:extensions-changed";
 
 interface ChangePayload {
@@ -56,7 +88,9 @@ interface ChangePayload {
   enabled: boolean;
 }
 
-/** Reactive hook — geeft live de aan/uit-staat van één extensie. */
+/** Reactive hook — geeft live de aan/uit-staat van één extensie.
+ *  Voor not-production-ready extensies returnt deze altijd `false`
+ *  (tenzij de dev-unlock localStorage-flag aan staat). */
 export function useExtension(id: ExtensionId): boolean {
   const [enabled, setEnabled] = useState<boolean>(DEFAULTS[id]);
 
@@ -76,6 +110,10 @@ export function useExtension(id: ExtensionId): boolean {
     };
   }, [id]);
 
+  // Hard-disable not-production-ready extensies. De stored preference
+  // wordt genegeerd zodat een per-ongeluk geactiveerde toggle (bv. uit
+  // een geïmporteerde preferences.json) geen onbedoelde UI-tab activeert.
+  if (!isExtensionSelectable(id)) return false;
   return enabled;
 }
 
@@ -102,7 +140,10 @@ export function useAllExtensions(): Record<ExtensionId, boolean> {
     ).then((entries) => {
       if (cancelled) return;
       const next = { ...DEFAULTS };
-      for (const [id, v] of entries) next[id] = Boolean(v);
+      for (const [id, v] of entries) {
+        // Hard-disable not-production-ready extensies (zie isExtensionSelectable).
+        next[id] = isExtensionSelectable(id) ? Boolean(v) : false;
+      }
       setAll(next);
     });
     const onChange = (e: Event) => {
@@ -120,8 +161,18 @@ export function useAllExtensions(): Record<ExtensionId, boolean> {
   return all;
 }
 
-/** Schrijf nieuwe waarde naar preferences + broadcast aan luisteraars. */
+/** Schrijf nieuwe waarde naar preferences + broadcast aan luisteraars.
+ *  Voor not-production-ready extensies wordt het verzoek genegeerd
+ *  (tenzij dev-unlock actief is) — wij willen niet dat ze onbedoeld
+ *  via een config-tool aangezet kunnen worden. */
 export async function setExtension(id: ExtensionId, enabled: boolean): Promise<void> {
+  if (enabled && !isExtensionSelectable(id)) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[useExtensions] poging om '${id}' aan te zetten genegeerd — extensie is nog niet productie-gereed.`,
+    );
+    return;
+  }
   await setSetting(SETTING_KEYS[id], enabled);
   window.dispatchEvent(
     new CustomEvent<ChangePayload>(EVENT_NAME, { detail: { id, enabled } }),

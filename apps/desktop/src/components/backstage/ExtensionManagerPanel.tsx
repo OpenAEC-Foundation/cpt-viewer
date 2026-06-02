@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   useAllExtensions,
   setExtension,
+  isExtensionSelectable,
   type ExtensionId,
 } from "../../hooks/useExtensions";
 import { CALC_REGISTRY } from "../../calc/framework/registry";
@@ -120,8 +121,13 @@ export default function ExtensionManagerPanel() {
         {tab === "installed" &&
           filteredInstalled.map((ext) => {
             const enabled = enabledMap[ext.id];
+            const selectable = isExtensionSelectable(ext.id);
+            const lockedLabel = "Nog niet productie-gereed";
             return (
-              <div key={ext.id} className={`ext-card${enabled ? "" : " disabled"}`}>
+              <div
+                key={ext.id}
+                className={`ext-card${enabled ? "" : " disabled"}${selectable ? "" : " ext-card--locked"}`}
+              >
                 <div className="ext-card-header">
                   <span
                     className="ext-category-badge"
@@ -129,19 +135,34 @@ export default function ExtensionManagerPanel() {
                   >
                     {ext.category}
                   </span>
+                  {!selectable && (
+                    <span className="ext-locked-badge" title={lockedLabel}>
+                      🚧 In ontwikkeling
+                    </span>
+                  )}
                   <span className="ext-version">v{ext.version}</span>
                 </div>
                 <div className="ext-card-body">
                   <strong className="ext-name">{ext.name}</strong>
                   <p className="ext-desc">{ext.description}</p>
+                  {!selectable && (
+                    <p className="ext-desc-locked">
+                      Deze berekening is nog in ontwikkeling — getallen zijn nog niet
+                      productie-geverifieerd. De toggle is daarom uitgeschakeld.
+                    </p>
+                  )}
                   <span className="ext-author">{ext.author}</span>
                 </div>
                 <div className="ext-card-actions">
-                  <label className="ext-toggle">
+                  <label
+                    className={`ext-toggle${selectable ? "" : " ext-toggle--disabled"}`}
+                    title={selectable ? "" : lockedLabel}
+                  >
                     <input
                       type="checkbox"
-                      checked={enabled}
-                      onChange={() => toggleExtension(ext.id)}
+                      checked={enabled && selectable}
+                      disabled={!selectable}
+                      onChange={() => selectable && toggleExtension(ext.id)}
                     />
                     <span className="ext-toggle-slider" />
                   </label>
