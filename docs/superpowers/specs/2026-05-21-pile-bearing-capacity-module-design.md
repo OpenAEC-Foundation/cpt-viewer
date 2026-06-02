@@ -10,7 +10,7 @@ voor de framework-conventies (Ribbon-tab "Berekeningen", module-registry,
 IFCX-persistentie, Engelse file-naming).
 **Methode:** NEN-EN 1997-1:2005+A1:2013+NB:2019 (Eurocode 7 — Geotechnisch ontwerp)
 **Referentie-outputs:**
-- `verification-files/Constructieberekeningen/Funderingspaal/984.pdf` (ExternPakket 2027.3.01)
+- `verification-files/Constructieberekeningen/Funderingspaal/984.pdf` (de externe referentie-software)
 - 3BM `-CB-21 Constructieberekening.ods`, tabblad CGEO1 (3151 Bodegraven-template)
 
 ## 1. Doel en scope
@@ -587,7 +587,7 @@ Edge-cases met test-fixtures:
 
 `apps/desktop/src/calc/pile.test.ts` met vitest:
 
-### 6.1 Gouden test A — referentie 984.pdf blad 1-3 (ExternPakket)
+### 6.1 Gouden test A — referentie 984.pdf blad 1-3 (Referentie)
 
 Fixture: `__fixtures__/sondering-984.json` met:
 - Sondering 1 uit 984.pdf (CPT-data, paalkop +0,34, paalpunt -14,50)
@@ -661,7 +661,7 @@ Aannames die ik in dit design heb gemaakt — pas aan bij review als gewenst:
    210 GPa). Alternatief: directe input.
 3. **K₀·tan(δ) per laag berekend** uit Φ (K₀=1-sin(Φ), δ=0,75·Φ) met
    Eurocode-minimumeis 0,25 als ondergrens. Φ-defaults per grondsoort uit
-   tabel in sectie 4.1, user-editable. Bron-aanname: 3BM ExternPakket/ODS
+   tabel in sectie 4.1, user-editable. Bron-aanname: 3BM Referentie/ODS
    template "CGEO1" — geverifieerd 2026-05-21.
 4. **qs;max per grondsoort** — defaults uit `Tabel 7.d` (zand 0,15 MPa,
    klei 0,10 MPa, veen 0,02 MPa). Bron-tabel in `pile/types.ts`, niet

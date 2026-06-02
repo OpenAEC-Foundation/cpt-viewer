@@ -1,7 +1,7 @@
-// Verification-test tegen ExternPakket 2027.3.01 referentie-berekening
+// Verification-test tegen de externe referentie-software referentie-berekening
 // uit `verification-files/Constructieberekeningen/Funderingspaal/984.pdf`.
 //
-// ExternPakket is een Nederlandse engineering-suite voor constructie-
+// Referentie is een Nederlandse engineering-suite voor constructie-
 // berekeningen; de PDF bevat een paaldraagvermogen-berekening voor
 // een betongevulde stalen buispaal (Ø 219 mm) met sondering 1 als
 // CPT-input. Doel: onze implementatie van NEN 9997-1 NB:2019 §7.6.2.3
@@ -20,7 +20,7 @@ import { parseGef } from "./__fixtures__/gefParser";
 import { computeBaseResistance } from "./parts/base-resistance";
 import { getPileType } from "./catalog";
 
-interface ExternPakketCase {
+interface ReferentieCase {
   name: string;
   gef: string;
   expected: {
@@ -32,11 +32,11 @@ interface ExternPakketCase {
   };
 }
 
-// Verwachte waarden uit ExternPakket 984.pdf — alle 7 sonderingen uit het
+// Verwachte waarden uit 984.pdf — alle 7 sonderingen uit het
 // project (S1, S3..S8 — S2 ontbreekt in de bronberekening). Alle cases
 // gebruiken dezelfde paal-geometrie (Ø219 mm buispaal, paalpunt NAP
 // -14,50, gesloten punt geheid) — alleen de CPT-data verschilt.
-const CASES: ExternPakketCase[] = [
+const CASES: ReferentieCase[] = [
   {
     name: "S1 (121882_1.gef)",
     gef: "121882_1.gef",
@@ -77,7 +77,7 @@ const CASES: ExternPakketCase[] = [
 const PILE_TOE_NAP = -14.5;
 const DIAMETER_MM = 219;
 
-describe("verification — ExternPakket 984.pdf (NEN 9997-1 NB:2019 §7.6.2.3)", () => {
+describe("verification — 984.pdf (NEN 9997-1 NB:2019 §7.6.2.3)", () => {
   const pileType = getPileType("steel-pipe-driven-closed")!;
 
   for (const c of CASES) {
@@ -96,11 +96,11 @@ describe("verification — ExternPakket 984.pdf (NEN 9997-1 NB:2019 §7.6.2.3)",
       });
 
       // Drie afzonderlijke its zodat een failure direct laat zien welk
-      // gemiddelde (I/II/III) van het ExternPakket-resultaat afwijkt.
+      // gemiddelde (I/II/III) van het Referentie-resultaat afwijkt.
       it(`qc;I gemiddelde ≈ ${c.expected.qcIMpa} MPa (NEN 9997-1 NB:2019 §7.6.2.3)`, () => {
         // Tolerantie 0,5 MPa — accepteert kleine verschillen door:
         //   - andere interpolatie-strategie tussen CPT-meetpunten
-        //   - andere dc-loop step-size (0,01·Deq vs ExternPakket's interne)
+        //   - andere dc-loop step-size (0,01·Deq vs de Referentie zijn interne)
         //   - rounding van paalpunt op 0,5 m vs exacte NAP
         expect(result.qcIGemMpa).toBeCloseTo(c.expected.qcIMpa, 0);
       });
@@ -114,7 +114,7 @@ describe("verification — ExternPakket 984.pdf (NEN 9997-1 NB:2019 §7.6.2.3)",
         expect(result.qbMaxMpa).toBeCloseTo(c.expected.qbMaxMpa, 0);
       });
       it(`R_b;cal;max ≈ ${c.expected.rbCalMaxKn} kN`, () => {
-        // Tolerantie 25 kN (~6%) — ExternPakket rondt intern af; cumulatieve
+        // Tolerantie 25 kN (~6%) — Referentie rondt intern af; cumulatieve
         // verschillen in qc;I/II/III sluipen door naar Rb.
         expect(result.rbCalMax).toBeGreaterThan(c.expected.rbCalMaxKn - 25);
         expect(result.rbCalMax).toBeLessThan(c.expected.rbCalMaxKn + 25);

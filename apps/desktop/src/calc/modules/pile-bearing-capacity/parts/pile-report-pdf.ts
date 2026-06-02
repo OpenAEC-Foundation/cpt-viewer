@@ -1,6 +1,6 @@
 // apps/desktop/src/calc/modules/pile-bearing-capacity/parts/pile-report-pdf.ts
 //
-// Multi-sondering paaldraagvermogen-rapport in ExternPakket 984.pdf-stijl.
+// Multi-sondering paaldraagvermogen-rapport in 984.pdf-stijl.
 // Genereert per sondering een complete uitwerking (algemeen, grondsoorten,
 // qc-gemiddelden, negatieve kleef, puntdraag, schachtwrijving, zakking)
 // + eindanalyse met statistische combinatie van alle sonderingen.
@@ -585,7 +585,7 @@ export function generatePileReport(inputs: PileReportInputs): Uint8Array {
 
   // ─── Loop per sondering ────────────────────────────────────
   // Hier zit de "loop" die de gebruiker vroeg — per sondering
-  // wordt EXACT dezelfde sectie geproduceerd als in ExternPakket
+  // wordt EXACT dezelfde sectie geproduceerd als in Referentie
   // 984.pdf, met alle waarden uit de bijhorende berekening.
   for (const s of inputs.sonderingen) {
     renderSondering(c, s, inputs.factors);

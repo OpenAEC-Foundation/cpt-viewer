@@ -616,7 +616,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
   // Volledige qc-puntenlijst (gefilterd + gedownsampled) — basis voor alle
   // qc-curve-segmenten. We splitsen later op NAP-range zodat we per zone
   // (8D / dc / 4D-max / overig) een andere kleur kunnen geven, conform de
-  // norm-visualisatie in ExternPakket + referentienorm.
+  // norm-visualisatie in Referentie + referentienorm.
   const qcPoints = useMemo(() => {
     const filtered = cpt.points.filter(
       (p) => typeof p.qc === "number" && Number.isFinite(p.qc),
@@ -1123,7 +1123,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
               is het "afgesnuiten" gebied (tussen clipped curve en raw
               qc-curve) NIET gearceerd — visualiseert direct dat dat deel
               is weggekapt door de afkapregel uit NEN 9997-1 NB:2019.
-              Conform ExternPakket/referentienorm visualisatiestijl voor qc;III. */}
+              Conform Referentie/referentienorm visualisatiestijl voor qc;III. */}
       {zone8DVisible && (() => {
         const groundNap = cpt.metadata.ground_level_nap ?? 0;
         const pileToeDepth = groundNap - input.pileToeNap;
@@ -1302,7 +1302,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       </text>
 
       {/* ─── qc curve ───
-          Conform ExternPakket + referentienorm-norm-visualisatie: de qc-polyline is
+          Conform Referentie + referentienorm-norm-visualisatie: de qc-polyline is
           opgesplitst in gekleurde segmenten per invloed-zone. De basis is
           dun grijs (overal), en de zone-segmenten worden er bovenop
           getekend in zone-kleur.
@@ -1567,7 +1567,7 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       {/* ─── In-chart gemiddelde qc-waarden per invloed-zone ───
           Voor elke zone tekenen we een vertikale dashed lijn op
           x = xScale(gemiddelde) over de zone-hoogte, plus een tekst-label
-          met halo voor leesbaarheid. Dit is hoe ExternPakket + referentienorm de
+          met halo voor leesbaarheid. Dit is hoe Referentie + referentienorm de
           gemiddelde qc-waarde "rechtuit" tegenover de werkelijke curve
           visualiseren — zie verification-files/Constructieberekeningen/
           Funderingspaal/984.pdf.

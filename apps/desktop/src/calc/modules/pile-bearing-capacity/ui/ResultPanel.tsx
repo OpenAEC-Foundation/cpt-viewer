@@ -49,7 +49,7 @@ function Formula({ lhs, symbolic, filled, result }: FormulaProps) {
 }
 
 // ─── Lastzakkingsdiagram (bidirectioneel) ────────────────────────
-// Conform ExternPakket stijl (984.pdf blad 27): x-as gaat van -Rs;cal;max
+// Conform Referentie stijl (984.pdf blad 27): x-as gaat van -Rs;cal;max
 // (links) tot +Rb;cal;max (rechts) met 0 in het midden. Y-as is zakking
 // [mm] omlaag. Voor elke werkpunt-zakking wordt Rs (links) en Rb (rechts)
 // als horizontale lijn getoond. De volledige mobilisatie-curves (Rs(sb)

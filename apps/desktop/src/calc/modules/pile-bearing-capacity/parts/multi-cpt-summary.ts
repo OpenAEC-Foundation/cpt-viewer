@@ -132,7 +132,7 @@ interface MultiCptInputs {
   stiffness?: BuildingStiffness;
   /** Project-level Fnk;d override [kN]. Indien gegeven wordt deze waarde
    *  gebruikt i.p.v. het gemiddelde van per-sondering Fnk;d. Handig voor
-   *  reproductie van externe rapporten (ExternPakket) waar het project-Fnk
+   *  reproductie van externe rapporten (Referentie) waar het project-Fnk
    *  rechtstreeks is opgegeven. */
   fnkDOverride?: number;
 }
@@ -140,7 +140,7 @@ interface MultiCptInputs {
 /**
  * Multi-sondering paaldraagvermogen-analyse. Implementeert exact de
  * procedure uit NEN 9997-1 NB:2019 §7.6.2.3 (5) + Tabel A.10b zoals
- * gerapporteerd op blad 23 van ExternPakket's 984.pdf:
+ * gerapporteerd op blad 23 van de Referentie zijn 984.pdf:
  *
  *   VC = std / mean × 100%
  *   (ξ3, ξ4) ← Tabel A.10b op basis van n + (VC < 12%) + bouwwerktype

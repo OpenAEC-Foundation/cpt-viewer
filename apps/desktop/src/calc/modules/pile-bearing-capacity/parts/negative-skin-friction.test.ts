@@ -45,7 +45,7 @@ describe("negative skin friction — regression: zone-clip + water-split", () =>
   //   - thickness = 9,34 m (geclipt op neg-kleef-zone)
   //   - gammaW = 10 (laag onder water, geen split-bug)
   //   - dSigma = 9,34 × (18−10) = 75 kPa; σ_gem×h = 350 kPa·m
-  //   - Fsnk = 0,688 × 0,25 × 350 = 60 kN  ← matcht ExternPakket
+  //   - Fsnk = 0,688 × 0,25 × 350 = 60 kN  ← matcht Referentie
   const buggyInput: PileInput = {
     cptId: "regression",
     pileTypeId: "steel-pipe-driven-closed",
@@ -74,7 +74,7 @@ describe("negative skin friction — regression: zone-clip + water-split", () =>
     expect(result.layers[0].thickness).toBeCloseTo(9.34, 1);
   });
 
-  it("Fnk;d binnen 10% van ExternPakket-gemiddelde (60 kN)", () => {
+  it("Fnk;d binnen 10% van Referentie-gemiddelde (60 kN)", () => {
     // Verwacht ~60 kN (51..69) voor deze case na fixes.
     expect(result.fnkD).toBeGreaterThan(51);
     expect(result.fnkD).toBeLessThan(70);

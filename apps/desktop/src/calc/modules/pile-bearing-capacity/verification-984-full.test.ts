@@ -1,4 +1,4 @@
-// Volledige reproductie van het ExternPakket 984.pdf rapport — alle 7
+// Volledige reproductie van het 984.pdf rapport — alle 7
 // sonderingen × COMPLETE berekening (Rb + Rs + Fnk via mijn eigen code,
 // soil-profile per sondering automatisch gedetecteerd) + statistische
 // eindanalyse uit NEN 9997-1 NB:2019 §7.6.2.3 (5) + Tabel A.10b.
@@ -39,7 +39,7 @@ const PROJECT = {
   ksMinFactor: 0.25,
 };
 
-// ─── ExternPakket expected waarden (uit 984.pdf bladen 1-22 + 23) ──
+// ─── Referentie expected waarden (uit 984.pdf bladen 1-22 + 23) ──
 interface XCase {
   name: string;
   gef: string;
@@ -61,7 +61,7 @@ const X_CASES: XCase[] = [
   { name: "S8", gef: "121882_8.gef", qcI: 10.38, qcII: 10.33, qcIII: 9.03,  qbMaxMpa: 6.78,  rbCalMax: 255, rsCalMax: 311, rcCal: 566 },
 ];
 
-// ─── ExternPakket statistische eindresultaten (blad 23) ────────────
+// ─── Referentie statistische eindresultaten (blad 23) ────────────
 const X_SUMMARY = {
   n: 7,
   rcCalMean: 626,
@@ -154,7 +154,7 @@ beforeAll(() => {
     });
   }
 
-  // Multi-CPT analyse — gebruikt MIJN BEREKENDE waarden (geen ExternPakket
+  // Multi-CPT analyse — gebruikt MIJN BEREKENDE waarden (geen Referentie
   // overrides). Fnk;d per sondering wordt gemiddeld in de summary.
   const cases: PerCptCase[] = ACTUAL.map((a) => ({
     cptId: a.name,
@@ -173,7 +173,7 @@ beforeAll(() => {
 });
 
 // ─── Statistische analyse tests ──────────────────────────────────
-describe("verification — ExternPakket 984.pdf COMPLETE BEREKENING", () => {
+describe("verification — 984.pdf COMPLETE BEREKENING", () => {
   it("n = 7 sonderingen verwerkt", () => {
     expect(MY_SUMMARY!.n).toBe(7);
     expect(ACTUAL).toHaveLength(7);
@@ -185,7 +185,7 @@ describe("verification — ExternPakket 984.pdf COMPLETE BEREKENING", () => {
     }
   });
 
-  it("ξ3/ξ4 uit Tabel A.10b matchen ExternPakket (VC bepaalt rij)", () => {
+  it("ξ3/ξ4 uit Tabel A.10b matchen Referentie (VC bepaalt rij)", () => {
     // Bij andere Rs/Fnk waarden kan VC verschillen — alleen check formula correctness.
     expect(MY_SUMMARY!.xi3).toBeGreaterThan(1.0);
     expect(MY_SUMMARY!.xi4).toBeGreaterThanOrEqual(1.0);
@@ -197,7 +197,7 @@ describe("verification — ExternPakket 984.pdf COMPLETE BEREKENING", () => {
 });
 
 // ─── PDF-uitdraai genereren ──────────────────────────────────────
-describe("PDF-uitdraai — ExternPakket-stijl per-sondering rapport", () => {
+describe("PDF-uitdraai — 984-rapport-stijl per-sondering rapport", () => {
   it("genereert __output__/984-rapport.pdf via generatePileReport()", () => {
     const outDir = resolve(__dirname, "__output__");
     mkdirSync(outDir, { recursive: true });
@@ -228,7 +228,7 @@ describe("PDF-uitdraai — ExternPakket-stijl per-sondering rapport", () => {
 
     writeFileSync(outPath, Buffer.from(pdfBytes));
     // eslint-disable-next-line no-console
-    console.log(`\n✓ ExternPakket-stijl rapport: ${outPath} (${pdfBytes.length} bytes)\n`);
+    console.log(`\n✓ 984-rapport-stijl rapport: ${outPath} (${pdfBytes.length} bytes)\n`);
 
     // Diagnostiek
     // eslint-disable-next-line no-console
@@ -244,9 +244,9 @@ describe("PDF-uitdraai — ExternPakket-stijl per-sondering rapport", () => {
   });
 
   // Houd de vorige verification-PDF beschikbaar voor diff-controle.
-  it("genereert __output__/984-verification.pdf (eenvoudige tabellen voor mijn vs ExternPakket)", () => {
+  it("genereert __output__/984-verification.pdf (eenvoudige tabellen voor mijn vs Referentie)", () => {
     // Het volgende blok was eerder de inline-PDF — laat het staan voor
-    // visuele vergelijking mijn berekende vs ExternPakket waardes.
+    // visuele vergelijking mijn berekende vs Referentie waardes.
     const { jsPDF } = require("jspdf") as typeof import("jspdf");
     const outDir = resolve(__dirname, "__output__");
     mkdirSync(outDir, { recursive: true });
@@ -259,7 +259,7 @@ describe("PDF-uitdraai — ExternPakket-stijl per-sondering rapport", () => {
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(13);
-    doc.text("Verification rapport — COMPLETE reproductie van ExternPakket 984.pdf", M, y);
+    doc.text("Verification rapport — COMPLETE reproductie van 984.pdf", M, y);
     y += 6;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
@@ -363,7 +363,7 @@ describe("PDF-uitdraai — ExternPakket-stijl per-sondering rapport", () => {
       ["Conclusie", MY_SUMMARY!.passes ? "VOLDOET" : "VOLDOET NIET", X_SUMMARY.passes ? "VOLDOET" : "VOLDOET NIET"],
     ];
 
-    drawRow(["Parameter", "Mijn berekening", "ExternPakket 984.pdf"], [80, 50, 50], true);
+    drawRow(["Parameter", "Mijn berekening", "984.pdf"], [80, 50, 50], true);
     doc.line(M, y - 3.2, M + PW, y - 3.2);
     for (const [label, mine, exp] of summaryRows) {
       drawRow([label, mine, exp], [80, 50, 50]);
@@ -373,7 +373,7 @@ describe("PDF-uitdraai — ExternPakket-stijl per-sondering rapport", () => {
     doc.setFont("helvetica", "italic");
     doc.setFontSize(7);
     doc.text(
-      `Gegenereerd: ${new Date().toISOString()} — Open Geotechniek Studio verification suite — geen handmatige ExternPakket-overrides`,
+      `Gegenereerd: ${new Date().toISOString()} — Open Geotechniek Studio verification suite — geen handmatige Referentie-overrides`,
       M,
       y,
     );
