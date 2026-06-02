@@ -1,4 +1,11 @@
 // apps/desktop/src/calc/modules/pile-bearing-capacity/module.tsx
+//
+// ⚠ ALPHA — nog in ontwikkeling. De berekening werkt, maar getallen zijn
+//   nog NIET productie-geverifieerd. Niet gebruiken voor toetsing bij
+//   vergunning of uitvoering. Module is hard-disabled via
+//   NOT_PRODUCTION_READY in useExtensions.ts; CalculationsView toont een
+//   prominente amber tussenstand-banner zodra deze module actief is.
+//
 import type { CalcModule, ProjectContext } from "../../framework/types";
 import type { PileInput, PileResult } from "./types";
 import { computePile } from "./compute";

@@ -284,6 +284,20 @@
   color: var(--theme-text-secondary, #71717a);
 }
 .calc-modal-soon { color: var(--amber, #d97706); }
+/* ALPHA-badge in NewCalculationDialog — vervangt de oude SOON-emoji.
+   Onmiskenbaar amber pillvorm zodat duidelijk is dat de module nog niet
+   productie-gereed is. */
+.calc-modal-alpha {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  background: #d97706;
+  color: #fff;
+  font: 700 0.62rem "Inter", sans-serif;
+  letter-spacing: 0.04em;
+  border-radius: 3px;
+  vertical-align: middle;
+}
 .calc-modal-footer {
   padding: 12px 20px;
   border-top: 1px solid var(--theme-border, #e7e5e4);
