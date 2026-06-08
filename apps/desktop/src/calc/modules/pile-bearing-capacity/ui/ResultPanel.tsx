@@ -1,7 +1,11 @@
 // apps/desktop/src/calc/modules/pile-bearing-capacity/ui/ResultPanel.tsx
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { PanelProps } from "../../../framework/types";
 import type { PileInput, PileResult, SettlementResult } from "../types";
+import { generatePileReport } from "../parts/pile-report-pdf";
+import { computeMultiCptSummary } from "../parts/multi-cpt-summary";
+import { getPileType } from "../catalog";
+import { downloadPdf } from "../../../../utils/downloadPdf";
 import "./styles.css";
 
 // ─── Formula-helper component (Open Calculation Studio stijl) ────
@@ -266,6 +270,61 @@ function ZakkingsChart({ settlement, rbCalMax, rsCalMax }: ZakkingsChartProps) {
 // ─── ResultPanel ─────────────────────────────────────────────────
 
 export function ResultPanel({ input, result }: PanelProps<PileInput, PileResult>) {
+  const [downloading, setDownloading] = useState(false);
+
+  // Download-handler — werkt in zowel Tauri (native save-dialog) als in
+  // een normale browser (blob + anchor-download). De PDF wordt puur in
+  // JS gegenereerd via jsPDF — geen WebAssembly nodig.
+  const handleDownloadPdf = async () => {
+    if (!result.ok || downloading) return;
+    setDownloading(true);
+    try {
+      const pileType = getPileType(input.pileTypeId);
+      const sondering = {
+        name: input.cptId ?? "Sondering",
+        input,
+        result,
+      };
+      const rcCalSingle = result.base.rbCalMax + result.shaft.rsCalMax;
+      const summary = computeMultiCptSummary({
+        cases: [{
+          cptId: sondering.name,
+          rbCalMax: result.base.rbCalMax,
+          rsCalMax: result.shaft.rsCalMax,
+          rcCal: rcCalSingle,
+          fnkD: result.negKleef.fnkD,
+        }],
+        gammaM: input.gammaM,
+        nEd: input.nEd,
+        stiffness: "non-stiff",
+      });
+      const bytes = generatePileReport({
+        project: {
+          number: "—",
+          description: "Paaldraagvermogen-berekening",
+          norm: "NEN-EN 1997-1+NB:2019 §7.6.2.3",
+          date: new Date().toISOString().slice(0, 10),
+          author: "Open Geotechniek Studio",
+        },
+        sonderingen: [sondering],
+        summary,
+        pileTypeName: pileType?.name ?? input.pileTypeId,
+        factors: {
+          alphaP: pileType?.alphaP ?? 0.7,
+          alphaS: pileType?.alphaS ?? 0.008,
+          alphaT: pileType?.alphaT ?? 0.006,
+        },
+      });
+      const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      await downloadPdf(`paaldraagvermogen-${sondering.name}-${ts}.pdf`, bytes);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[ResultPanel] PDF-download mislukt:", err);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   if (!result.ok) {
     return <div className="pile-result-error">⚠️ {result.error}</div>;
   }
@@ -280,6 +339,18 @@ export function ResultPanel({ input, result }: PanelProps<PileInput, PileResult>
           {result.warnings.map((w, i) => <div key={i}>⚠️ {w}</div>)}
         </div>
       )}
+
+      <div className="pile-result-toolbar">
+        <button
+          type="button"
+          className="pile-result-download-btn"
+          onClick={handleDownloadPdf}
+          disabled={downloading}
+          title="Genereert een PDF-rapport van de huidige berekening (werkt zowel in de desktop-app als in een browser)"
+        >
+          {downloading ? "⏳ Bezig…" : "📥 Download PDF-rapport"}
+        </button>
+      </div>
 
       <section>
         <h3>Negatieve kleef</h3>

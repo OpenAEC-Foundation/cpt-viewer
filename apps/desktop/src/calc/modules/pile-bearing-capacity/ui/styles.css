@@ -591,6 +591,34 @@
   flex-direction: column;
   gap: 16px;
 }
+/* Toolbar bovenaan ResultPanel — bevat PDF-download knop. Komt uit
+   sticky-top zodat hij ook bij scrollen zichtbaar blijft. */
+.pile-result-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--theme-border, #e7e5e4);
+  margin-bottom: 4px;
+}
+.pile-result-download-btn {
+  padding: 6px 12px;
+  background: var(--theme-bg, #fff);
+  color: var(--theme-text, #36363e);
+  border: 1px solid var(--theme-border, #cbd5e1);
+  border-radius: 4px;
+  font: 600 0.8rem "Inter", sans-serif;
+  cursor: pointer;
+  transition: background 80ms ease-out, border-color 80ms ease-out;
+}
+.pile-result-download-btn:hover:not(:disabled) {
+  background: var(--theme-bg-hover, #f4f4f5);
+  border-color: var(--theme-border-strong, #94a3b8);
+}
+.pile-result-download-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
 .pile-result section h3 {
   margin: 0 0 6px;
   font: 700 0.82rem "Inter", sans-serif;
