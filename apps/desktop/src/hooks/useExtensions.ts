@@ -35,13 +35,15 @@ const SETTING_KEYS: Record<ExtensionId, string> = {
   "calc.ground-anchor": "ext.calc.ground-anchor.enabled",
 };
 
-/** Default state: alles UIT (gebruiker-verzoek). Rapport is GEEN
- *  extensie — die tab is altijd zichtbaar omdat PDF-generatie tot
- *  de kern-workflow van de app behoort. */
+/** Default state: alles UIT, behalve `calc.pile-bearing-capacity` die
+ *  in actieve ontwikkeling is en daarom standaard AAN staat (zodat de
+ *  Berekeningen-tab direct verschijnt voor verdere uitwerking). De
+ *  prominente tussenstand-banner + ALPHA-badge blijven zichtbaar als
+ *  herinnering dat de getallen nog NIET productie-geverifieerd zijn. */
 const DEFAULTS: Record<ExtensionId, boolean> = {
   tekening: false,
   offertes: false,
-  "calc.pile-bearing-capacity": false,
+  "calc.pile-bearing-capacity": true,
   "calc.spread-foundation-drained": false,
   "calc.spread-foundation-undrained": false,
   "calc.laterally-loaded-pile": false,
@@ -49,16 +51,23 @@ const DEFAULTS: Record<ExtensionId, boolean> = {
   "calc.ground-anchor": false,
 };
 
-/** Extensies die nog NIET productie-gereed zijn. Deze blijven altijd
- *  uit voor de eindgebruiker — toggle is gedeactiveerd in de
- *  ExtensionManagerPanel, en zelfs als de preference per ongeluk op
- *  `true` staat, retourneert `useExtension()` `false`.
+/** Extensies die nog NIET productie-gereed zijn EN ook niet via de UI
+ *  aanzetbaar mogen zijn voor eindgebruikers. Deze blijven altijd uit —
+ *  toggle is gedeactiveerd in de ExtensionManagerPanel, en zelfs als de
+ *  preference per ongeluk op `true` staat, retourneert `useExtension()`
+ *  `false`.
  *
- *  Voor dev-/test-doeleinden: zet in de browser-DevTools console
+ *  `calc.pile-bearing-capacity` zit hier BEWUST NIET in: die module is
+ *  in actieve ontwikkeling en moet voor de developer aanzetbaar zijn.
+ *  Status 'experimental' op de module zelf zorgt voor de prominente
+ *  tussenstand-banner in CalculationsView en de ALPHA-badge in de
+ *  NewCalculationDialog.
+ *
+ *  Voor dev-/test-doeleinden van de OVERIGE calc-modules: zet in de
+ *  browser-DevTools console
  *    `localStorage.setItem("ogs.dev.unlockExperimentalExtensions", "true")`
- *  en herlaad de app. Dan worden de toggles weer aanzetbaar. */
+ *  en herlaad de app. Dan worden alle toggles weer aanzetbaar. */
 export const NOT_PRODUCTION_READY: ReadonlySet<ExtensionId> = new Set<ExtensionId>([
-  "calc.pile-bearing-capacity",
   "calc.spread-foundation-drained",
   "calc.spread-foundation-undrained",
   "calc.laterally-loaded-pile",
