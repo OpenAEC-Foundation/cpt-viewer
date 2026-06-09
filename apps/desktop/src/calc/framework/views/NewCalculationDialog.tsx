@@ -22,7 +22,6 @@ export function NewCalculationDialog({ open, onClose }: Props) {
   const cpts = useCptStore((s) => s.cpts);
   const activeCptId = useCptStore((s) => s.activeCptId);
   const addCalc = useCalculationsStore((s) => s.addCalculation);
-  const updateCalc = useCalculationsStore((s) => s.updateCalculation);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -44,8 +43,12 @@ export function NewCalculationDialog({ open, onClose }: Props) {
     const ctx = { cpts, activeCptId, projectMeta };
     const input = mod.defaultInput(ctx);
     const finalName = name.trim() || `${mod.name} ${Date.now().toString(36).slice(-4)}`;
-    const id = addCalc(activeDocId, mod.id, finalName);
-    updateCalc(activeDocId, id, { input });
+    // Atomic: input meegeven aan addCalculation in plaats van een aparte
+    // updateCalc-aanroep. Met de oude 2-step (addCalc → updateCalc) was
+    // er een korte tussenstand waarin `instance.input === {}` was, en
+    // module-componenten die meteen renderden (VisualPanel/ResultPanel)
+    // op `input.<veld>.toFixed()` crashten zonder defaults.
+    addCalc(activeDocId, mod.id, finalName, input);
     onClose();
   };
 

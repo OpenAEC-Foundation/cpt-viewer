@@ -22,6 +22,14 @@ interface Props {
 const V_W = 400;
 const V_H = 480;
 
+/** Veilige number-render: behandelt undefined/NaN als "—" zodat een
+ *  tussenstand met lege input (bv. tussen addCalc en updateCalc) geen
+ *  TypeError op `.toFixed()` veroorzaakt. */
+function fmt(n: number | undefined, digits: number): string {
+  if (typeof n !== "number" || !Number.isFinite(n)) return "—";
+  return n.toFixed(digits);
+}
+
 export function VisualPanel({ input, result }: Props) {
   const valblok = resolveValblok(input);
 
@@ -32,7 +40,9 @@ export function VisualPanel({ input, result }: Props) {
   const pileBotY = 440;  // onderkant paal (= paalpunt)
   const pileHeight = pileBotY - pileTopY;
 
-  // Paalbreedte in viewBox-pixels — schaal D_eq / 800mm op 60px max
+  // Paalbreedte in viewBox-pixels — schaal D_eq / 800mm op 60px max.
+  // result.dEqMm + input.diameterMm kunnen 0/undefined zijn als de
+  // instance net is aangemaakt en defaultInput nog niet is doorgegeven.
   const dForVis = Math.max(result.dEqMm || input.diameterMm || 200, 50);
   const pileWidthVB = Math.min(80, Math.max(30, (dForVis / 800) * 80));
   const pileLeft = cx - pileWidthVB / 2;
@@ -47,9 +57,9 @@ export function VisualPanel({ input, result }: Props) {
   const blokTop = blokBottom - blokH;
   const valStartY = blokTop - valhoogtePx;
 
-  const eBlokTxt = result.eBlokKnm > 0 ? `${result.eBlokKnm.toFixed(2)} kNm` : "—";
-  const valhoogteTxt = valblok ? `${valblok.valhoogteM.toFixed(2)} m` : "—";
-  const massaTxt = valblok ? `${valblok.massaKg} kg` : "—";
+  const eBlokTxt = result.eBlokKnm > 0 ? `${fmt(result.eBlokKnm, 2)} kNm` : "—";
+  const valhoogteTxt = valblok ? `${fmt(valblok.valhoogteM, 2)} m` : "—";
+  const massaTxt = valblok ? `${valblok.massaKg ?? "—"} kg` : "—";
 
   return (
     <div className="kalendering-visual">
@@ -187,7 +197,7 @@ export function VisualPanel({ input, result }: Props) {
             fontWeight="700"
             fontFamily="Inter, sans-serif"
           >
-            q_c = {input.conusweerstandMpa.toFixed(1)} MPa
+            q_c = {fmt(input.conusweerstandMpa, 1)} MPa
           </text>
 
           {/* ─── Grondniveau-label ─── */}
@@ -213,8 +223,8 @@ export function VisualPanel({ input, result }: Props) {
             fontFamily="Inter, sans-serif"
           >
             {input.paalSoort === "rond"
-              ? `D = ${input.diameterMm} mm`
-              : `a × b = ${input.diameterMm} × ${input.zijdeBMm} mm`}
+              ? `D = ${input.diameterMm ?? "—"} mm`
+              : `a × b = ${input.diameterMm ?? "—"} × ${input.zijdeBMm ?? "—"} mm`}
           </text>
           {input.paalSoort === "rechthoekig" && result.dEqMm > 0 && (
             <text
@@ -226,7 +236,7 @@ export function VisualPanel({ input, result }: Props) {
               fontStyle="italic"
               fontFamily="Inter, sans-serif"
             >
-              D_eq = {result.dEqMm.toFixed(0)} mm
+              D_eq = {fmt(result.dEqMm, 0)} mm
             </text>
           )}
         </svg>
