@@ -137,6 +137,7 @@ if (LDraggable?.prototype && typeof L.DomEvent?.on === "function") {
 
 import "./i18n/config";
 import App from "./App";
+import { ErrorBoundary } from "./ErrorBoundary";
 
 // Production: disable context menu and browser dev shortcuts
 if (import.meta.env.PROD) {
@@ -163,7 +164,9 @@ if (import.meta.env.PROD) {
 try {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </React.StrictMode>,
   );
 } catch (err) {
