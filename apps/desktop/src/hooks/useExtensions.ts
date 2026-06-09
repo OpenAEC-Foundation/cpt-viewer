@@ -18,6 +18,7 @@ export type ExtensionId =
   | "tekening"
   | "offertes"
   | "calc.pile-bearing-capacity"
+  | "calc.kalendering"
   | "calc.spread-foundation-drained"
   | "calc.spread-foundation-undrained"
   | "calc.laterally-loaded-pile"
@@ -28,6 +29,7 @@ const SETTING_KEYS: Record<ExtensionId, string> = {
   tekening: "ext.tekening.enabled",
   offertes: "ext.offertes.enabled",
   "calc.pile-bearing-capacity": "ext.calc.pile-bearing-capacity.enabled",
+  "calc.kalendering": "ext.calc.kalendering.enabled",
   "calc.spread-foundation-drained": "ext.calc.spread-foundation-drained.enabled",
   "calc.spread-foundation-undrained": "ext.calc.spread-foundation-undrained.enabled",
   "calc.laterally-loaded-pile": "ext.calc.laterally-loaded-pile.enabled",
@@ -44,6 +46,12 @@ const DEFAULTS: Record<ExtensionId, boolean> = {
   tekening: false,
   offertes: false,
   "calc.pile-bearing-capacity": true,
+  // `calc.kalendering` staat default AAN — module is in actieve ontwikkeling
+  // en moet direct zichtbaar zijn naast de Funderingspaal-module zodat de
+  // engineer beide rekenbladen in dezelfde sessie kan gebruiken. Status
+  // 'experimental' op de module zelf zorgt voor de prominente tussenstand-
+  // banner.
+  "calc.kalendering": true,
   "calc.spread-foundation-drained": false,
   "calc.spread-foundation-undrained": false,
   "calc.laterally-loaded-pile": false,
@@ -138,6 +146,7 @@ export function useAllExtensions(): Record<ExtensionId, boolean> {
       "tekening",
       "offertes",
       "calc.pile-bearing-capacity",
+      "calc.kalendering",
       "calc.spread-foundation-drained",
       "calc.spread-foundation-undrained",
       "calc.laterally-loaded-pile",

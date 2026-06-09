@@ -1,0 +1,191 @@
+/* apps/desktop/src/calc/modules/kalendering/ui/styles.css */
+
+/* ============================================================
+   InputPanel — formulier voor valblok + paal + qc + slagSet
+   ============================================================ */
+.kalendering-input fieldset {
+  border: 1px solid var(--theme-border, #e7e5e4);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.kalendering-input legend {
+  font: 600 0.78rem "Inter", sans-serif;
+  padding: 0 6px;
+  color: var(--theme-text, #36363e);
+}
+.kalendering-input label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font: 500 0.82rem "Inter", sans-serif;
+  margin-bottom: 4px;
+}
+.kalendering-input input,
+.kalendering-input select {
+  flex: 1;
+  max-width: 180px;
+  padding: 3px 6px;
+  border: 1px solid var(--theme-border, #cbd5e1);
+  border-radius: 3px;
+  font: 500 0.82rem var(--font-code, "JetBrains Mono"), monospace;
+}
+.kalendering-input .kalendering-radio-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.kalendering-input .kalendering-radio-row label {
+  margin: 0;
+  flex: 0 0 auto;
+}
+.kalendering-input .kalendering-radio-row input[type="radio"] {
+  max-width: 16px;
+  margin-right: 4px;
+}
+.kalendering-input .kalendering-readonly {
+  background: var(--theme-bg-muted, #f5f5f4);
+  color: var(--theme-text-secondary, #71717a);
+  font-style: italic;
+}
+.kalendering-input .kalendering-hint {
+  margin: 4px 0 0;
+  font: 500 0.72rem "Inter", sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+  font-style: italic;
+}
+
+/* ============================================================
+   VisualPanel — schematische weergave van paal + valblok
+   ============================================================ */
+.kalendering-visual {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 8px;
+  padding: 8px;
+  background: var(--theme-bg-lighter, #fff);
+}
+.kalendering-visual h3 {
+  margin: 0;
+  font: 700 0.95rem "Inter", sans-serif;
+  color: var(--theme-text, #36363e);
+}
+.kalendering-visual-svg-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--theme-border, #e7e5e4);
+  border-radius: 4px;
+  background: var(--theme-bg, #fafaf9);
+}
+.kalendering-visual-svg {
+  width: 100%;
+  height: 100%;
+  max-width: 520px;
+}
+.kalendering-visual-footnote {
+  margin: 0;
+  font: 500 0.78rem var(--font-code, "JetBrains Mono"), monospace;
+  color: var(--theme-text-secondary, #71717a);
+  line-height: 1.5;
+}
+
+/* ============================================================
+   ResultPanel — OCS-style formules + slagcount + warnings
+   ============================================================ */
+.kalendering-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  font: 500 0.86rem "Inter", sans-serif;
+  color: var(--theme-text, #36363e);
+}
+.kalendering-result-error {
+  background: var(--theme-error-bg, #fef2f2);
+  color: var(--theme-error-fg, #b91c1c);
+  border: 1px solid var(--theme-error-border, #fecaca);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font: 500 0.84rem var(--font-code, "JetBrains Mono"), monospace;
+}
+.kalendering-result-warning {
+  background: var(--theme-warning-bg, #fefce8);
+  color: var(--theme-warning-fg, #854d0e);
+  border: 1px solid var(--theme-warning-border, #fde68a);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font: 500 0.78rem "Inter", sans-serif;
+  margin: 0;
+}
+.kalendering-result h4 {
+  margin: 8px 0 4px;
+  font: 700 0.84rem "Inter", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--theme-text-secondary, #71717a);
+}
+
+/* Formula — 3-rij grid (lhs | = | rhs) — gedeelde stijl met pile-formula. */
+.kalendering-formula {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  column-gap: 6px;
+  row-gap: 2px;
+  margin-bottom: 10px;
+  font: 500 0.82rem var(--font-code, "JetBrains Mono"), monospace;
+}
+.kalendering-formula-row {
+  display: contents;
+}
+.kalendering-formula-lhs {
+  text-align: right;
+  white-space: nowrap;
+  color: var(--theme-text, #36363e);
+}
+.kalendering-formula-eq {
+  text-align: center;
+  color: var(--theme-text-secondary, #71717a);
+}
+.kalendering-formula-rhs {
+  text-align: left;
+  color: var(--theme-text, #36363e);
+}
+.kalendering-formula-row--result .kalendering-formula-rhs {
+  font-weight: 700;
+  color: var(--theme-text, #36363e);
+}
+
+/* Kerncijfer-blokjes voor slagen-per-set en slagen-per-meter. */
+.kalendering-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+.kalendering-stat {
+  border: 1px solid var(--theme-border, #e7e5e4);
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: var(--theme-bg-lighter, #fff);
+}
+.kalendering-stat-label {
+  font: 500 0.72rem "Inter", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--theme-text-secondary, #71717a);
+  margin-bottom: 2px;
+}
+.kalendering-stat-value {
+  font: 700 1.25rem var(--font-code, "JetBrains Mono"), monospace;
+  color: var(--theme-text, #36363e);
+}
+.kalendering-stat-unit {
+  font: 500 0.72rem "Inter", sans-serif;
+  color: var(--theme-text-secondary, #71717a);
+  margin-left: 4px;
+}
