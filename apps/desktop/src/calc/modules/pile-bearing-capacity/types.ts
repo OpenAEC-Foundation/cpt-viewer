@@ -112,6 +112,14 @@ export interface SettlementResult {
   sls: SettlementWorkpoint;
   uls: SettlementWorkpoint;
   curve: Array<{ sbMm: number; rbKn: number; rsKn: number; totalKn: number }>;
+  /** Geometrie + stijfheid zoals gebruikt in de zakkingsberekening —
+   *  nodig om de F_gem/s_el-formules in rapport en ResultPanel met
+   *  ingevulde getallen te tonen. Optioneel ivm back-compat met oudere
+   *  PileResult-snapshots in opgeslagen .ifcgeo-bestanden. */
+  eaKn?: number;               // axiale stijfheid E·A [kN]
+  lM?: number;                 // paallengte L [m]
+  ellM?: number;               // λ — paalkop → bovenkant pos-kleef [m]
+  deltaLM?: number;            // ΔL — pos. schachtwrijvings-traject [m]
 }
 
 export interface SpringStiffnessResult {

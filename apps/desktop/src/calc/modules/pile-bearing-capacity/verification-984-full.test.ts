@@ -39,10 +39,15 @@ const PROJECT = {
   ksMinFactor: 0.25,
 };
 
-// ─── Referentie expected waarden (uit 984.pdf bladen 1-22 + 23) ──
+// ─── Referentie expected waarden (uit 984.pdf bladen 1-23) ───────
+// `negKleefBottomNap` verschilt per sondering in het referentierapport:
+// S1/S3/S8 hanteren NAP −9,00 m (neg. kleef aanwezig, Fnk 35–60 kN);
+// S4–S7 hanteren NAP 0,00 m (vrijwel geen neg. kleef, pos. wrijving
+// over 14,5 m). `fnkD` + zakkings-keten (sb, s1, k1) uit dezelfde bladen.
 interface XCase {
   name: string;
   gef: string;
+  negKleefBottomNap: number;
   qcI: number;
   qcII: number;
   qcIII: number;
@@ -50,15 +55,19 @@ interface XCase {
   rbCalMax: number;
   rsCalMax: number;
   rcCal: number;
+  fnkD: number;
+  sbMm: number;     // paalpunt-zakking blad 3/6/9/...
+  s1Mm: number;     // paalkop-zakking
+  k1KnPerM: number; // veerwaarde
 }
 const X_CASES: XCase[] = [
-  { name: "S1", gef: "121882_1.gef", qcI: 17.97, qcII: 17.73, qcIII: 13.91, qbMaxMpa: 11.12, rbCalMax: 419, rsCalMax: 202, rcCal: 621 },
-  { name: "S3", gef: "121882_3.gef", qcI: 13.25, qcII: 11.75, qcIII: 11.75, qbMaxMpa: 8.49,  rbCalMax: 320, rsCalMax: 284, rcCal: 604 },
-  { name: "S4", gef: "121882_4.gef", qcI: 17.64, qcII: 13.69, qcIII: 12.99, qbMaxMpa: 10.03, rbCalMax: 378, rsCalMax: 345, rcCal: 723 },
-  { name: "S5", gef: "121882_5.gef", qcI: 15.27, qcII: 14.51, qcIII: 11.01, qbMaxMpa: 9.06,  rbCalMax: 341, rsCalMax: 321, rcCal: 663 },
-  { name: "S6", gef: "121882_6.gef", qcI: 15.06, qcII: 13.49, qcIII: 10.49, qbMaxMpa: 8.67,  rbCalMax: 326, rsCalMax: 328, rcCal: 654 },
-  { name: "S7", gef: "121882_7.gef", qcI: 14.38, qcII: 14.36, qcIII: 4.08,  qbMaxMpa: 6.46,  rbCalMax: 243, rsCalMax: 306, rcCal: 549 },
-  { name: "S8", gef: "121882_8.gef", qcI: 10.38, qcII: 10.33, qcIII: 9.03,  qbMaxMpa: 6.78,  rbCalMax: 255, rsCalMax: 311, rcCal: 566 },
+  { name: "S1", gef: "121882_1.gef", negKleefBottomNap: -9.0, qcI: 17.97, qcII: 17.73, qcIII: 13.91, qbMaxMpa: 11.12, rbCalMax: 419, rsCalMax: 202, rcCal: 621, fnkD: 35, sbMm: 2.5, s1Mm: 5.0, k1KnPerM: 66945 },
+  { name: "S3", gef: "121882_3.gef", negKleefBottomNap: -9.0, qcI: 13.25, qcII: 11.75, qcIII: 11.75, qbMaxMpa: 8.49,  rbCalMax: 320, rsCalMax: 284, rcCal: 604, fnkD: 56, sbMm: 2.7, s1Mm: 5.6, k1KnPerM: 64387 },
+  { name: "S4", gef: "121882_4.gef", negKleefBottomNap: 0.0,  qcI: 17.64, qcII: 13.69, qcIII: 12.99, qbMaxMpa: 10.03, rbCalMax: 378, rsCalMax: 345, rcCal: 723, fnkD: 0,  sbMm: 1.3, s1Mm: 2.3, k1KnPerM: 131952 },
+  { name: "S5", gef: "121882_5.gef", negKleefBottomNap: 0.0,  qcI: 15.27, qcII: 14.51, qcIII: 11.01, qbMaxMpa: 9.06,  rbCalMax: 341, rsCalMax: 321, rcCal: 663, fnkD: 1,  sbMm: 1.6, s1Mm: 2.6, k1KnPerM: 115888 },
+  { name: "S6", gef: "121882_6.gef", negKleefBottomNap: 0.0,  qcI: 15.06, qcII: 13.49, qcIII: 10.49, qbMaxMpa: 8.67,  rbCalMax: 326, rsCalMax: 328, rcCal: 654, fnkD: 1,  sbMm: 1.7, s1Mm: 2.7, k1KnPerM: 111770 },
+  { name: "S7", gef: "121882_7.gef", negKleefBottomNap: 0.0,  qcI: 14.38, qcII: 14.36, qcIII: 4.08,  qbMaxMpa: 6.46,  rbCalMax: 243, rsCalMax: 306, rcCal: 549, fnkD: 1,  sbMm: 2.2, s1Mm: 3.3, k1KnPerM: 92402 },
+  { name: "S8", gef: "121882_8.gef", negKleefBottomNap: -9.0, qcI: 10.38, qcII: 10.33, qcIII: 9.03,  qbMaxMpa: 6.78,  rbCalMax: 255, rsCalMax: 311, rcCal: 566, fnkD: 60, sbMm: 3.1, s1Mm: 6.1, k1KnPerM: 59466 },
 ];
 
 // ─── Referentie statistische eindresultaten (blad 23) ────────────
@@ -94,6 +103,7 @@ interface ActualCase {
   soilLayerCount: number;
   input: PileInput;
   result: PileResult;
+  cpt: ReturnType<typeof parseGef>;
 }
 
 const ACTUAL: ActualCase[] = [];
@@ -129,7 +139,8 @@ beforeAll(() => {
       nEk: PROJECT.nEk,
       gammaM: PROJECT.gammaM,
       gammaFnk: PROJECT.gammaFnk,
-      negKleefBottomNap: PROJECT.negKleefBottomNap,
+      // Per sondering — conform referentierapport (−9,00 of 0,00 NAP).
+      negKleefBottomNap: xc.negKleefBottomNap,
       ksMinFactor: PROJECT.ksMinFactor,
       soilProfile,
     };
@@ -151,6 +162,7 @@ beforeAll(() => {
       soilLayerCount: soilProfile.length,
       input,
       result,
+      cpt,
     });
   }
 
@@ -194,6 +206,28 @@ describe("verification — 984.pdf COMPLETE BEREKENING", () => {
   it("Rc;net;d > 0 — paal kan belasting opnemen", () => {
     expect(MY_SUMMARY!.rcNetD).toBeGreaterThan(0);
   });
+
+  // Zakkings-keten: s1 en k1 moeten binnen ±25% van de referentie
+  // liggen. De marge is bewust ruim — sb-solver en laag-interpretatie
+  // verschillen — maar elke eenheidsfout (zoals een 10³-factor in
+  // s_el = F·L/EA) klapt er onmiddellijk doorheen.
+  it("zakking s1 per sondering binnen 25% van referentie", () => {
+    for (let i = 0; i < X_CASES.length; i++) {
+      const ref = X_CASES[i].s1Mm;
+      const act = ACTUAL[i].result.settlement.sls.s1Mm;
+      expect(act, `${X_CASES[i].name}: s1=${act.toFixed(1)} vs ref ${ref}`).toBeGreaterThan(ref * 0.75);
+      expect(act, `${X_CASES[i].name}: s1=${act.toFixed(1)} vs ref ${ref}`).toBeLessThan(ref * 1.25);
+    }
+  });
+
+  it("veerwaarde k1 per sondering binnen 25% van referentie", () => {
+    for (let i = 0; i < X_CASES.length; i++) {
+      const ref = X_CASES[i].k1KnPerM;
+      const act = ACTUAL[i].result.spring.kSlsKnPerM;
+      expect(act, `${X_CASES[i].name}: k1=${act.toFixed(0)} vs ref ${ref}`).toBeGreaterThan(ref * 0.75);
+      expect(act, `${X_CASES[i].name}: k1=${act.toFixed(0)} vs ref ${ref}`).toBeLessThan(ref * 1.25);
+    }
+  });
 });
 
 // ─── PDF-uitdraai genereren ──────────────────────────────────────
@@ -204,11 +238,12 @@ describe("PDF-uitdraai — 984-rapport-stijl per-sondering rapport", () => {
     const outPath = resolve(outDir, "984-rapport.pdf");
 
     // Bouw de PileReportSondering[] uit ACTUAL — alle CPTs + hun
-    // berekenings-resultaten.
+    // berekenings-resultaten + CPT-data voor de visual-bladen.
     const sonderingen: PileReportSondering[] = ACTUAL.map((a) => ({
       name: a.name,
       input: a.input,
       result: a.result,
+      cpt: a.cpt,
     }));
     const pileType = getPileType(PROJECT.pileTypeId)!;
 
@@ -219,6 +254,11 @@ describe("PDF-uitdraai — 984-rapport-stijl per-sondering rapport", () => {
         norm: PROJECT.norm,
         date: "26-05-2026",
         author: "3BM Bouwtechniek",
+        berekeningsnummer: "5.2",
+        revisie: "0",
+        onderdeel: "Wapening en funderingspalen",
+        ontwerplevensduur: 50,
+        gevolgklasse: "CC1",
       },
       sonderingen,
       summary: MY_SUMMARY!,
@@ -315,7 +355,7 @@ describe("PDF-uitdraai — 984-rapport-stijl per-sondering rapport", () => {
     doc.text("2. COMPLETE berekening per sondering (Rb + Rs + Fnk; alles via eigen code)", M, y);
     y += 5;
     doc.setFontSize(7);
-    const headers2 = ["Sond.", "Rb;cal mijn", "Rb XConstr.", "Rs;cal mijn", "Rs XConstr.", "Fnk;d mijn", "Rc;cal mijn", "Rc XConstr.", "#lagen"];
+    const headers2 = ["Sond.", "Rb;cal mijn", "Rb ref.", "Rs;cal mijn", "Rs ref.", "Fnk;d mijn", "Rc;cal mijn", "Rc ref.", "#lagen"];
     const colW2 = [14, 22, 22, 22, 22, 22, 22, 22, 14];
     drawRow(headers2, colW2, true);
     doc.line(M, y - 3.2, M + PW, y - 3.2);

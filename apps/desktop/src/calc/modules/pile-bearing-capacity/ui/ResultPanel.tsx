@@ -6,6 +6,7 @@ import { generatePileReport } from "../parts/pile-report-pdf";
 import { computeMultiCptSummary } from "../parts/multi-cpt-summary";
 import { getPileType } from "../catalog";
 import { downloadPdf } from "../../../../utils/downloadPdf";
+import { useCptStore } from "../../../../store/useCptStore";
 import "./styles.css";
 
 // ─── Formula-helper component (Open Calculation Studio stijl) ────
@@ -280,10 +281,16 @@ export function ResultPanel({ input, result }: PanelProps<PileInput, PileResult>
     setDownloading(true);
     try {
       const pileType = getPileType(input.pileTypeId);
+      // CPT meegeven zodat het rapport ook het visual-blad (qc-grafiek +
+      // paal + zones) per sondering bevat.
+      const cpt = input.cptId
+        ? useCptStore.getState().cpts.get(input.cptId)
+        : undefined;
       const sondering = {
         name: input.cptId ?? "Sondering",
         input,
         result,
+        cpt,
       };
       const rcCalSingle = result.base.rbCalMax + result.shaft.rsCalMax;
       const summary = computeMultiCptSummary({
@@ -492,12 +499,58 @@ export function ResultPanel({ input, result }: PanelProps<PileInput, PileResult>
       </section>
 
       <section>
-        <h3>Zakking</h3>
-        <p className="pile-result-input">
-          SLS: s<sub>b</sub>={settlement.sls.sbMm.toFixed(1)} mm, s<sub>1</sub>={settlement.sls.s1Mm.toFixed(1)} mm
-          &nbsp;·&nbsp;
-          ULS: s<sub>b</sub>={settlement.uls.sbMm.toFixed(1)} mm, s<sub>1</sub>={settlement.uls.s1Mm.toFixed(1)} mm
-        </p>
+        <h3>Zakking (art. 7.6.4.2, lastzakkingslijn 1)</h3>
+        {(() => {
+          const wp = settlement.sls;
+          const L = settlement.lM ?? input.pileTopNap - input.pileToeNap;
+          const ell = settlement.ellM ?? input.pileTopNap - input.negKleefBottomNap;
+          const dL = settlement.deltaLM ?? input.negKleefBottomNap - input.pileToeNap;
+          const eaKn = settlement.eaKn ?? 0;
+          const rbPct = base.rbCalMax > 0 ? (wp.rbMobil / base.rbCalMax) * 100 : 0;
+          const rsPct = shaft.rsCalMax > 0 ? (wp.rsMobil / shaft.rsCalMax) * 100 : 0;
+          return (
+            <>
+              <Formula
+                lhs={<>F<sub>c;tot</sub></>}
+                symbolic={<>N<sub>k</sub> + F<sub>nk</sub></>}
+                filled={<>{input.nEk} + {negKleef.fnkD.toFixed(0)}</>}
+                result={<>{wp.fcTot.toFixed(0)} kN</>}
+              />
+              <Formula
+                lhs={<>s<sub>b</sub>/D<sub>eq</sub> · 100</>}
+                symbolic={<>{wp.sbMm.toFixed(1)} / {input.diameterMm} · 100 = {((wp.sbMm / input.diameterMm) * 100).toFixed(1)} %</>}
+                filled={<>→ R<sub>b;1</sub> = {rbPct.toFixed(0)}% · R<sub>b;cal;max</sub> (Fig. 7.n)</>}
+                result={<>{wp.rbMobil.toFixed(0)} kN</>}
+              />
+              <Formula
+                lhs={<>s<sub>b</sub> = {wp.sbMm.toFixed(1)} mm</>}
+                symbolic={<>→ R<sub>s;1</sub> = {rsPct.toFixed(0)}% · R<sub>s;cal;max</sub> (Fig. 7.o)</>}
+                result={<>{wp.rsMobil.toFixed(0)} kN</>}
+              />
+              <Formula
+                lhs={<>F<sub>gem</sub></>}
+                symbolic={<>(λ·F<sub>c;tot</sub> + 0,5·ΔL·(F<sub>c;tot</sub> − R<sub>b;1</sub>)) / L</>}
+                filled={<>({ell.toFixed(1)} · {wp.fcTot.toFixed(0)} + 0,5 · {dL.toFixed(1)} · ({wp.fcTot.toFixed(0)} − {wp.rbMobil.toFixed(0)})) / {L.toFixed(1)}</>}
+                result={<>{wp.fgem.toFixed(0)} kN</>}
+              />
+              <Formula
+                lhs={<>s<sub>el</sub></>}
+                symbolic={<>L · F<sub>gem</sub> / EA</>}
+                filled={<>{L.toFixed(1)} · {wp.fgem.toFixed(0)} · 10³ / {eaKn.toFixed(0)}</>}
+                result={<>{wp.selMm.toFixed(1)} mm</>}
+              />
+              <Formula
+                lhs={<>s<sub>1</sub></>}
+                symbolic={<>s<sub>b</sub> + s<sub>el</sub></>}
+                filled={<>{wp.sbMm.toFixed(1)} + {wp.selMm.toFixed(1)}</>}
+                result={<>{wp.s1Mm.toFixed(1)} mm</>}
+              />
+              <p className="pile-result-input">
+                ULS: s<sub>b</sub>={settlement.uls.sbMm.toFixed(1)} mm, s<sub>1</sub>={settlement.uls.s1Mm.toFixed(1)} mm
+              </p>
+            </>
+          );
+        })()}
         <div className="pile-zakking-chart">
           <ZakkingsChart
             settlement={settlement}
@@ -510,15 +563,23 @@ export function ResultPanel({ input, result }: PanelProps<PileInput, PileResult>
       <section>
         <h3>Veerwaarde</h3>
         <Formula
-          lhs={<>k<sub>SLS</sub></>}
+          lhs={<>k<sub>1</sub></>}
           symbolic={<>F<sub>c;tot</sub> / s<sub>1</sub></>}
           filled={<>{settlement.sls.fcTot.toFixed(0)} · 10³ / {settlement.sls.s1Mm.toFixed(1)}</>}
           result={<>{spring.kSlsKnPerM.toFixed(0)} kN/m</>}
         />
-        <p className="pile-result-input">
-          k<sub>min</sub> = {spring.kMinKnPerM.toFixed(0)} kN/m &nbsp;·&nbsp;
-          k<sub>max</sub> = {spring.kMaxKnPerM.toFixed(0)} kN/m
-        </p>
+        <Formula
+          lhs={<>k<sub>min</sub></>}
+          symbolic={<>k<sub>1</sub> / √2</>}
+          filled={<>{spring.kSlsKnPerM.toFixed(0)} / 1,414</>}
+          result={<>{spring.kMinKnPerM.toFixed(0)} kN/m</>}
+        />
+        <Formula
+          lhs={<>k<sub>max</sub></>}
+          symbolic={<>k<sub>1</sub> · √2</>}
+          filled={<>{spring.kSlsKnPerM.toFixed(0)} · 1,414</>}
+          result={<>{spring.kMaxKnPerM.toFixed(0)} kN/m</>}
+        />
       </section>
 
       <section>

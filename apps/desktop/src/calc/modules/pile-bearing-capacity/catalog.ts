@@ -31,10 +31,13 @@ export function getPileType(id: string): PileTypeSpec | undefined {
   return PILE_TYPE_CATALOG.find((p) => p.id === id);
 }
 
-/** Default Φ/γ per grondsoort — afgestemd op 3BM CGEO1 ODS template. */
+/** Default Φ/γ per grondsoort. γ-waarden afgestemd op de grondsoorten-
+ *  tabel van de externe referentie-berekening (NEN 9997-1 Tabel 2.b-
+ *  range): zand verzadigd 20 kN/m³ (schoon, matig), zand droog 18,
+ *  klei zwak zandig matig 18, veen 13. */
 export const SOIL_DEFAULTS: Record<SoilKind, { gammaK: number; gammaW: number; phi: number; label: string }> = {
-  "sand-dry": { gammaK: 17, gammaW: 0,  phi: 32.5, label: "Zand droog" },
-  "sand-wet": { gammaK: 17, gammaW: 10, phi: 32.5, label: "Zand nat" },
+  "sand-dry": { gammaK: 18, gammaW: 0,  phi: 32.5, label: "Zand droog" },
+  "sand-wet": { gammaK: 20, gammaW: 10, phi: 32.5, label: "Zand nat" },
   "clay":     { gammaK: 18, gammaW: 10, phi: 22.5, label: "Klei nat" },
   "peat":     { gammaK: 13, gammaW: 10, phi: 15.0, label: "Veen nat" },
 };

@@ -39,8 +39,10 @@ function computeWorkpoint(fcTot: number, args: SettlementArgs): SettlementWorkpo
   const rbMobil = mobBase((sbMm / args.deqMm) * 100) * args.rbCalMax;
   const rsMobil = mobShaft(sbMm) * args.rsCalMax;
   const fgem = (args.ellM * fcTot + 0.5 * args.deltaL_m * (fcTot - rbMobil)) / args.L_m;
-  // sel = L · F · 10³ / EA — eenheden: m · kN · 1000 / N → mm
-  const selMm = (args.L_m * fgem * 1000) / args.EA_N;
+  // s_el = F_gem·L / EA. Eenheden: F in kN (= ×10³ N), L in m, EA in N
+  //   → s in m (= ×10³ mm). Samen: × 10⁶.
+  //   Controle (referentie S1): 237 kN × 14,84 m × 10⁶ / 1,356·10⁹ N = 2,59 mm ✓
+  const selMm = (args.L_m * fgem * 1e6) / args.EA_N;
   const s1Mm = sbMm + selMm;
   return { fcTot, sbMm, rbMobil, rsMobil, fgem, selMm, s1Mm };
 }
@@ -59,5 +61,14 @@ export function computeSettlement(args: SettlementArgs): SettlementResult {
     curve.push({ sbMm: sb, rbKn: rb, rsKn: rs, totalKn: rb + rs });
   }
 
-  return { sls, uls, curve };
+  return {
+    sls,
+    uls,
+    curve,
+    // Geometrie-echo voor rapport/ResultPanel (EA in N → kN).
+    eaKn: args.EA_N / 1000,
+    lM: args.L_m,
+    ellM: args.ellM,
+    deltaLM: args.deltaL_m,
+  };
 }

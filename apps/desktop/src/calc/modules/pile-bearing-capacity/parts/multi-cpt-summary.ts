@@ -54,7 +54,11 @@ export interface MultiCptSummary {
   rcK: number;
   /** Rekenwaarde Rc;d = rcK / γm [kN]. */
   rcD: number;
-  /** Gemiddelde Fnk;d project-level (uit per-sondering fnkD of override) [kN]. */
+  /** Maatgevende Fnk;d project-level [kN]. Default het MAXIMUM van de
+   *  per-sondering waarden (conform blad 23 van het referentierapport:
+   *  Fnk;d = 60 kN = max(35, 56, 60, 0, 1, 1, 1)); via `fnkDMode: "mean"`
+   *  desgewenst het gemiddelde. Veldnaam blijft `fnkDMean` voor back-
+   *  compat met opgeslagen rapport-configuraties. */
   fnkDMean: number;
   /** Netto rekenwaarde Rc;net;d = rcD − fnkDMean [kN]. */
   rcNetD: number;
@@ -131,10 +135,14 @@ interface MultiCptInputs {
   /** Type bouwwerk; default niet-stijf (losse paal). */
   stiffness?: BuildingStiffness;
   /** Project-level Fnk;d override [kN]. Indien gegeven wordt deze waarde
-   *  gebruikt i.p.v. het gemiddelde van per-sondering Fnk;d. Handig voor
-   *  reproductie van externe rapporten (Referentie) waar het project-Fnk
+   *  gebruikt i.p.v. de uit per-sondering Fnk;d afgeleide waarde. Handig
+   *  voor reproductie van externe rapporten waar het project-Fnk
    *  rechtstreeks is opgegeven. */
   fnkDOverride?: number;
+  /** Hoe de project-Fnk;d uit de per-sondering waarden wordt afgeleid:
+   *  "max" (default — maatgevend, conform referentierapport blad 23)
+   *  of "mean". */
+  fnkDMode?: "max" | "mean";
 }
 
 /**
@@ -151,7 +159,7 @@ interface MultiCptInputs {
  *   UC = NEd / Rc;net;d   →   ≤ 1,0 = voldoet
  */
 export function computeMultiCptSummary(inputs: MultiCptInputs): MultiCptSummary {
-  const { cases, gammaM, nEd, stiffness = "non-stiff", fnkDOverride } = inputs;
+  const { cases, gammaM, nEd, stiffness = "non-stiff", fnkDOverride, fnkDMode = "max" } = inputs;
   const n = cases.length;
   if (n === 0) throw new Error("multi-CPT summary: geen sonderingen");
 
@@ -175,7 +183,8 @@ export function computeMultiCptSummary(inputs: MultiCptInputs): MultiCptSummary 
   const rcK = Math.min(rcKGem, rcKMin);
   const rcD = rcK / gammaM;
 
-  // Fnk;d project-level: override óf gemiddelde van per-sondering waarden.
+  // Fnk;d project-level: override óf afgeleid uit per-sondering waarden
+  // (default maatgevend maximum — zie fnkDMode-doc).
   let fnkDMean = 0;
   if (fnkDOverride !== undefined) {
     fnkDMean = fnkDOverride;
@@ -184,7 +193,10 @@ export function computeMultiCptSummary(inputs: MultiCptInputs): MultiCptSummary 
       .map((c) => c.fnkD)
       .filter((v): v is number => v !== undefined);
     if (fnkVals.length > 0) {
-      fnkDMean = fnkVals.reduce((a, b) => a + b, 0) / fnkVals.length;
+      fnkDMean =
+        fnkDMode === "max"
+          ? Math.max(...fnkVals)
+          : fnkVals.reduce((a, b) => a + b, 0) / fnkVals.length;
     }
   }
 

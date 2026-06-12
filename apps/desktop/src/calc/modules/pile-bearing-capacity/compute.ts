@@ -9,15 +9,34 @@ import { computeSettlement } from "./parts/settlement";
 import { computeSpringStiffness } from "./parts/spring-stiffness";
 import { computeSummary } from "./parts/summary";
 
-const E_STEEL_GPA = 210;
+// E-moduli [N/mm²] voor de axiale paalstijfheid EA.
+//  - Staal: 210 000 (EN 1993-1-1)
+//  - Betonvulling stalen buispaal: 7 500 — lange-duur/gescheurde waarde
+//    zoals in de externe referentie-berekening (EA_totaal = 1 356 065 kN
+//    voor D219×8: 5303 mm² × 210 000 + 32 365 mm² × 7 500).
+//  - Prefab voorgespannen beton: 36 000 (C45/55, korte-duur E_cm).
+const E_STEEL = 210_000;
+const E_CONCRETE_FILL = 7_500;
+const E_CONCRETE_PREFAB = 36_000;
 
-function computeEA_N(diameterMm: number, wallMm: number): number {
-  // ringshape: A = π/4 · (D² − (D−2t)²) mm²
+function computeEA_N(
+  diameterMm: number,
+  wallMm: number,
+  material: "steel" | "concrete",
+  isCircular: boolean,
+): number {
   const D = diameterMm;
+  if (material === "concrete") {
+    // Massieve betonpaal — vierkant (a×a) of rond.
+    const A_mm2 = isCircular ? (Math.PI / 4) * D * D : D * D;
+    return E_CONCRETE_PREFAB * A_mm2;
+  }
+  // Stalen buis met gesloten punt — in den natte gevuld met beton:
+  // EA = E_s·A_ring + E_b;vulling·A_kern.
   const innerD = Math.max(0, D - 2 * wallMm);
-  const A_mm2 = (Math.PI / 4) * (D * D - innerD * innerD);
-  // EA = E · A — E in N/mm² (1 GPa = 1000 N/mm²)
-  return E_STEEL_GPA * 1000 * A_mm2;
+  const aRing_mm2 = (Math.PI / 4) * (D * D - innerD * innerD);
+  const aCore_mm2 = (Math.PI / 4) * innerD * innerD;
+  return E_STEEL * aRing_mm2 + E_CONCRETE_FILL * aCore_mm2;
 }
 
 function emptyResult(error: string): PileResult {
@@ -75,10 +94,20 @@ export function computePile(input: PileInput, cpt: Cpt | null): PileResult {
 
   const fcTotSls = input.nEk + negKleef.fnkD;
   const fcTotUls = input.nEd + negKleef.fnkD;
-  const EA = computeEA_N(input.diameterMm, input.wallThicknessMm);
+  const EA = computeEA_N(
+    input.diameterMm,
+    input.wallThicknessMm,
+    pileType.material ?? "steel",
+    pileType.isCircular,
+  );
   const L = input.pileTopNap - input.pileToeNap;
-  const deltaL = input.negKleefBottomNap - input.pileToeNap;
-  const ell = input.pileTopNap - input.excavationNap;
+  // ΔL = lengte van het positieve schachtwrijvings-traject; λ (ell) =
+  // paaldeel ZONDER positieve wrijving (paalkop → bovenkant pos-kleef).
+  // Conform art. 7.6.4.2: F_gem = (λ·F + ½·ΔL·(F − Rb)) / L. In de
+  // referentie-uitwerking: λ = 9,34 m bij kleefniveau NAP −9,00 en
+  // paalkop NAP +0,34 (NIET paalkop − ontgraving).
+  const deltaL = posKleefTopNap - input.pileToeNap;
+  const ell = input.pileTopNap - posKleefTopNap;
 
   const settlement = computeSettlement({
     fcTotSls,

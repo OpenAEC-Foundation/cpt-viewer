@@ -12,6 +12,14 @@ interface Args {
 
 const PI = Math.PI;
 
+/** NEN 9997-1 §7.6.2.3: voor de schachtwrijving wordt de in rekening te
+ *  brengen conusweerstand begrensd op 15 MPa. Conform de externe
+ *  referentie-berekening passen we de begrenzing toe op het LAAG-
+ *  GEMIDDELDE q_c;j;gem (niet per meetpunt) — per-punt cappen drukte
+ *  S1 in de verificatieset 7% onder de referentiewaarde. (De aanvullende
+ *  12 MPa-regel voor dikke zandpakketten laten we buiten beschouwing.) */
+const QC_CAP_SHAFT_MPA = 15;
+
 export function computeShaftFriction(
   cpt: Cpt,
   args: Args,
@@ -53,7 +61,8 @@ export function computeShaftFriction(
     const layerTop = Math.min(l.startNap, zoneTop);
     const layerBot = Math.max(l.endNap, zoneBot);
     const thickness = layerTop - layerBot;
-    const qcGemMpa = avgQc(layerTop, layerBot);
+    // Laag-gemiddelde qc, begrensd op 15 MPa (zie const-comment boven).
+    const qcGemMpa = Math.min(avgQc(layerTop, layerBot), QC_CAP_SHAFT_MPA);
     const qsRaw = args.pileType.alphaS * qcGemMpa;
     const qsCap = QS_MAX_PER_SOIL[l.kind];
     const qsMpa = Math.min(qsRaw, qsCap);
