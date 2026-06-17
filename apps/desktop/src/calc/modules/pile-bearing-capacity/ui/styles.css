@@ -229,7 +229,7 @@
 }
 
 /* ─── qc curve ───
-   Multi-segment rendering conform Referentie + referentienorm-norm-visualisatie:
+   Multi-segment rendering conform externe referentie-norm-visualisatie:
    de qc-curve is opgedeeld in een dunne grijze basis (overal) + gekleurde
    bold segmenten voor de 8D-, dc- en 4D-max-zones rondom de paalpunt.
 */
@@ -278,7 +278,7 @@
 /* ─── Vertikale gemiddelde qc-lijnen ───
    Voor elke invloed-zone een vertikale dashed lijn op x=xScale(gemiddelde)
    over de zone-hoogte. Visualiseert de "rechtuit-gemiddelde-waarde"
-   tegenover de werkelijke curve, conform Referentie + referentienorm.
+   tegenover de werkelijke curve, conform externe referentie-berekeningen.
 */
 .pile-cpt-qc-gem {
   stroke-width: 1.6;
