@@ -1,9 +1,14 @@
 name: Deploy site
 
+# Deploy gebeurt UITSLUITEND bij een bewuste release:
+#   - een version-tag (v1.2.3) pushen, of
+#   - handmatig via "Run workflow" (workflow_dispatch).
+# NIET meer automatisch bij elke push naar main — dat zette eerder
+# onbedoeld tussenstanden online.
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -24,6 +29,9 @@ jobs:
       deploy_source: apps/desktop/dist
       node_version: "22"
       install_command: cd apps/desktop && npm ci
-      build_command: cd apps/desktop && npm run build
+      # VITE_PUBLIC_WEB=1 → registry.ts toont alleen status="available"
+      # modules; experimentele berekeningen (Funderingspaal, Kalendering)
+      # blijven uit de publieke bundle/UI.
+      build_command: cd apps/desktop && VITE_PUBLIC_WEB=1 npm run build
     secrets:
       deploy_ssh_key: ${{ secrets.DEPLOY_SSH_KEY }}

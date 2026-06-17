@@ -13,6 +13,17 @@
 
 import { useEffect, useState } from "react";
 import { getSetting, setSetting } from "../store";
+import { CALC_REGISTRY } from "../calc/framework/registry";
+
+/** Calc-extensie-ids waarvan de module daadwerkelijk in het register zit.
+ *  In de publieke webbuild filtert registry.ts de niet-productie-gerede
+ *  modules eruit (status !== "available"), waardoor hun extensie hier
+ *  automatisch niet-selecteerbaar wordt — óók als een browser nog een
+ *  opgeslagen `…enabled=true`-voorkeur heeft. Zo verschijnt de
+ *  Berekeningen-tab niet op de live site voor niet-vrijgegeven modules. */
+const REGISTERED_CALC_IDS: ReadonlySet<string> = new Set(
+  CALC_REGISTRY.map((m) => `calc.${m.id}`),
+);
 
 export type ExtensionId =
   | "tekening"
@@ -94,6 +105,11 @@ function devUnlockActive(): boolean {
 /** True als de extension nu daadwerkelijk aanzetbaar is (= production-
  *  ready, of dev-unlock actief). */
 export function isExtensionSelectable(id: ExtensionId): boolean {
+  // Calc-extensie zonder geregistreerde module → nooit selecteerbaar.
+  // Dit is de poort die de publieke webbuild dichthoudt: registry.ts
+  // laat daar alleen status="available"-modules toe, dus experimentele
+  // calc-extensies vallen hier af, ongeacht een opgeslagen voorkeur.
+  if (id.startsWith("calc.") && !REGISTERED_CALC_IDS.has(id)) return false;
   if (!NOT_PRODUCTION_READY.has(id)) return true;
   return devUnlockActive();
 }
