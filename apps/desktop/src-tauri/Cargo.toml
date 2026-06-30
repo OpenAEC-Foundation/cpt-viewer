@@ -35,10 +35,14 @@ quick-xml = "0.36"
 # Tokio runtime is nodig in --mcp mode (zonder Tauri) zodat async commands
 # (BRO API, IFC-generatie, PDF rapport) ook via MCP-tools aanroepbaar zijn.
 # In GUI-mode levert Tauri zelf de runtime, dan is deze dep ongebruikt.
-tokio = { version = "1", features = ["rt-multi-thread"] }
+# `net` is nodig voor de REST-server (--serve): tokio TcpListener.
+tokio = { version = "1", features = ["rt-multi-thread", "net"] }
 # Base64 voor het encoderen van PDF-bytes in MCP-respons (stdio is text-only;
 # binary data moet als base64-string in JSON-respons).
 base64 = "0.22"
+# REST/HTTP-API (--serve mode). axum bovenop tokio/hyper; spiegelt dezelfde
+# core-functies als de MCP-server, maar over HTTP. Lokaal (127.0.0.1) bedoeld.
+axum = "0.7"
 
 # Path dependencies into crates-warehouse/ (sibling of cpt-viewer/).
 # cpt-core: CPT domain library (parsers, Robertson, layers, report).

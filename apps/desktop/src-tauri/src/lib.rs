@@ -1,6 +1,7 @@
 mod commands;
 mod mcp;
 mod pdf;
+mod rest;
 mod state;
 
 use pdf::brand::BrandConfig;
@@ -131,11 +132,36 @@ pub fn run_mcp() {
     server.run_stdio();
 }
 
+/// Lees een `--port <n>` of `--port=<n>` argument; default 8787.
+fn parse_port_arg() -> u16 {
+    let args: Vec<String> = std::env::args().collect();
+    for (i, a) in args.iter().enumerate() {
+        if a == "--port" {
+            if let Some(v) = args.get(i + 1) {
+                if let Ok(p) = v.parse::<u16>() {
+                    return p;
+                }
+            }
+        } else if let Some(v) = a.strip_prefix("--port=") {
+            if let Ok(p) = v.parse::<u16>() {
+                return p;
+            }
+        }
+    }
+    8787
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Check for --mcp flag to start as MCP server instead of GUI
     if std::env::args().any(|a| a == "--mcp") {
         run_mcp();
+        return;
+    }
+
+    // --serve / --api: start de lokale REST/HTTP-API i.p.v. de GUI.
+    if std::env::args().any(|a| a == "--serve" || a == "--api") {
+        rest::run(parse_port_arg());
         return;
     }
 
