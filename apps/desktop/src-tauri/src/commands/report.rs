@@ -52,6 +52,15 @@ pub async fn preview_report_core(
 ) -> Result<Vec<u8>, String> {
     let meta: ProjectMeta = project.into();
     let sec = sections.unwrap_or_default();
+    // Basiskaart (PDOK-luchtfoto) alleen ophalen wanneer de overzichtskaart-
+    // sectie aanstaat. Dit is async (netwerk) en gebeurt VÓÓR het blocking
+    // render-werk. Faalt het (offline / geen posities), dan is `basemap` None
+    // en valt de overzichtskaart terug op het kale RD-raster.
+    let basemap = if sec.map {
+        fetch_overview_basemap(&cpts).await
+    } else {
+        None
+    };
     tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
         // Eén sondering → het GEBRANDE rapport (voorblad + schermvullende
         // grafiek + achterblad), met de aangevinkte secties (coördinaten-
@@ -59,9 +68,14 @@ pub async fn preview_report_core(
         // pagina's ertussen. Zo werken de vinkjes zonder de gebrande lay-out
         // te verliezen. Meerdere sonderingen → de openaec-sectie-engine.
         if cpts.len() == 1 {
-            return Ok(generate_single_cpt_pdf_bytes_with_sections(&cpts[0], &meta, sec));
+            return Ok(generate_single_cpt_pdf_bytes_with_sections(
+                &cpts[0],
+                &meta,
+                sec,
+                basemap.as_ref(),
+            ));
         }
-        let report = build_with_sections(&cpts, &meta, sec);
+        let report = build_with_sections(&cpts, &meta, sec, basemap.as_ref());
         generate_pdf_bytes(&report).map_err(|e| e.to_string())
     })
     .await
@@ -80,6 +94,68 @@ pub async fn generate_report_core(
     })
     .await
     .map_err(|e| format!("spawn_blocking join failed: {e}"))?
+}
+
+/// Haalt een PDOK-luchtfoto (WMS GetMap, EPSG:28992) op als achtergrond voor
+/// de overzichtskaart in het rapport. Berekent een VIERKANTE RD-bbox rond de
+/// sondeerlocaties (min. 150 m halve zijde, anders data-extent + 40% marge)
+/// zodat er context omheen zichtbaar is. Geeft `None` bij geen posities of een
+/// netwerk-/serverfout — het rapport valt dan terug op het kale RD-raster.
+async fn fetch_overview_basemap(cpts: &[cpt_core::Cpt]) -> Option<cpt_core::OverviewBasemap> {
+    let positions: Vec<(f64, f64)> = cpts
+        .iter()
+        .filter_map(|c| c.position.as_ref().map(|p| (p.x_rd, p.y_rd)))
+        .collect();
+    if positions.is_empty() {
+        return None;
+    }
+    let xmin = positions.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
+    let xmax = positions.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
+    let ymin = positions.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+    let ymax = positions.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+    let cx = (xmin + xmax) / 2.0;
+    let cy = (ymin + ymax) / 2.0;
+    // Vierkante box: minstens 150 m halve zijde, anders data-extent + 40% marge.
+    let half = ((xmax - xmin).max(ymax - ymin) / 2.0 * 1.4).max(150.0);
+    let (bxmin, bxmax, bymin, bymax) = (cx - half, cx + half, cy - half, cy + half);
+
+    let url = format!(
+        "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?service=WMS&version=1.1.1&request=GetMap\
+         &layers=Actueel_orthoHR&srs=EPSG:28992&bbox={bxmin:.1},{bymin:.1},{bxmax:.1},{bymax:.1}\
+         &width=1200&height=1200&format=image/jpeg&styles="
+    );
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .user_agent("OpenGeoStudio/0.1")
+        .build()
+        .ok()?;
+    // Tot 2 pogingen: een eerste cold-start HTTPS-request (DNS + TLS) faalt
+    // soms net. Lukt het ook dan niet, dan valt de overzichtskaart terug op
+    // het kale RD-raster — geen harde fout in het rapport.
+    for attempt in 1..=2u8 {
+        match client.get(&url).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                if let Ok(b) = resp.bytes().await {
+                    let bytes = b.to_vec();
+                    // Echte JPEG begint met FF D8; bij een WMS-fout krijg je
+                    // XML/tekst terug — die negeren we.
+                    if bytes.len() >= 1000 && bytes.starts_with(&[0xFF, 0xD8]) {
+                        return Some(cpt_core::OverviewBasemap {
+                            image_bytes: bytes,
+                            mime: "image/jpeg".to_string(),
+                            x_min: bxmin,
+                            x_max: bxmax,
+                            y_min: bymin,
+                            y_max: bymax,
+                        });
+                    }
+                }
+            }
+            Ok(resp) => eprintln!("[basemap] poging {attempt}: HTTP {}", resp.status()),
+            Err(e) => eprintln!("[basemap] poging {attempt}: {e}"),
+        }
+    }
+    None
 }
 
 // ─── Tauri command wrappers ────────────────────────────────────────
