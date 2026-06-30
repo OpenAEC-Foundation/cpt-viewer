@@ -260,6 +260,7 @@ pub fn run() {
             commands::bro_api::fetch_bro_object_metadata,
             commands::report::preview_report,
             commands::report::generate_report,
+            commands::report::open_report_pdf,
             commands::export::export_csv,
             commands::export::export_geojson,
             commands::project::save_project_ifcgis,

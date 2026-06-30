@@ -412,7 +412,7 @@ impl McpServer {
                         .collect()
                 };
                 let bytes = tokio_rt()
-                    .block_on(report_cmd::preview_report_core(cpts, project))?;
+                    .block_on(report_cmd::preview_report_core(cpts, project, None))?;
                 // PDF-bytes als base64 in JSON-respons — voor stdio-MCP is
                 // dat een veilige manier zonder binary corruption.
                 use base64::Engine;
@@ -439,7 +439,7 @@ impl McpServer {
                         .collect()
                 };
                 tokio_rt().block_on(
-                    report_cmd::generate_report_core(cpts, project, output_path.clone()),
+                    report_cmd::generate_report_core(cpts, project, output_path.clone(), None),
                 )?;
                 Ok(format!("PDF report saved to {}", output_path))
             }

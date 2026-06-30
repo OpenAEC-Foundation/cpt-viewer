@@ -30,6 +30,17 @@ const DEFAULT_SECTIONS: ReportSections = {
   metadata: false,
 };
 
+function sectionsAreDefault(s: ReportSections): boolean {
+  return (
+    s.cover === DEFAULT_SECTIONS.cover &&
+    s.coordTable === DEFAULT_SECTIONS.coordTable &&
+    s.map === DEFAULT_SECTIONS.map &&
+    s.perCpt === DEFAULT_SECTIONS.perCpt &&
+    s.sbtLegend === DEFAULT_SECTIONS.sbtLegend &&
+    s.metadata === DEFAULT_SECTIONS.metadata
+  );
+}
+
 /**
  * PDF report preview — sidebar (section toggles + project info) + iframe.
  *
@@ -57,6 +68,9 @@ export default function ReportPreview() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sections, setSections] = useState<ReportSections>(DEFAULT_SECTIONS);
+  // Bytes van het nu getoonde rapport — voor de "PDF openen"-knop, die ze
+  // via een Tauri-command naar een tijdelijk bestand schrijft + opent.
+  const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
 
   // Track the active blob URL so we can revoke it on next render / unmount.
   const activeUrlRef = useRef<string | null>(null);
@@ -89,8 +103,11 @@ export default function ReportPreview() {
       return;
     }
 
-    // Fast path: cached PDF bytes for this doc are ready — display instantly.
-    if (cachedPdf) {
+    // Fast path: alleen bij de DEFAULT-secties mag de cache gebruikt worden
+    // (die is met default-secties gegenereerd). Zodra de gebruiker een sectie
+    // aan/uit zet, moeten we hergenereren — anders zie je de oude indeling.
+    const isDefault = sectionsAreDefault(sections);
+    if (isDefault && cachedPdf) {
       // Copy into a fresh Uint8Array<ArrayBuffer> — the cached buffer may be
       // typed as ArrayBufferLike (incl. SharedArrayBuffer) which Blob rejects.
       const copy = new Uint8Array(cachedPdf.length);
@@ -100,12 +117,13 @@ export default function ReportPreview() {
       if (activeUrlRef.current) URL.revokeObjectURL(activeUrlRef.current);
       activeUrlRef.current = url;
       setPdfUrl(url);
+      setPdfBytes(copy);
       setLoading(false);
       setError(null);
       return;
     }
 
-    // Cache miss — fall back to a live invoke and seed the cache afterwards.
+    // Live render — met de actuele sectie-selectie.
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -113,6 +131,7 @@ export default function ReportPreview() {
     invoke<number[]>("preview_report", {
       cptIds: cpts.map((c) => c.id),
       project: projectMeta,
+      sections,
     })
       .then((bytes) => {
         if (cancelled) return;
@@ -122,9 +141,11 @@ export default function ReportPreview() {
         if (activeUrlRef.current) URL.revokeObjectURL(activeUrlRef.current);
         activeUrlRef.current = url;
         setPdfUrl(url);
+        setPdfBytes(u8);
         setLoading(false);
-        // Seed the store cache so the next visit hits the fast path.
-        if (activeDocId) setPdfCacheStore(activeDocId, u8);
+        // Cache alleen de default-variant zodat de volgende doc-open
+        // direct een preview heeft; toggle-varianten cachen we niet.
+        if (isDefault && activeDocId) setPdfCacheStore(activeDocId, u8);
       })
       .catch((e) => {
         if (cancelled) return;
@@ -135,7 +156,7 @@ export default function ReportPreview() {
     return () => {
       cancelled = true;
     };
-  }, [cpts, projectMeta, cachedPdf, activeDocId, setPdfCacheStore]);
+  }, [cpts, projectMeta, sections, cachedPdf, activeDocId, setPdfCacheStore]);
 
   // Final cleanup on unmount.
   useEffect(() => {
@@ -149,6 +170,23 @@ export default function ReportPreview() {
 
   const openProjectInfo = () => {
     window.dispatchEvent(new CustomEvent("ogs:open-project-settings"));
+  };
+
+  // "PDF openen" — in Tauri werkt `window.open(blobUrl)` niet; we schrijven
+  // de bytes via een command naar een tijdelijk bestand en openen dat in de
+  // systeem-PDF-viewer. In de browser valt het terug op window.open.
+  const handleOpenPdf = async () => {
+    try {
+      if (IS_TAURI && pdfBytes) {
+        await invoke("open_report_pdf", { bytes: Array.from(pdfBytes) });
+      } else if (pdfUrl) {
+        window.open(pdfUrl, "_blank");
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("[ReportPreview] PDF openen mislukt:", e);
+      setError(`PDF openen mislukt: ${String(e)}`);
+    }
   };
 
   // Sidebar is always rendered (even when empty/error/loading) so the
@@ -200,7 +238,7 @@ export default function ReportPreview() {
               hint={t("report.section.metaHint", "Volledige #COMPANYID / #PROJECTID / kalibratie etc.")} />
           </div>
           <p className="report-sidebar-hint">
-            {t("report.sectionsHint", "Aan/uit zetten van onderdelen wordt binnenkort actief.")}
+            {t("report.sectionsHint", "Vink onderdelen aan/uit — het rapport wordt direct opnieuw opgebouwd.")}
           </p>
         </div>
 
@@ -237,10 +275,8 @@ export default function ReportPreview() {
           type="button"
           className="report-generate-btn-side"
           disabled={cpts.length === 0 || loading || !pdfUrl}
-          onClick={() => {
-            if (pdfUrl) window.open(pdfUrl, "_blank");
-          }}
-          title={t("report.openInNewWindow", "PDF openen in nieuw venster")}
+          onClick={handleOpenPdf}
+          title={t("report.openInNewWindow", "PDF openen in de systeem-viewer")}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />

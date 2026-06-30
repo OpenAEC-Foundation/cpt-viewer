@@ -7,7 +7,9 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use tauri::State;
 use chrono::NaiveDate;
-use cpt_core::{build_report, generate_single_cpt_pdf_bytes, ProjectMeta};
+use cpt_core::{
+    build_with_sections, generate_single_cpt_pdf_bytes, ProjectMeta, ReportSections,
+};
 use openaec_core::generate_pdf_bytes;
 use crate::state::AppState;
 
@@ -46,13 +48,21 @@ impl From<ProjectMetaInput> for ProjectMeta {
 pub async fn preview_report_core(
     cpts: Vec<cpt_core::Cpt>,
     project: ProjectMetaInput,
+    sections: Option<ReportSections>,
 ) -> Result<Vec<u8>, String> {
     let meta: ProjectMeta = project.into();
+    let sec = sections.unwrap_or_default();
     tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
-        if cpts.len() == 1 {
+        // Eén sondering ZONDER extra-secties → het gebrande full-bleed
+        // single-CPT-rapport (voorblad + grafiek + achterblad). Zodra de
+        // gebruiker coördinatentabel / overzichtskaart / SBT-legenda /
+        // metadata aanzet (of bij meerdere sonderingen), gaat het via de
+        // openaec-engine zodat die secties daadwerkelijk verschijnen.
+        let extras = sec.coord_table || sec.map || sec.sbt_legend || sec.metadata;
+        if cpts.len() == 1 && !extras {
             return Ok(generate_single_cpt_pdf_bytes(&cpts[0], &meta));
         }
-        let report = build_report(&cpts, &meta);
+        let report = build_with_sections(&cpts, &meta, sec);
         generate_pdf_bytes(&report).map_err(|e| e.to_string())
     })
     .await
@@ -63,8 +73,9 @@ pub async fn generate_report_core(
     cpts: Vec<cpt_core::Cpt>,
     project: ProjectMetaInput,
     output_path: String,
+    sections: Option<ReportSections>,
 ) -> Result<(), String> {
-    let bytes = preview_report_core(cpts, project).await?;
+    let bytes = preview_report_core(cpts, project, sections).await?;
     tokio::task::spawn_blocking(move || -> Result<(), String> {
         std::fs::write(PathBuf::from(output_path), bytes).map_err(|e| e.to_string())
     })
@@ -82,6 +93,7 @@ pub async fn generate_report_core(
 pub async fn preview_report(
     cpt_ids: Vec<String>,
     project: ProjectMetaInput,
+    sections: Option<ReportSections>,
     state: State<'_, AppState>,
 ) -> Result<Vec<u8>, String> {
     // Snapshot the CPTs while we still hold the lock — release before
@@ -94,7 +106,7 @@ pub async fn preview_report(
             .filter_map(|id| cpts_map.get(id).cloned())
             .collect()
     };
-    preview_report_core(cpts, project).await
+    preview_report_core(cpts, project, sections).await
 }
 
 #[tauri::command]
@@ -102,6 +114,7 @@ pub async fn generate_report(
     cpt_ids: Vec<String>,
     project: ProjectMetaInput,
     output_path: String,
+    sections: Option<ReportSections>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let cpts: Vec<_> = {
@@ -111,5 +124,26 @@ pub async fn generate_report(
             .filter_map(|id| cpts_map.get(id).cloned())
             .collect()
     };
-    generate_report_core(cpts, project, output_path).await
+    generate_report_core(cpts, project, output_path, sections).await
+}
+
+/// Schrijf PDF-bytes naar een tijdelijk bestand en open het in de
+/// systeem-standaard PDF-viewer. Gebruikt door de "PDF openen"-knop —
+/// `window.open(blobUrl)` werkt niet in de Tauri-webview, dus we gaan via
+/// een echt bestand + de opener-plugin.
+#[tauri::command]
+pub async fn open_report_pdf(
+    bytes: Vec<u8>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let path = std::env::temp_dir().join(format!("ogs-rapport-{stamp}.pdf"));
+    std::fs::write(&path, &bytes).map_err(|e| format!("PDF schrijven mislukt: {e}"))?;
+    app.opener()
+        .open_path(path.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|e| format!("PDF openen mislukt: {e}"))
 }

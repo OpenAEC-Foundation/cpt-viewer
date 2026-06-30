@@ -147,6 +147,10 @@ async fn detect_layers(
 struct ReportBody {
     cpt_ids: Vec<String>,
     project: report_cmd::ProjectMetaInput,
+    /// Optionele sectie-selectie (cover, coordTable, map, perCpt, sbtLegend,
+    /// metadata). Weggelaten → standaard-secties.
+    #[serde(default)]
+    sections: Option<cpt_core::ReportSections>,
 }
 
 async fn report(
@@ -167,7 +171,7 @@ async fn report(
             "geen CPT's gevonden voor de opgegeven cpt_ids (importeer ze eerst via POST /api/cpts)".into(),
         ));
     }
-    let bytes = report_cmd::preview_report_core(cpts, b.project).await?;
+    let bytes = report_cmd::preview_report_core(cpts, b.project, b.sections).await?;
     Ok((
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/pdf")],
