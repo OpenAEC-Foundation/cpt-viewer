@@ -8,7 +8,7 @@ use serde::Deserialize;
 use tauri::State;
 use chrono::NaiveDate;
 use cpt_core::{
-    build_with_sections, generate_single_cpt_pdf_bytes, ProjectMeta, ReportSections,
+    build_with_sections, generate_single_cpt_pdf_bytes_with_sections, ProjectMeta, ReportSections,
 };
 use openaec_core::generate_pdf_bytes;
 use crate::state::AppState;
@@ -53,14 +53,13 @@ pub async fn preview_report_core(
     let meta: ProjectMeta = project.into();
     let sec = sections.unwrap_or_default();
     tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
-        // Eén sondering → ALTIJD het gebrande full-bleed rapport
-        // (voorblad + schermvullende grafiek + achterblad). De openaec-
-        // sectie-engine (coördinatentabel / overzichtskaart / SBT-legenda /
-        // metadata) wordt alleen gebruikt voor meervoudige rapporten, waar
-        // die secties context geven. Zo blijft het 1-sondering-rapport de
-        // gebrande lay-out die de gebruiker verwacht.
+        // Eén sondering → het GEBRANDE rapport (voorblad + schermvullende
+        // grafiek + achterblad), met de aangevinkte secties (coördinaten-
+        // tabel / overzichtskaart / SBT-legenda / metadata) als eigen
+        // pagina's ertussen. Zo werken de vinkjes zonder de gebrande lay-out
+        // te verliezen. Meerdere sonderingen → de openaec-sectie-engine.
         if cpts.len() == 1 {
-            return Ok(generate_single_cpt_pdf_bytes(&cpts[0], &meta));
+            return Ok(generate_single_cpt_pdf_bytes_with_sections(&cpts[0], &meta, sec));
         }
         let report = build_with_sections(&cpts, &meta, sec);
         generate_pdf_bytes(&report).map_err(|e| e.to_string())
