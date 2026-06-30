@@ -10,7 +10,9 @@ import {
   moveMarkerTo,
 } from "./chart-renderer";
 
-type Marker = { nap?: number; depth?: number };
+// Marker = horizontale annotatie-lijn, gekoppeld aan één CPT via `cptId`
+// zodat hij alleen in die sondering-kolom verschijnt (niet globaal).
+type Marker = { nap?: number; depth?: number; cptId?: string };
 
 /**
  * Canvas-backed chart view of all open CPTs.

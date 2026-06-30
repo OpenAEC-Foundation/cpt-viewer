@@ -88,6 +88,17 @@ export function classifyRobertson(qc: number | undefined, rf: number | undefined
 // Public types
 // ─────────────────────────────────────────────────────────────
 
+/** Eén horizontale annotatie-/referentielijn op de chart.
+ *  Verankerd op NAP (voorkeur) of op diepte, en gekoppeld aan één CPT via
+ *  `cptId`. De lijn wordt uitsluitend op die CPT getekend. `cptId` is
+ *  optioneel voor backwards-compat: een marker zonder cptId (legacy of de
+ *  singular `marker`) wordt op álle CPT's getekend. */
+export interface ChartMarker {
+  nap?: number;
+  depth?: number;
+  cptId?: string;
+}
+
 export interface ChartRenderOptions {
   width: number;
   height: number;
@@ -103,15 +114,18 @@ export interface ChartRenderOptions {
    */
   columnRatios?: number[];
   /**
-   * Optional reference marker(s) — horizontal lines drawn across all panels.
-   * Each marker is anchored either to NAP (preferred: shared across CPTs)
-   * or to depth (fallback for CPTs without known ground-level).
+   * Optional reference marker(s) — horizontal annotatie-lijnen. Elke marker
+   * is verankerd op NAP of op diepte, EN op één specifieke CPT via `cptId`
+   * (zie ChartMarker). Een marker wordt alléén op zijn eigen CPT getekend
+   * en is alleen daar aanklikbaar/versleepbaar — zodat bij meerdere open
+   * sonderingen een lijn niet in alle kolommen op dezelfde diepte verschijnt.
    *
    * Backwards compat: `marker` (singular) is still accepted for existing
    * callers; if both are present the singular is appended to `markers`.
+   * Markers zónder `cptId` (legacy) worden op álle CPT's getekend.
    */
-  markers?: { nap?: number; depth?: number }[];
-  marker?: { nap?: number; depth?: number };
+  markers?: ChartMarker[];
+  marker?: ChartMarker;
   /**
    * Optional hover indicator — short dashed line + bullets on every curve
    * at the hovered depth, with value labels. Set by ChartCanvas on mousemove.
@@ -984,7 +998,7 @@ function drawMarker(
   colors: ChartColors,
   shared: SharedLayout,
   c: CptComputed,
-  marker: { nap?: number; depth?: number },
+  marker: ChartMarker,
 ) {
   const depth = markerDepthForCpt(c, marker);
   if (depth == null) return;
@@ -1119,11 +1133,18 @@ function drawMarker(
  * (plural) and `marker` (singular, legacy) into a single ordered array.
  * Returns an empty array if neither is provided.
  */
-function collectMarkers(opts: ChartRenderOptions): { nap?: number; depth?: number }[] {
-  const list: { nap?: number; depth?: number }[] = [];
+function collectMarkers(opts: ChartRenderOptions): ChartMarker[] {
+  const list: ChartMarker[] = [];
   if (opts.markers && opts.markers.length > 0) list.push(...opts.markers);
   if (opts.marker) list.push(opts.marker);
   return list;
+}
+
+/** True als deze marker op CPT `c` getekend/aangeklikt mag worden.
+ *  Markers met een `cptId` horen bij precies één CPT; markers zonder
+ *  cptId (legacy / singular `marker`) gelden voor alle CPT's. */
+function markerBelongsToCpt(marker: ChartMarker, c: CptComputed): boolean {
+  return marker.cptId == null || marker.cptId === c.cpt.id;
 }
 
 /**
@@ -1255,6 +1276,7 @@ export function hitTestMarkerIndex(
     const xEnd = lastPanel.l + lastPanel.w;
     if (x > xEnd + 60) continue;   // include label area
     for (let mi = 0; mi < markers.length; mi++) {
+      if (!markerBelongsToCpt(markers[mi], c)) continue;
       const depth = markerDepthForCpt(c, markers[mi]);
       if (depth == null) continue;
       if (depth < c.depthViewMin || depth > c.depthViewMax) continue;
@@ -1279,7 +1301,7 @@ export function pickMarkerAt(
   opts: ChartRenderOptions,
   x: number,
   y: number,
-): { nap?: number; depth?: number } | null {
+): ChartMarker | null {
   if (cpts.length === 0) return null;
   const shared = layoutShared(opts, cpts.length);
   if (y < shared.plotT || y > shared.plotB) return null;
@@ -1292,33 +1314,45 @@ export function pickMarkerAt(
     }
   }
   if (!owner) owner = computed[0];
+  // De marker hoort bij de CPT waarin geklikt is — `cptId` zorgt dat hij
+  // alléén in die kolom verschijnt (fix voor issue: lijn dook in alle CPT's op).
+  const cptId = owner.cpt.id;
   const depth = yToDepth(y, shared, owner.depthViewMin, owner.depthViewMax);
   const groundNap = owner.cpt.metadata.ground_level_nap;
   if (typeof groundNap === "number") {
-    return { nap: groundNap - depth };
+    return { nap: groundNap - depth, cptId };
   }
-  return { depth };
+  return { depth, cptId };
 }
 
 /**
- * Update an existing marker so it lands at canvas y in the CPT under cursor.
- * Returns the new marker shape (preserves anchor kind: nap stays nap, depth stays depth).
+ * Update an existing marker so it lands at canvas y.
+ * Behoudt de anker-soort (nap blijft nap, depth blijft depth) ÉN de cptId.
+ * De y→diepte-conversie gebruikt de schaal van de CPT waar de marker bij
+ * hoort (marker.cptId), zodat slepen de lijn op zijn eigen sondering houdt
+ * — niet op de (mogelijk anders geschaalde) CPT onder de cursor. Voor een
+ * legacy-marker zonder cptId valt hij terug op de CPT onder de cursor.
  */
 export function moveMarkerTo(
   cpts: Cpt[],
   opts: ChartRenderOptions,
-  marker: { nap?: number; depth?: number },
+  marker: ChartMarker,
   x: number,
   y: number,
-): { nap?: number; depth?: number } {
+): ChartMarker {
   if (cpts.length === 0) return marker;
   const shared = layoutShared(opts, cpts.length);
   const computed = computeAll(cpts, opts, shared);
   let owner: CptComputed | null = null;
-  for (const c of computed) {
-    if (x >= c.layout.cptLeft && x < c.layout.cptLeft + c.layout.cptWidth) {
-      owner = c;
-      break;
+  if (marker.cptId != null) {
+    owner = computed.find((c) => c.cpt.id === marker.cptId) ?? null;
+  }
+  if (!owner) {
+    for (const c of computed) {
+      if (x >= c.layout.cptLeft && x < c.layout.cptLeft + c.layout.cptWidth) {
+        owner = c;
+        break;
+      }
     }
   }
   if (!owner) owner = computed[0];
@@ -1326,9 +1360,9 @@ export function moveMarkerTo(
   const depth = yToDepth(clampedY, shared, owner.depthViewMin, owner.depthViewMax);
   const groundNap = owner.cpt.metadata.ground_level_nap;
   if (marker.nap != null && typeof groundNap === "number") {
-    return { nap: groundNap - depth };
+    return { nap: groundNap - depth, cptId: marker.cptId };
   }
-  return { depth };
+  return { depth, cptId: marker.cptId };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1445,9 +1479,12 @@ export function renderChart(
     drawPanelBorder(ctx, colors, shared, c.layout.rf);
     if (c.layout.u2) drawPanelBorder(ctx, colors, shared, c.layout.u2);
 
-    // Optional reference marker(s) — horizontal lines spanning all panels.
+    // Optionele referentie-lijn(en) — alleen de markers die bij DEZE CPT
+    // horen (zie markerBelongsToCpt). Een lijn die op sondering A is gezet
+    // verschijnt dus niet in de kolom van sondering B.
     const allMarkers = collectMarkers(opts);
     for (const m of allMarkers) {
+      if (!markerBelongsToCpt(m, c)) continue;
       drawMarker(ctx, colors, shared, c, m);
     }
 
