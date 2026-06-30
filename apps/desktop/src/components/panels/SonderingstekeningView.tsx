@@ -45,6 +45,16 @@ proj4.defs(
 );
 const WGS84_TO_RD = proj4("WGS84", "EPSG:28992");
 
+/**
+ * Standaard kaartlocatie wanneer er GÉÉN sondering geopend is: de Grote
+ * Kerk (Onze-Lieve-Vrouwekerk) in Dordrecht. Zodra er één sondering open
+ * staat overschrijft de auto-fit (zie effect verderop) dit met de
+ * sondering-locatie; sluit de gebruiker alle sonderingen, dan keert de
+ * kaart hierheen terug. Eén plek voor de coördinaten zodat het overal
+ * consistent is (init-fallback, default-state én auto-fit).
+ */
+const GROTE_KERK_DORDRECHT = { lat: 51.8136, lon: 4.66135, zoom: 17 } as const;
+
 // ── Paper geometry ───────────────────────────────────────────────
 // All dimensions in millimetres. ISO A-series landscape.
 type PaperSize = "A2" | "A3";
@@ -646,7 +656,7 @@ export default function SonderingstekeningView() {
     lat: number;
     lon: number;
     zoom: number;
-  }>({ lat: 51.81435338, lon: 4.66003133, zoom: 18 });
+  }>({ lat: GROTE_KERK_DORDRECHT.lat, lon: GROTE_KERK_DORDRECHT.lon, zoom: GROTE_KERK_DORDRECHT.zoom });
   // Freeze viewport — when true the Leaflet map cannot be panned or
   // zoomed (drag / scroll-wheel / pinch / double-click / box / keyboard
   // are all disabled). The ribbon's freeze toggle dispatches
@@ -841,15 +851,29 @@ export default function SonderingstekeningView() {
   // re-render opnieuw doen — alleen wanneer het actieve doc-id
   // wisselt re-fitten we. Zo respecteren we een handmatige scale-
   // verandering van de gebruiker tussen tab-switches.
-  const fittedDocIdRef = useRef<string | null>(null);
+  const fittedKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const map = mapRef.current;
+    // `map` kan nog null zijn als dit effect vóór de map-init draait; het
+    // draait dan opnieuw zodra `mapReady` bumpt (init doet dat in een rAF).
+    // Dáárom staat mapReady in de deps — vroeger ontbrak die, waardoor de
+    // fit nooit gebeurde als het project al actief was vóór de map bestond.
     if (!map) return;
-    if (!project || project.cpts.length === 0) return;
-    const positioned = project.cpts.filter((c) => c.position != null);
+    const positioned = (project?.cpts ?? []).filter((c) => c.position != null);
+    // Auto-fit geldt ALLÉÉN wanneer er sondering(en) open staan. Géén
+    // sondering → het kaartcentrum komt van de init (Grote Kerk Dordrecht
+    // bij een verse start) of van de viewport-restore (eerder getekende
+    // inhoud). Auto-fit bemoeit zich daar niet mee, anders zou het die
+    // default/herstelde viewport overschrijven.
     if (positioned.length === 0) return;
-    if (fittedDocIdRef.current === activeDocId) return;
-    fittedDocIdRef.current = activeDocId;
+    // Sleutel onderscheidt "déze sondering(en) op dit papier" zodat we niet
+    // elke render opnieuw fitten (handmatige pan/zoom blijft staan) maar wél
+    // reageren op openen/wisselen + papierwissel.
+    const key = `cpts:${activeDocId}:${paperSize}`;
+    if (fittedKeyRef.current === key) return;
+    fittedKeyRef.current = key;
+
+    // ── Centreer + kies de kleinste preset-schaal ──
     // Center op geografisch midden in RD-meters.
     const meanX =
       positioned.reduce((s, c) => s + c.position!.x_rd, 0) / positioned.length;
@@ -883,7 +907,7 @@ export default function SonderingstekeningView() {
     if (pick !== scale) setScale(pick);
     setMapReady((n) => n + 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, activeDocId, paperSize]);
+  }, [project, activeDocId, paperSize, mapReady]);
 
   // Auto-seed title block from active doc the first time the project changes.
   useEffect(() => {
@@ -1405,8 +1429,11 @@ export default function SonderingstekeningView() {
     if (ctrl.signal.aborted || !fc) return;
     layer.clearLayers();
     L.geoJSON(fc, {
+      // Gebouw-contour BLAUW (was rood) — de boring-markers zijn rood,
+      // dus een rode gebouw-omtrek liep daarmee door elkaar. Blauw geeft
+      // een duidelijk onderscheid tussen bebouwing en sonderingen/boringen.
       style: () => ({
-        color: "#DC2626",
+        color: "#2563EB",
         weight: 1.1,
         fillColor: "rgb(192,192,192)",
         fillOpacity: 0.85,
@@ -2018,12 +2045,12 @@ export default function SonderingstekeningView() {
         projectCenter = { lat: ll[1], lon: ll[0] };
       }
     }
-    const startLat = projectCenter?.lat ?? seed?.lat ?? 51.81435338;
-    const startLon = projectCenter?.lon ?? seed?.lon ?? 4.66003133;
+    const startLat = projectCenter?.lat ?? seed?.lat ?? GROTE_KERK_DORDRECHT.lat;
+    const startLon = projectCenter?.lon ?? seed?.lon ?? GROTE_KERK_DORDRECHT.lon;
     // Bij project-locatie: relatief ingezoomd zodat alle sonderingen
-    // binnen 1:500-papier passen. Anders neem de Kaart-zoom of de
-    // default 14 (overzicht).
-    const startZoom = projectCenter ? 18 : (seed?.zoom ?? 14);
+    // binnen 1:500-papier passen. Anders neem de Kaart-zoom of — als er
+    // niets geopend is — de Grote-Kerk-Dordrecht default-zoom.
+    const startZoom = projectCenter ? 18 : (seed?.zoom ?? GROTE_KERK_DORDRECHT.zoom);
     const map = L.map(paperRef.current, {
       zoomControl: false,
       attributionControl: false,
@@ -3779,8 +3806,11 @@ export default function SonderingstekeningView() {
     //     de singleton blijft staan. Bij re-mount herstellen we het
     //     zodat scale/paperSize/markers niet weg zijn.
     // Pending wint (expliciete open-actie). Anders val terug op
-    // latest zodat tab-switch geen state wist.
-    const pending = consumePendingTekeningRestore() ?? getLatestTekening();
+    // latest zodat tab-switch geen state wist. Onthoud OF het een
+    // expliciete open was — dat bepaalt straks of we óók de opgeslagen
+    // viewport terugzetten (zie de panTo-conditie verderop).
+    const explicit = consumePendingTekeningRestore();
+    const pending = explicit ?? getLatestTekening();
     if (!pending) return;
     setPaperSize(pending.paperSize);
     setScale(pending.scale);
@@ -3838,25 +3868,42 @@ export default function SonderingstekeningView() {
       setOverlay(null);
     }
     setMapView(pending.center);
-    // Zet de Leaflet-map naar het opgeslagen CENTRE, maar laat de
-    // ZOOM aan het scale-setter effect over — dat berekent de exacte
-    // zoom voor 1:N en wint anders een race-condition (saved-zoom
-    // 18 zou de scale-effect's 19.5 overschrijven). Wacht een tick
-    // zodat de map-init zeker klaar is. panTo behoudt huidige zoom.
-    const id = window.setTimeout(() => {
-      const map = mapRef.current;
-      if (!map) return;
-      try {
-        map.panTo([pending.center.lat, pending.center.lon], { animate: false });
-        // Trigger scale-effect re-run zodat 1:N opnieuw wordt toegepast
-        // op de nieuwe centre-positie (mPerPx kan iets verschillen
-        // door cos(lat) verschil tussen oude en nieuwe centre).
-        setMapReady((n) => n + 1);
-      } catch {
-        /* map nog niet klaar — accepteer dat */
-      }
-    }, 50);
-    return () => window.clearTimeout(id);
+    // Herstel de opgeslagen VIEWPORT alleen wanneer dat de sondering-fit
+    // niet in de weg zit:
+    //  • expliciete .ifcgis-open → altijd (de gebruiker opent díe tekening);
+    //  • gewone tab-switch       → alléén als er GÉÉN sondering open staat.
+    // Staat er wél een sondering open, dan zoomen init + auto-fit in op de
+    // sondering en mag de oude (latestTekening-)viewport die fit NIET
+    // overschrijven — dat was precies de bug ("zoomt niet naar de sondering").
+    const ds = useCptStore.getState();
+    const activeD = ds.documents.find((d) => d.id === ds.activeDocId);
+    const soundingOpen =
+      activeD?.kind === "cpt"
+        ? activeD.cpt.position != null
+        : activeD?.kind === "project"
+          ? Array.from(activeD.cpts.values()).some((c) => c.position != null)
+          : false;
+    if (explicit != null || !soundingOpen) {
+      // Zet de Leaflet-map naar het opgeslagen CENTRE, maar laat de
+      // ZOOM aan het scale-setter effect over — dat berekent de exacte
+      // zoom voor 1:N en wint anders een race-condition (saved-zoom
+      // 18 zou de scale-effect's 19.5 overschrijven). Wacht een tick
+      // zodat de map-init zeker klaar is. panTo behoudt huidige zoom.
+      const id = window.setTimeout(() => {
+        const map = mapRef.current;
+        if (!map) return;
+        try {
+          map.panTo([pending.center.lat, pending.center.lon], { animate: false });
+          // Trigger scale-effect re-run zodat 1:N opnieuw wordt toegepast
+          // op de nieuwe centre-positie (mPerPx kan iets verschillen
+          // door cos(lat) verschil tussen oude en nieuwe centre).
+          setMapReady((n) => n + 1);
+        } catch {
+          /* map nog niet klaar — accepteer dat */
+        }
+      }, 50);
+      return () => window.clearTimeout(id);
+    }
     // Bewust eenmalig op mount — als er later opnieuw een project
     // wordt geopend, remount React de view normaal gesproken niet
     // (zelfde tab) dus de openProjectIfcgisFull-flow moet zelf een
