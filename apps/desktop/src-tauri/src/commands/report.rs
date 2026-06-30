@@ -53,13 +53,13 @@ pub async fn preview_report_core(
     let meta: ProjectMeta = project.into();
     let sec = sections.unwrap_or_default();
     tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
-        // Eén sondering ZONDER extra-secties → het gebrande full-bleed
-        // single-CPT-rapport (voorblad + grafiek + achterblad). Zodra de
-        // gebruiker coördinatentabel / overzichtskaart / SBT-legenda /
-        // metadata aanzet (of bij meerdere sonderingen), gaat het via de
-        // openaec-engine zodat die secties daadwerkelijk verschijnen.
-        let extras = sec.coord_table || sec.map || sec.sbt_legend || sec.metadata;
-        if cpts.len() == 1 && !extras {
+        // Eén sondering → ALTIJD het gebrande full-bleed rapport
+        // (voorblad + schermvullende grafiek + achterblad). De openaec-
+        // sectie-engine (coördinatentabel / overzichtskaart / SBT-legenda /
+        // metadata) wordt alleen gebruikt voor meervoudige rapporten, waar
+        // die secties context geven. Zo blijft het 1-sondering-rapport de
+        // gebrande lay-out die de gebruiker verwacht.
+        if cpts.len() == 1 {
             return Ok(generate_single_cpt_pdf_bytes(&cpts[0], &meta));
         }
         let report = build_with_sections(&cpts, &meta, sec);
