@@ -18,17 +18,17 @@ import { groundAnchorModule } from "../modules/ground-anchor/module";
  *  tussenstand-banner (CalculationsView) + ALPHA-badge (NewCalculation-
  *  Dialog), zodat publiek duidelijk is dat het een in-ontwikkeling-
  *  berekening is en niet geschikt voor toetsing. */
-const PUBLIC_MODULES: CalcModule[] = [
-  pileBearingCapacityModule,     // vrijgegeven (mét experimental-waarschuwing)
-];
+const PUBLIC_MODULES: CalcModule[] = [];
 
 /** Modules die nog NIET vrijgegeven zijn (experimental / coming-soon).
  *  Alleen beschikbaar in desktop- en dev-builds. In de publieke webbuild
  *  (VITE_PUBLIC_WEB="1") wordt de tak hieronder die deze lijst gebruikt
  *  weg-ge-tree-shaket door Rollup, zodat de bijbehorende reken- en UI-code
  *  NIET in de publieke bundle terechtkomt (niet alleen onzichtbaar — echt
- *  afwezig). Kalendering blijft hier: niet vrijgeven (gebruikersinstructie). */
+ *  afwezig). Geen enkele berekening op de live site (gebruikersinstructie):
+ *  zowel Funderingspaal als Kalendering staan hier. */
 const DEV_ONLY_MODULES: CalcModule[] = [
+  pileBearingCapacityModule,     // ← NIET vrijgeven — geen calc op live site
   kalenderingModule,             // ← NIET vrijgeven (expliciete instructie)
   laterallyLoadedPileModule,
   spreadFoundationDrainedModule,

@@ -88,12 +88,12 @@ export function NewCalculationDialog({ open, onClose }: Props) {
                         <strong>{m.name}</strong>
                         {m.status === "coming-soon" && (
                           <span className="calc-modal-alpha" title="Alpha — nog in ontwikkeling, niet productie-gereed">
-                            {" "}ALPHA — in ontwikkeling
+                            {" "}CONCEPT — in ontwikkeling
                           </span>
                         )}
                         {m.status === "experimental" && (
                           <span className="calc-modal-alpha" title="Alpha — nog in ontwikkeling, niet productie-gereed">
-                            {" "}ALPHA — in ontwikkeling
+                            {" "}CONCEPT — in ontwikkeling
                           </span>
                         )}
                       </div>

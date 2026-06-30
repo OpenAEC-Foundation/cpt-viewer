@@ -190,7 +190,7 @@ export function CalculationsView() {
     >
       {showExperimentalBanner && (
         <div className="calc-experimental-banner" role="alert">
-          <strong>⚠ TUSSENSTAND — module in ontwikkeling.</strong>
+          <strong>⚠ CONCEPT — IN ONTWIKKELING.</strong>
           &nbsp;De getoonde resultaten zijn indicatief en mogen niet
           worden gebruikt voor toetsing bij vergunning of uitvoering.
         </div>
