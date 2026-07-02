@@ -2863,12 +2863,15 @@ export default function SonderingstekeningView() {
         selection?.kind === "raster" && selection.id === r.id;
       const fill = isSelected ? "#f59e0b" : "#1e40af";
       const stroke = isSelected ? "#92400e" : "#1e3a8a";
-      // Derived sondering markers — pure presentation, not interactive
-      // (selection happens via the bounding-box click below).
-      // Per cell krijgt elke sondering een doorlopend nummer: cellIdx
-      // = rIdx * cols + cIdx + 1, wat de gebruiker een herkenbaar
-      // R01-S01, R01-S02, ... oplevert. Het label staat rechts van
-      // het driehoek-symbool, net als bij de losse markers.
+      // Derived sondering markers — nu WEL klikbaar zodat je het raster
+      // ook door op een sondering-symbool te klikken selecteert (niet
+      // alleen via het dunne kader). Per cel krijgt elke sondering een
+      // doorlopend nummer: cellIdx = rIdx * cols + cIdx + 1, wat een
+      // herkenbaar R01-S01, R01-S02, … oplevert.
+      const selectThisRaster = (ev: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(ev);
+        setSelection({ kind: "raster", id: r.id });
+      };
       for (const pt of rasterPoints(r)) {
         const cellIdx = pt.rIdx * r.cols + pt.cIdx + 1;
         const cellLabel = `${r.id}-S${String(cellIdx).padStart(2, "0")}`;
@@ -2887,23 +2890,26 @@ export default function SonderingstekeningView() {
             iconSize: [40, 40], /* 4× origineel */
             iconAnchor: [20, 36],
           }),
-          interactive: false,
+          interactive: true,
         });
+        m.on("click", selectThisRaster);
         layer.addLayer(m);
       }
-      // Bounding rectangle — solid amber when selected, faint blue when not.
+      // Bounding rectangle. Een transparante vulling (fill: true met lage
+      // opacity) maakt het HELE vlak klikbaar — met fill: false ving
+      // alleen de 1,2px-stippellijn kliks, waardoor het raster in de
+      // praktijk niet te selecteren was.
       const corners = rasterCornersLatLng(r);
       const rect = L.polygon(corners, {
         color: isSelected ? "#d97706" : "#3b82f6",
         weight: isSelected ? 2.5 : 1.2,
-        fill: false,
+        fill: true,
+        fillColor: isSelected ? "#f59e0b" : "#3b82f6",
+        fillOpacity: isSelected ? 0.1 : 0.04,
         dashArray: isSelected ? undefined : "4 4",
         interactive: true,
       });
-      rect.on("click", (ev) => {
-        L.DomEvent.stopPropagation(ev);
-        setSelection({ kind: "raster", id: r.id });
-      });
+      rect.on("click", selectThisRaster);
       // Label showing rows × cols at the center.
       const lbl = L.marker([r.centerLat, r.centerLon], {
         icon: L.divIcon({
