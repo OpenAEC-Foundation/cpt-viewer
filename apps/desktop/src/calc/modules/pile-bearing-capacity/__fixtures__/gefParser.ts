@@ -52,7 +52,18 @@ function parseHeader(headerLines: string[]): ParsedHeader {
       if (parts.length >= 4) {
         const colIdx = Number(parts[0]);
         const label = parts[2].toLowerCase();
-        if (label.includes("sondeerlengte") || label.includes("depth")) {
+        if (label.includes("gecorrigeerde diepte")) {
+          // Heltekorrectie (GEF-grootheid 11) — de échte verticale diepte.
+          // Heeft ALTIJD voorrang op sondeerlengte: bij scheefstand is de
+          // sondeerlengte groter dan de diepte, waardoor de 4D/8D-
+          // trajecten anders bemonsterd worden (1-3% afwijking op
+          // qc;I/II/III t.o.v. de externe referentie-berekening).
+          depthColIdx = colIdx;
+        } else if (
+          (label.includes("sondeerlengte") || label.includes("depth")) &&
+          depthColIdx < 1
+        ) {
+          // Fallback wanneer er geen gecorrigeerde-diepte-kolom is.
           depthColIdx = colIdx;
         } else if (label.includes("puntdruk") || label === "qc") {
           qcColIdx = colIdx;
