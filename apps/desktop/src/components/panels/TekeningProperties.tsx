@@ -39,6 +39,8 @@ interface RasterSnapshot {
   spacingX: number;
   spacingY: number;
   rotation: number;
+  /** Kleefmeting-streepje onder elke rastercel (NEN-symbool). */
+  kleefmeting?: boolean;
 }
 
 interface OverlaySnapshot {
@@ -299,6 +301,14 @@ export default function TekeningProperties() {
               <span className="tekprops-num-val">
                 {`${Math.round(snap.selectedRaster.rotation)}°`}
               </span>
+            </label>
+            <label className="tekprops-field tekprops-field-wide tekprops-checkbox">
+              <input
+                type="checkbox"
+                checked={!!snap.selectedRaster.kleefmeting}
+                onChange={(e) => updateRaster({ kleefmeting: e.target.checked })}
+              />
+              <span>Kleefmeting (streepje onder symbool)</span>
             </label>
             <button
               type="button"

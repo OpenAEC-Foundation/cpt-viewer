@@ -127,6 +127,10 @@ interface PlacedRaster {
    *  bijgemaakt zodat de werkelijke spacing nooit boven dit getal komt.
    *  Standaard 20 m (Dutch NEN-praktijk: 15/20/25 m grid). */
   maxSpacing?: number;
+  /** Kleefmeting-streepje onder elke rastercel-driehoek (NEN-symbool
+   *  voor sondering met plaatselijke wrijving). Per raster togglebaar
+   *  in het Eigenschappen-paneel. */
+  kleefmeting?: boolean;
 }
 
 /** A selection identifies which object the user is currently editing. */
@@ -2127,7 +2131,12 @@ export default function SonderingstekeningView() {
         }),
         draggable: true,
       });
-      handle.on("dragstart", () => { draggingRef.current = true; });
+      handle.on("dragstart", () => {
+        draggingRef.current = true;
+        // Kaart-pan hard uit tijdens de handle-drag — anders sleept het
+        // hele scherm mee met de resize (gebruiker-klacht).
+        try { mapRef.current?.dragging.disable(); } catch { /* noop */ }
+      });
       handle.on("drag", (e) => {
         const ll2 = (e as L.LeafletEvent & { latlng: L.LatLng }).latlng;
         const [dragRdX, dragRdY] = WGS84_TO_RD.forward([ll2.lng, ll2.lat]);
@@ -2144,7 +2153,10 @@ export default function SonderingstekeningView() {
           prev ? { ...prev, widthMeters: newWidthM } : prev,
         );
       });
-      handle.on("dragend", () => { draggingRef.current = false; });
+      handle.on("dragend", () => {
+        draggingRef.current = false;
+        try { if (!frozenRef.current) mapRef.current?.dragging.enable(); } catch { /* noop */ }
+      });
       handle.on("click", (ev) => L.DomEvent.stopPropagation(ev));
       layer.addLayer(handle);
     }
@@ -2864,8 +2876,12 @@ export default function SonderingstekeningView() {
           icon: L.divIcon({
             className: "tek-raster-marker",
             html: `<div class="tek-marker tek-marker-raster${isSelected ? " selected" : ""}">
-                     <svg viewBox="0 0 10 10"><polygon points="1,1 9,1 5,9"
-                       fill="${fill}" stroke="${stroke}" stroke-width="0.8" /></svg>
+                     <svg viewBox="0 0 10 12" overflow="visible"><polygon points="1,1 9,1 5,9"
+                       fill="${fill}" stroke="${stroke}" stroke-width="0.8" />${
+                         r.kleefmeting
+                           ? `<line x1="1" y1="10.8" x2="9" y2="10.8" stroke="${stroke}" stroke-width="1" stroke-linecap="round" />`
+                           : ""
+                       }</svg>
                      <span class="tek-marker-label tek-raster-cell-label">${cellLabel}</span>
                    </div>`,
             iconSize: [40, 40], /* 4× origineel */
@@ -2933,9 +2949,15 @@ export default function SonderingstekeningView() {
     // raster — pauses the rebuild effect, then triggers one final
     // refresh after release so the *other* handles (which aren't being
     // dragged) move to match the new raster geometry.
-    const onDragStart = () => { draggingRef.current = true; };
+    const onDragStart = () => {
+      draggingRef.current = true;
+      // Kaart-pan hard uit tijdens raster-handle-drags — anders pant
+      // het hele scherm mee met het vergroten/roteren van het raster.
+      try { mapRef.current?.dragging.disable(); } catch { /* noop */ }
+    };
     const onDragEnd = () => {
       draggingRef.current = false;
+      try { if (!frozenRef.current) mapRef.current?.dragging.enable(); } catch { /* noop */ }
       // Bump a counter so the effect re-runs and lays out every handle
       // at the new geometry. Without this nudge the other handles stay
       // glued to their pre-drag positions until something else triggers
@@ -3932,6 +3954,7 @@ export default function SonderingstekeningView() {
             spacingX: selectedRaster.spacingX,
             spacingY: selectedRaster.spacingY,
             rotation: selectedRaster.rotation,
+            kleefmeting: !!selectedRaster.kleefmeting,
           }
         : null,
       selectedOverlay: selectedOverlay
