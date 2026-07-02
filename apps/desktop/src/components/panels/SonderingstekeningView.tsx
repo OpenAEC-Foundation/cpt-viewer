@@ -2412,9 +2412,19 @@ export default function SonderingstekeningView() {
             (p) => (p.kind ?? "sondering") === kind,
           ).length;
           const nextId = `${prefix}${String(sameKindCount + 1).padStart(2, "0")}`;
+          // Sonderingen krijgen standaard het kleefmeting-streepje onder de
+          // driehoek (NEN-symbool: vrijwel elke moderne elektrische conus
+          // meet plaatselijke wrijving). Uit te zetten per marker in het
+          // Eigenschappen-paneel.
           return [
             ...prev,
-            { id: nextId, lat: effLat, lon: effLon, kind },
+            {
+              id: nextId,
+              lat: effLat,
+              lon: effLon,
+              kind,
+              ...(kind === "sondering" ? { kleefmeting: true } : {}),
+            },
           ];
         });
         return;
@@ -2589,14 +2599,25 @@ export default function SonderingstekeningView() {
       if (!cpt.position) continue;
       // Convert RD to lat/lon.
       const ll = WGS84_TO_RD.inverse([cpt.position.x_rd, cpt.position.y_rd]);
+      // NEN-symbool: sondering mét kleefmeting = driehoek met horizontaal
+      // streepje onder de punt. Echte CPT's met fs-data krijgen het
+      // streepje automatisch (vrijwel elke moderne elektrische conus).
+      const hasKleef = cpt.points.some((pt) => pt.fs != null);
       const marker = L.marker([ll[1], ll[0]], {
         icon: L.divIcon({
           className: "tek-project-marker",
           html: `<div class="tek-marker tek-marker-project" title="${cpt.id}">
-                   <svg viewBox="0 0 12 12"><polygon points="1,1 11,1 6,11"
-                     fill="#d97706" stroke="#7c2d12" stroke-width="1" /></svg>
+                   <svg viewBox="0 0 12 14" overflow="visible"><polygon points="1,1 11,1 6,11"
+                     fill="#d97706" stroke="#7c2d12" stroke-width="1" />${
+                       hasKleef
+                         ? `<line x1="1" y1="13" x2="11" y2="13" stroke="#7c2d12" stroke-width="1.3" stroke-linecap="round" />`
+                         : ""
+                     }</svg>
                  </div>`,
-          iconSize: [48, 48], /* 4× origineel — gebruiker-verzoek nogmaals 2x */
+          /* 4× origineel — gebruiker-verzoek nogmaals 2x. Hoogte 56 zodat de
+             12×14-viewBox met streepje dezelfde driehoek-grootte houdt;
+             anchor blijft op de driehoekspunt (y=11 × schaal 4 = 44). */
+          iconSize: [48, 56],
           iconAnchor: [24, 44],
         }),
       });
@@ -2636,7 +2657,7 @@ export default function SonderingstekeningView() {
                fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" />
              ${
                p.kleefmeting
-                 ? `<line x1="2.5" y1="12" x2="9.5" y2="12" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" />`
+                 ? `<line x1="1" y1="13" x2="11" y2="13" stroke="${stroke}" stroke-width="${strokeWidth + 0.3}" stroke-linecap="round" />`
                  : ""
              }
            </svg>`;
