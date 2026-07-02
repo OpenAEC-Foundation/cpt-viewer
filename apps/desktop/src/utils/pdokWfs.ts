@@ -141,3 +141,33 @@ export function fetchKadasterHuisnummerLabel(bbox: WfsBBox, signal?: AbortSignal
     signal,
   });
 }
+
+/**
+ * Reverse-geocode een lat/lon-punt naar het dichtstbijzijnde adres via de
+ * PDOK Locatieserver. Geeft `{ street, city }` terug (straatnaam +
+ * woonplaats, ZONDER huisnummer) — bedoeld als default-suggestie voor het
+ * adresveld van een situatietekening-titleblock. `null` bij geen resultaat
+ * of netwerkfout (de caller houdt dan het bestaande/lege veld aan).
+ */
+export async function fetchReverseAddress(
+  lat: number,
+  lon: number,
+  signal?: AbortSignal,
+): Promise<{ street: string; city: string } | null> {
+  const url =
+    `https://api.pdok.nl/bzk/locatieserver/search/v3_1/reverse` +
+    `?lat=${lat}&lon=${lon}&rows=1&type=adres` +
+    `&fl=straatnaam,woonplaatsnaam`;
+  try {
+    const resp = await fetch(url, { signal });
+    if (!resp.ok) return null;
+    const json = (await resp.json()) as {
+      response?: { docs?: Array<{ straatnaam?: string; woonplaatsnaam?: string }> };
+    };
+    const doc = json.response?.docs?.[0];
+    if (!doc?.straatnaam) return null;
+    return { street: doc.straatnaam, city: doc.woonplaatsnaam ?? "" };
+  } catch {
+    return null;
+  }
+}

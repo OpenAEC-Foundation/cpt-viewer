@@ -11,7 +11,7 @@ import {
   setLatestTekening,
   type TekeningFullState,
 } from "../../store/tekeningState";
-import { fetchBagPanden, fetchKadasterPercelen } from "../../utils/pdokWfs";
+import { fetchBagPanden, fetchKadasterPercelen, fetchReverseAddress } from "../../utils/pdokWfs";
 import { AdressenLayer } from "../../utils/adressenLayer";
 import ImageCropDialog from "./ImageCropDialog";
 import PdfCropDialog from "./PdfCropDialog";
@@ -1091,6 +1091,35 @@ export default function SonderingstekeningView() {
   useEffect(() => {
     setTitleBlock((tb) => ({ ...tb, scale: `1:${scale}` }));
   }, [scale]);
+
+  // Adres-suggestie: reverse-geocode het kaartcentrum naar "Straat, Plaats"
+  // (zonder huisnummer) en vul dat ALLEEN in wanneer het adresveld nog leeg
+  // is — de gebruiker kan het altijd overrulen (typen wist de suggestie
+  // niet meer). Re-runt bij een significante centrum-verschuiving zodat een
+  // nieuw project op een andere locatie een passende suggestie krijgt,
+  // maar nooit een handmatig ingevuld adres overschrijft.
+  const addressSeedRef = useRef<string>("");
+  useEffect(() => {
+    if (!mapView || mapView.lat === 0) return;
+    // Grof gerasterd centrum (≈100 m) zodat kleine pans niet telkens
+    // opnieuw fetchen.
+    const key = `${mapView.lat.toFixed(3)},${mapView.lon.toFixed(3)}`;
+    if (addressSeedRef.current === key) return;
+    addressSeedRef.current = key;
+    let cancelled = false;
+    const ctrl = new AbortController();
+    void fetchReverseAddress(mapView.lat, mapView.lon, ctrl.signal).then((addr) => {
+      if (cancelled || !addr) return;
+      const suggestion = addr.city ? `${addr.street}, ${addr.city}` : addr.street;
+      setTitleBlock((tb) =>
+        tb.address.trim() ? tb : { ...tb, address: suggestion },
+      );
+    });
+    return () => {
+      cancelled = true;
+      ctrl.abort();
+    };
+  }, [mapView]);
 
   useEffect(() => {
     placeModeRef.current = placeMode;
