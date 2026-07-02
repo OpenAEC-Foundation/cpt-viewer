@@ -261,12 +261,27 @@ pub async fn open_report_pdf(
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let path = std::env::temp_dir().join(format!("ogs-rapport-{stamp}.pdf"));
-    std::fs::write(&path, &bytes).map_err(|e| format!("PDF schrijven mislukt: {e}"))?;
+    // Klein roterend setje vaste namen i.p.v. een unieke timestamp-naam
+    // per klik: timestamps stapelden onbeperkt multi-MB PDF's op in %TEMP%
+    // (niets ruimde ze op). Een vaste naam kan niet zomaar overschreven
+    // worden zolang een viewer hem openhoudt (Windows file-lock), dus we
+    // proberen 4 sloten en pakken het eerste dat schrijfbaar is.
+    let dir = std::env::temp_dir();
+    let bytes_arc = std::sync::Arc::new(bytes);
+    let write_bytes = bytes_arc.clone();
+    let path = tokio::task::spawn_blocking(move || -> Result<std::path::PathBuf, String> {
+        let mut last_err = String::new();
+        for slot in 0..4u8 {
+            let p = dir.join(format!("ogs-rapport-{slot}.pdf"));
+            match std::fs::write(&p, write_bytes.as_slice()) {
+                Ok(()) => return Ok(p),
+                Err(e) => last_err = e.to_string(),
+            }
+        }
+        Err(format!("PDF schrijven mislukt: {last_err}"))
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join failed: {e}"))??;
     app.opener()
         .open_path(path.to_string_lossy().to_string(), None::<&str>)
         .map_err(|e| format!("PDF openen mislukt: {e}"))

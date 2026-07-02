@@ -36,3 +36,4 @@ docs/*
 !docs/screenshots/
 # Design specs uit de brainstorming-skill horen ook in de repo.
 !docs/superpowers/
+/export/

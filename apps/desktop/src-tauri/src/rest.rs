@@ -85,6 +85,11 @@ async fn serve(app: Arc<AppState>, port: u16) -> std::io::Result<()> {
         .route("/api/report", post(report))
         .route("/api/bro/area", post(bro_area))
         .route("/api/bro/cpt/:bro_id", get(bro_cpt))
+        // Axum's default body-limiet is 2 MB — te klein voor realistische
+        // GEF/BRO-XML-uploads (JSON-escaping blaast ze verder op), waardoor
+        // POST /api/cpts met 413 faalde op precies de bestanden waarvoor de
+        // API bestaat. 64 MB dekt elk redelijk sondeerbestand.
+        .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
         .with_state(state);
 
     let addr = format!("127.0.0.1:{port}");
@@ -159,17 +164,29 @@ async fn report(
 ) -> Result<Response, ApiError> {
     // Snapshot de gevraagde CPT's uit de cache (zelfde patroon als de
     // Tauri-command + MCP-tool) zodat de async render zonder lock draait.
-    let cpts: Vec<Cpt> = {
+    // Onbekende ids zijn een HARDE fout: stilletjes overslaan gaf een
+    // HTTP 200 met een rapport waarin een sondering ontbrak — voor een
+    // script/CI-consument een ondetecteerbaar half resultaat.
+    let (cpts, missing): (Vec<Cpt>, Vec<String>) = {
         let cache = s.app.cpts.lock().map_err(|e| e.to_string())?;
-        b.cpt_ids
-            .iter()
-            .filter_map(|id| cache.get(id).cloned())
-            .collect()
+        let mut found = Vec::new();
+        let mut missing = Vec::new();
+        for id in &b.cpt_ids {
+            match cache.get(id) {
+                Some(c) => found.push(c.clone()),
+                None => missing.push(id.clone()),
+            }
+        }
+        (found, missing)
     };
+    if !missing.is_empty() {
+        return Err(ApiError(format!(
+            "onbekende cpt_ids: {} (importeer ze eerst via POST /api/cpts)",
+            missing.join(", "),
+        )));
+    }
     if cpts.is_empty() {
-        return Err(ApiError(
-            "geen CPT's gevonden voor de opgegeven cpt_ids (importeer ze eerst via POST /api/cpts)".into(),
-        ));
+        return Err(ApiError("geen cpt_ids opgegeven".into()));
     }
     let bytes = report_cmd::preview_report_core(cpts, b.project, b.sections).await?;
     Ok((

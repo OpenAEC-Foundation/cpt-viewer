@@ -55,6 +55,15 @@ const WGS84_TO_RD = proj4("WGS84", "EPSG:28992");
  */
 const GROTE_KERK_DORDRECHT = { lat: 51.8136, lon: 4.66135, zoom: 17 } as const;
 
+/**
+ * Sleutel van de laatst uitgevoerde sondering-auto-fit — bewust op
+ * MODULE-niveau (niet useRef) zodat hij tab-switch-remounts overleeft.
+ * Eerste opening van een sondering → auto-fit; daaropvolgende remounts
+ * met dezelfde sondering/papier → de opgeslagen (evt. handmatig
+ * aangepaste) viewport wint. Zie het auto-fit- en restore-effect.
+ */
+let fittedTekeningKey: string | null = null;
+
 // ── Paper geometry ───────────────────────────────────────────────
 // All dimensions in millimetres. ISO A-series landscape.
 type PaperSize = "A2" | "A3";
@@ -847,11 +856,13 @@ export default function SonderingstekeningView() {
   // met 2 sonderingen dan moet zoom-fit van die sonderingen
   // overrulen op de standaard locatie".
   //
-  // Tracks `fittedDocIdRef` om te voorkomen dat we de fit elke
-  // re-render opnieuw doen — alleen wanneer het actieve doc-id
-  // wisselt re-fitten we. Zo respecteren we een handmatige scale-
-  // verandering van de gebruiker tussen tab-switches.
-  const fittedKeyRef = useRef<string | null>(null);
+  // De fit-guard leeft op MODULE-niveau (zie `fittedTekeningKey` boven de
+  // component) zodat hij tab-switch-remounts overleeft: de eerste keer dat
+  // een sondering opent zoomt de kaart erheen, maar wie daarna handmatig
+  // pant/zoomt en even naar een andere tab gaat, krijgt bij terugkomst de
+  // eigen framing terug (de viewport-restore mag dan panTo'en) i.p.v.
+  // opnieuw de auto-fit. Een useRef was hier fout: die is vers per mount,
+  // waardoor élke tab-switch opnieuw fitte en handmatig werk weggooide.
   useEffect(() => {
     const map = mapRef.current;
     // `map` kan nog null zijn als dit effect vóór de map-init draait; het
@@ -870,8 +881,8 @@ export default function SonderingstekeningView() {
     // elke render opnieuw fitten (handmatige pan/zoom blijft staan) maar wél
     // reageren op openen/wisselen + papierwissel.
     const key = `cpts:${activeDocId}:${paperSize}`;
-    if (fittedKeyRef.current === key) return;
-    fittedKeyRef.current = key;
+    if (fittedTekeningKey === key) return;
+    fittedTekeningKey = key;
 
     // ── Centreer + kies de kleinste preset-schaal ──
     // Center op geografisch midden in RD-meters.
@@ -3892,10 +3903,14 @@ export default function SonderingstekeningView() {
     // Herstel de opgeslagen VIEWPORT alleen wanneer dat de sondering-fit
     // niet in de weg zit:
     //  • expliciete .ifcgis-open → altijd (de gebruiker opent díe tekening);
-    //  • gewone tab-switch       → alléén als er GÉÉN sondering open staat.
-    // Staat er wél een sondering open, dan zoomen init + auto-fit in op de
-    // sondering en mag de oude (latestTekening-)viewport die fit NIET
-    // overschrijven — dat was precies de bug ("zoomt niet naar de sondering").
+    //  • geen sondering open     → altijd (default/getekende positie);
+    //  • sondering open, maar de auto-fit voor déze sondering is al eens
+    //    gedaan (fittedTekeningKey match) → óók herstellen: de gebruiker
+    //    heeft de fit al gezien en mogelijk handmatig gepand/gezoomd —
+    //    die framing mag een tab-switch overleven.
+    // Alleen bij een VERSE sondering (key-mismatch) wint de auto-fit en
+    // slaan we de restore over — dat was de oorspronkelijke bug ("zoomt
+    // niet naar de sondering").
     const ds = useCptStore.getState();
     const activeD = ds.documents.find((d) => d.id === ds.activeDocId);
     const soundingOpen =
@@ -3904,7 +3919,9 @@ export default function SonderingstekeningView() {
         : activeD?.kind === "project"
           ? Array.from(activeD.cpts.values()).some((c) => c.position != null)
           : false;
-    if (explicit != null || !soundingOpen) {
+    const alreadyFitted =
+      fittedTekeningKey === `cpts:${ds.activeDocId}:${pending.paperSize}`;
+    if (explicit != null || !soundingOpen || alreadyFitted) {
       // Zet de Leaflet-map naar het opgeslagen CENTRE, maar laat de
       // ZOOM aan het scale-setter effect over — dat berekent de exacte
       // zoom voor 1:N en wint anders een race-condition (saved-zoom

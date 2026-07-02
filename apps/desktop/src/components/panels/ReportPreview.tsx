@@ -3,43 +3,13 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { useCptStore } from "../../store/useCptStore";
 import { IS_TAURI } from "../../utils/platform";
+import {
+  DEFAULT_SECTIONS,
+  sectionsAreDefault,
+  setCurrentReportSections,
+  type ReportSections,
+} from "../../store/reportSectionsState";
 import "./ReportPreview.css";
-
-/**
- * Section toggles in the report sidebar.
- *
- * For now these are visual-only — toggling them does NOT actually filter
- * the PDF output (the openaec generator doesn't yet expose a section-mask
- * API). The state is preserved so future PDF wiring is a one-line change.
- */
-interface ReportSections {
-  cover: boolean;
-  coordTable: boolean;
-  map: boolean;
-  perCpt: boolean;
-  sbtLegend: boolean;
-  metadata: boolean;
-}
-
-const DEFAULT_SECTIONS: ReportSections = {
-  cover: true,
-  coordTable: true,
-  map: true,
-  perCpt: true,
-  sbtLegend: false,
-  metadata: false,
-};
-
-function sectionsAreDefault(s: ReportSections): boolean {
-  return (
-    s.cover === DEFAULT_SECTIONS.cover &&
-    s.coordTable === DEFAULT_SECTIONS.coordTable &&
-    s.map === DEFAULT_SECTIONS.map &&
-    s.perCpt === DEFAULT_SECTIONS.perCpt &&
-    s.sbtLegend === DEFAULT_SECTIONS.sbtLegend &&
-    s.metadata === DEFAULT_SECTIONS.metadata
-  );
-}
 
 /**
  * PDF report preview — sidebar (section toggles + project info) + iframe.
@@ -68,6 +38,11 @@ export default function ReportPreview() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sections, setSections] = useState<ReportSections>(DEFAULT_SECTIONS);
+  // Spiegel elke wijziging naar de module-singleton zodat de ribbon-knoppen
+  // (Genereer/Open PDF) altijd met de actuele vinkjes genereren.
+  useEffect(() => {
+    setCurrentReportSections(sections);
+  }, [sections]);
   // Bytes van het nu getoonde rapport — voor de "PDF openen"-knop, die ze
   // via een Tauri-command naar een tijdelijk bestand schrijft + opent.
   const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
@@ -215,7 +190,7 @@ export default function ReportPreview() {
             {t("report.sections", "Onderdelen")}
           </div>
           <div className="report-section-list">
-            <SectionToggle label={t("report.section.cover", "Voorblad")}
+            <SectionToggle label={t("report.section.cover", "Voor- en achterblad")}
               checked={sections.cover}
               onChange={(v) => setSections((s) => ({ ...s, cover: v }))} />
             <SectionToggle label={t("report.section.coordTable", "Coördinatentabel")}
