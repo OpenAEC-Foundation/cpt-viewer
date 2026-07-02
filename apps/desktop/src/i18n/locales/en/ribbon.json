@@ -14,7 +14,8 @@
     "overlayGroup": "Overlay",
     "addOverlay": "Add",
     "exportGroup": "Export",
-    "exportPdf": "PDF"
+    "exportPdf": "Export PDF",
+    "print": "Print"
   },
   "file": "File",
   "open": "Open",

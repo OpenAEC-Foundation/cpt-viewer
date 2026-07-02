@@ -58,6 +58,12 @@ const quotesIcon =
   `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ` +
   `d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>`;
 
+// Exporteer-PDF-icon — document met omlaag-pijl (download/opslaan).
+const exportPdfIcon =
+  `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
+  `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ` +
+  `d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m6.75 12l-3 3m0 0l-3-3m3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>`;
+
 // Roteer-icon — een ronde pijl die 270° om een centrum buigt (open
 // aan de bovenkant). Heroicons "arrow-path" stijl.
 const rotateIcon =
@@ -327,8 +333,14 @@ export default function SonderingstekeningTab() {
 
         <RibbonGroup label={t("tekening.exportGroup", "Export")}>
           <RibbonButton
+            icon={exportPdfIcon}
+            label={t("tekening.exportPdf", "Exporteer PDF")}
+            size="large"
+            onClick={() => dispatch("ogs:tekening-export-pdf")}
+          />
+          <RibbonButton
             icon={printIcon}
-            label={t("tekening.exportPdf", "PDF")}
+            label={t("tekening.print", "Print")}
             size="large"
             onClick={() => dispatch("ogs:tekening-print")}
           />
