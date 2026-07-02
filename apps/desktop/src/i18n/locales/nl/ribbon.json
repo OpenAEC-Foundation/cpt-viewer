@@ -15,7 +15,9 @@
     "addOverlay": "Image/PDF import",
     "exportGroup": "Export",
     "exportPdf": "Exporteer PDF",
-    "print": "Print"
+    "print": "Print",
+    "drawVlak": "Vlak",
+    "addNote": "Opmerking"
   },
   "file": "Bestand",
   "open": "Open",

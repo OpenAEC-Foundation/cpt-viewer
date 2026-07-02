@@ -64,6 +64,15 @@ const GROTE_KERK_DORDRECHT = { lat: 51.8136, lon: 4.66135, zoom: 17 } as const;
  */
 let fittedTekeningKey: string | null = null;
 
+/** Escape gebruikerstekst voor veilige injectie in een divIcon-HTML-string
+ *  (opmerkingen kunnen &, <, > bevatten). */
+function xmlEscapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 // ── Paper geometry ───────────────────────────────────────────────
 // All dimensions in millimetres. ISO A-series landscape.
 type PaperSize = "A2" | "A3";
@@ -139,7 +148,26 @@ type Selection =
   | { kind: "raster"; id: string }
   | { kind: "overlay"; id: string }
   | { kind: "line"; id: string }
+  | { kind: "vlak"; id: string }
+  | { kind: "note"; id: string }
   | null;
+
+/** Getekend vlak (polygon) op het papier — vul- + randkleur, vrij aantal
+ *  hoekpunten in lat/lon. */
+interface PlacedVlak {
+  id: string;
+  points: { lat: number; lon: number }[];
+  fillColor: string;
+  strokeColor: string;
+}
+
+/** Vrije tekst-opmerking op het papier. */
+interface PlacedNote {
+  id: string;
+  lat: number;
+  lon: number;
+  text: string;
+}
 
 interface OverlayDrop {
   id: string;
@@ -541,6 +569,85 @@ export default function SonderingstekeningView() {
   const [rasters, setRasters] = useState<PlacedRaster[]>([]);
   const [coordTags, setCoordTags] = useState<CoordTag[]>([]);
   const [coordMode, setCoordMode] = useState(false);
+  // Vlak-tool: klik hoekpunten; Enter/dubbelklik sluit het vlak, Esc
+  // annuleert. `vlakDraftRef` houdt de punten-in-opbouw; `vlakken` de
+  // afgeronde vlakken. Aparte layers voor de definitieve vlakken en de
+  // live-draft-preview.
+  const [vlakMode, setVlakMode] = useState(false);
+  const vlakModeRef = useRef(false);
+  useEffect(() => { vlakModeRef.current = vlakMode; }, [vlakMode]);
+  const vlakDraftRef = useRef<{ lat: number; lon: number }[]>([]);
+  const [vlakken, setVlakken] = useState<PlacedVlak[]>([]);
+  const vlakLayerRef = useRef<L.LayerGroup | null>(null);
+  const vlakDraftLayerRef = useRef<L.LayerGroup | null>(null);
+  // Opmerking-tool: volgende klik plaatst een tekst-note (tekst via prompt).
+  const [noteMode, setNoteMode] = useState(false);
+  const noteModeRef = useRef(false);
+  useEffect(() => { noteModeRef.current = noteMode; }, [noteMode]);
+  const [notes, setNotes] = useState<PlacedNote[]>([]);
+  const noteLayerRef = useRef<L.LayerGroup | null>(null);
+  // Render-brug voor de vlak-draft (gedeeld door de map-klik + mousemove
+  // die in een [] -deps init-effect zitten). Tekent de tot nu toe geklikte
+  // hoekpunten + een rubber-band naar de cursor + een sluitrand-preview.
+  const renderVlakDraftRef = useRef<((cursor?: { lat: number; lon: number }) => void) | null>(null);
+  useEffect(() => {
+    renderVlakDraftRef.current = (cursor) => {
+      const layer = vlakDraftLayerRef.current;
+      if (!layer) return;
+      layer.clearLayers();
+      const pts = vlakDraftRef.current;
+      for (const p of pts) {
+        layer.addLayer(
+          L.circleMarker([p.lat, p.lon], {
+            radius: 4, color: "#d97706", weight: 2,
+            fillColor: "#fff", fillOpacity: 1, interactive: false,
+          }),
+        );
+      }
+      const path: [number, number][] = pts.map((p) => [p.lat, p.lon]);
+      if (cursor) path.push([cursor.lat, cursor.lon]);
+      if (path.length >= 2) {
+        layer.addLayer(L.polyline(path, { color: "#d97706", weight: 1.6, dashArray: "5 4", interactive: false }));
+      }
+      if (pts.length >= 2) {
+        const tail = cursor ?? pts[pts.length - 1];
+        layer.addLayer(
+          L.polyline([[tail.lat, tail.lon], [pts[0].lat, pts[0].lon]], {
+            color: "#d97706", weight: 1, dashArray: "2 4", opacity: 0.5, interactive: false,
+          }),
+        );
+      }
+    };
+  });
+  const finishVlak = useCallback(() => {
+    // Dedupe opeenvolgende (bijna) identieke hoekpunten — een afsluit-
+    // dubbelklik voegt anders een dubbel punt op dezelfde plek toe.
+    const raw = vlakDraftRef.current;
+    const pts = raw.filter(
+      (p, i) => i === 0 || Math.abs(p.lat - raw[i - 1].lat) > 1e-9 || Math.abs(p.lon - raw[i - 1].lon) > 1e-9,
+    );
+    vlakDraftRef.current = [];
+    vlakDraftLayerRef.current?.clearLayers();
+    vlakModeRef.current = false;
+    setVlakMode(false);
+    if (pts.length >= 3) {
+      setVlakken((prev) => [
+        ...prev,
+        {
+          id: `V${String(prev.length + 1).padStart(2, "0")}`,
+          points: pts,
+          fillColor: "#3b82f6",
+          strokeColor: "#1e3a8a",
+        },
+      ]);
+    }
+  }, []);
+  const cancelVlak = useCallback(() => {
+    vlakDraftRef.current = [];
+    vlakDraftLayerRef.current?.clearLayers();
+    vlakModeRef.current = false;
+    setVlakMode(false);
+  }, []);
   // Select-mode: wanneer true, plain drag op het papier tekent een
   // amber selectie-rechthoek (zonder Shift). Toggled door de
   // "Selecteren" ribbon-knop.
@@ -731,6 +838,32 @@ export default function SonderingstekeningView() {
   useEffect(() => { tekViewRef.current = tekView; }, [tekView]);
   const frozenRef = useRef(false);
   useEffect(() => { frozenRef.current = frozen; }, [frozen]);
+  // Vlak-modus: Enter of dubbelklik sluit het vlak, Esc annuleert.
+  // doubleClickZoom staat uit tijdens tekenen zodat de afsluit-dubbelklik
+  // niet inzoomt. (Staat hier — ná `frozen` — omdat het die leest.)
+  useEffect(() => {
+    const map = mapRef.current;
+    try {
+      if (map) {
+        if (vlakMode) map.doubleClickZoom.disable();
+        else if (!frozen) map.doubleClickZoom.enable();
+      }
+    } catch { /* noop */ }
+    if (!vlakMode) return;
+    const onDbl = () => finishVlak();
+    const onKey = (e: KeyboardEvent) => {
+      const tgt = e.target as HTMLElement | null;
+      if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.isContentEditable)) return;
+      if (e.key === "Enter") { e.preventDefault(); finishVlak(); }
+      else if (e.key === "Escape") { e.preventDefault(); cancelVlak(); }
+    };
+    map?.on("dblclick", onDbl);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      map?.off("dblclick", onDbl);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [vlakMode, frozen, finishVlak, cancelVlak]);
   // titleBlockOpen state removed — title block is edited via the
   // right-side TekeningProperties panel now, no in-view modal needed.
   const [titleBlock, setTitleBlock] = useState<TitleBlockData>({
@@ -813,6 +946,11 @@ export default function SonderingstekeningView() {
         if (r) origin = { centerLat: r.centerLat, centerLon: r.centerLon };
       }
       if (!origin) return;
+      // Vlak/note zijn (nog) niet via de M/G-move-shortcut te verplaatsen;
+      // origin blijft voor die kinds sowieso null, maar de expliciete
+      // guard smalt het type zodat setMoveMode alleen de move-bare kinds
+      // krijgt.
+      if (selection.kind === "vlak" || selection.kind === "note") return;
       e.preventDefault();
       moveAnchorRef.current = {
         anchorLat: cursorLL.lat,
@@ -989,6 +1127,10 @@ export default function SonderingstekeningView() {
       // coördinaat van de cursor volgt live mee, zodat "één klik en
       // hij zit erop" ook visueel klopt.
       const previewCursor = activeSnapRef.current ?? e.latlng;
+      // Vlak-in-opbouw: rubber-band naar de cursor.
+      if (vlakModeRef.current) {
+        renderVlakDraftRef.current?.({ lat: previewCursor.lat, lon: previewCursor.lng });
+      }
       const wantsLinePreview = !!drawModeRef.current && !!drawStartRef.current;
       const wantsCoordPreview = !!coordModeRef.current;
       if (wantsLinePreview || wantsCoordPreview) {
@@ -1275,6 +1417,56 @@ export default function SonderingstekeningView() {
       }
     }
   }, [drawnLines, selection]);
+
+  // ── Render vlakken (polygons) ────────────────────────────────
+  useEffect(() => {
+    const layer = vlakLayerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    for (const v of vlakken) {
+      if (v.points.length < 3) continue;
+      const isSelected = selection?.kind === "vlak" && selection.id === v.id;
+      const poly = L.polygon(
+        v.points.map((p) => [p.lat, p.lon] as [number, number]),
+        {
+          color: isSelected ? "#d97706" : v.strokeColor,
+          weight: isSelected ? 3 : 1.6,
+          fillColor: v.fillColor,
+          fillOpacity: 0.35,
+          interactive: true,
+        },
+      );
+      poly.on("click", (ev) => {
+        L.DomEvent.stopPropagation(ev);
+        setSelection({ kind: "vlak", id: v.id });
+      });
+      layer.addLayer(poly);
+    }
+  }, [vlakken, selection]);
+
+  // ── Render opmerkingen (tekst-notes) ─────────────────────────
+  useEffect(() => {
+    const layer = noteLayerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    for (const n of notes) {
+      const isSelected = selection?.kind === "note" && selection.id === n.id;
+      const m = L.marker([n.lat, n.lon], {
+        icon: L.divIcon({
+          className: "tek-note-marker",
+          html: `<div class="tek-note${isSelected ? " selected" : ""}">${xmlEscapeHtml(n.text)}</div>`,
+          iconSize: [1, 1],
+          iconAnchor: [0, 0],
+        }),
+        interactive: true,
+      });
+      m.on("click", (ev) => {
+        L.DomEvent.stopPropagation(ev);
+        setSelection({ kind: "note", id: n.id });
+      });
+      layer.addLayer(m);
+    }
+  }, [notes, selection]);
 
   // ── CAD line-click bridge ────────────────────────────────────
   // De lijn-render-effect maakt per render een verse `line.on("click")`
@@ -2371,6 +2563,10 @@ export default function SonderingstekeningView() {
     bagLayerRef.current = L.layerGroup();        // attached on toggle
     kadasterLayerRef.current = L.layerGroup();   // attached on toggle
     drawnLayerRef.current = L.layerGroup().addTo(map);  // freehand lines / dimensions
+    // Vlak (onder de lijnen/markers) + draft-preview + opmerkingen.
+    vlakLayerRef.current = L.layerGroup().addTo(map);
+    vlakDraftLayerRef.current = L.layerGroup().addTo(map);
+    noteLayerRef.current = L.layerGroup().addTo(map);
     // Snap-indicator layer — always attached zodat de WFS-snap-handler
     // direct een marker kan inhangen wanneer de cursor in place-mode is.
     // Eén losse L.LayerGroup ipv direct in placedLayer zodat clearLayers
@@ -2551,6 +2747,30 @@ export default function SonderingstekeningView() {
             lon2: snapLon,
           },
         ]);
+        return;
+      }
+      if (vlakModeRef.current) {
+        // Hoekpunt toevoegen aan het vlak-in-opbouw; Enter/dubbelklik
+        // sluit het vlak (zie finishVlak), Esc annuleert.
+        vlakDraftRef.current = [...vlakDraftRef.current, { lat: effLat, lon: effLon }];
+        renderVlakDraftRef.current?.();
+        return;
+      }
+      if (noteModeRef.current) {
+        noteModeRef.current = false;
+        setNoteMode(false);
+        const txt = window.prompt("Opmerking:", "");
+        if (txt && txt.trim()) {
+          setNotes((prev) => [
+            ...prev,
+            {
+              id: `N${String(prev.length + 1).padStart(2, "0")}`,
+              lat: effLat,
+              lon: effLon,
+              text: txt.trim(),
+            },
+          ]);
+        }
         return;
       }
       if (coordModeRef.current) {
@@ -3289,6 +3509,10 @@ export default function SonderingstekeningView() {
         // nu moeten Delete-toets en ribbon-knop de geselecteerde
         // lijn netjes uit drawnLines halen.
         setDrawnLines((prev) => prev.filter((l) => l.id !== sel.id));
+      } else if (sel.kind === "vlak") {
+        setVlakken((prev) => prev.filter((v) => v.id !== sel.id));
+      } else if (sel.kind === "note") {
+        setNotes((prev) => prev.filter((n) => n.id !== sel.id));
       }
       return null;
     });
@@ -3745,6 +3969,42 @@ export default function SonderingstekeningView() {
     const onCadExtend = () => startCadMode("extend");
     const onCadMirror = () => startCadMode("mirror");
     const onCadOffset = () => startCadMode("offset");
+    // Vlak-tool: start de polygon-teken-modus; wis andere placement-modes.
+    const onDrawVlak = () => {
+      setDrawMode(null); drawModeRef.current = null; drawStartRef.current = null;
+      setPlaceMode(null); placeModeRef.current = null;
+      setCoordMode(false); coordModeRef.current = false;
+      setNoteMode(false); noteModeRef.current = false;
+      setCadMode(null); cadModeRef.current = null; cadStepRef.current = null;
+      vlakDraftRef.current = [];
+      vlakDraftLayerRef.current?.clearLayers();
+      setVlakMode(true); vlakModeRef.current = true;
+      setToast("Vlak — klik de hoekpunten; Enter of dubbelklik sluit, Esc annuleert");
+      setTimeout(() => setToast(null), 4500);
+    };
+    // Opmerking-tool: volgende klik plaatst een tekst-note.
+    const onAddNote = () => {
+      setDrawMode(null); drawModeRef.current = null; drawStartRef.current = null;
+      setPlaceMode(null); placeModeRef.current = null;
+      setCoordMode(false); coordModeRef.current = false;
+      setVlakMode(false); vlakModeRef.current = false;
+      setCadMode(null); cadModeRef.current = null; cadStepRef.current = null;
+      setNoteMode(true); noteModeRef.current = true;
+      setToast("Opmerking — klik waar de tekst moet komen");
+      setTimeout(() => setToast(null), 3500);
+    };
+    const onUpdateVlak = (e: Event) => {
+      const ce = e as CustomEvent<{ id: string; patch: Partial<PlacedVlak> }>;
+      setVlakken((prev) =>
+        prev.map((v) => (v.id === ce.detail.id ? { ...v, ...ce.detail.patch } : v)),
+      );
+    };
+    const onUpdateNote = (e: Event) => {
+      const ce = e as CustomEvent<{ id: string; text: string }>;
+      setNotes((prev) =>
+        prev.map((n) => (n.id === ce.detail.id ? { ...n, text: ce.detail.text } : n)),
+      );
+    };
     // Select-tool: cancel any active draw/place/coord/cad mode + zet
     // selectMode aan zodat plain drag op het papier een selectie-
     // rechthoek tekent (zonder Shift te hoeven indrukken). Toggle:
@@ -3835,6 +4095,10 @@ export default function SonderingstekeningView() {
     window.addEventListener("ogs:tekening-set-scale", onSetScale as EventListener);
     window.addEventListener("ogs:tekening-set-placed-id", onSetPlacedId as EventListener);
     window.addEventListener("ogs:tekening-draw-line", onDrawLine);
+    window.addEventListener("ogs:tekening-draw-vlak", onDrawVlak);
+    window.addEventListener("ogs:tekening-add-note", onAddNote);
+    window.addEventListener("ogs:tekening-update-vlak", onUpdateVlak as EventListener);
+    window.addEventListener("ogs:tekening-update-note", onUpdateNote as EventListener);
     window.addEventListener("ogs:tekening-draw-dimension", onDrawDim);
     window.addEventListener("ogs:tekening-cad-trim", onCadTrim);
     window.addEventListener("ogs:tekening-cad-extend", onCadExtend);
@@ -3891,6 +4155,10 @@ export default function SonderingstekeningView() {
       window.removeEventListener("ogs:tekening-set-scale", onSetScale as EventListener);
       window.removeEventListener("ogs:tekening-set-placed-id", onSetPlacedId as EventListener);
       window.removeEventListener("ogs:tekening-draw-line", onDrawLine);
+      window.removeEventListener("ogs:tekening-draw-vlak", onDrawVlak);
+      window.removeEventListener("ogs:tekening-add-note", onAddNote);
+      window.removeEventListener("ogs:tekening-update-vlak", onUpdateVlak as EventListener);
+      window.removeEventListener("ogs:tekening-update-note", onUpdateNote as EventListener);
       window.removeEventListener("ogs:tekening-draw-dimension", onDrawDim);
       window.removeEventListener("ogs:tekening-cad-trim", onCadTrim);
       window.removeEventListener("ogs:tekening-cad-extend", onCadExtend);
@@ -3926,6 +4194,14 @@ export default function SonderingstekeningView() {
     const selectedLine =
       selection?.kind === "line"
         ? drawnLines.find((l) => l.id === selection.id) ?? null
+        : null;
+    const selectedVlak =
+      selection?.kind === "vlak"
+        ? vlakken.find((v) => v.id === selection.id) ?? null
+        : null;
+    const selectedNote =
+      selection?.kind === "note"
+        ? notes.find((n) => n.id === selection.id) ?? null
         : null;
     // Live print-scale derived from the actual Leaflet zoom + paper.
     // 1 paper-mm = (paperPxW / paperMmW) px, which represents
@@ -3978,6 +4254,16 @@ export default function SonderingstekeningView() {
             color: selectedLine.color,
           }
         : null,
+      selectedVlak: selectedVlak
+        ? {
+            id: selectedVlak.id,
+            fillColor: selectedVlak.fillColor,
+            strokeColor: selectedVlak.strokeColor,
+          }
+        : null,
+      selectedNote: selectedNote
+        ? { id: selectedNote.id, text: selectedNote.text }
+        : null,
     };
     publishSnapshotRef.current = () => {
       window.dispatchEvent(
@@ -3985,7 +4271,7 @@ export default function SonderingstekeningView() {
       );
     };
     publishSnapshotRef.current();
-  }, [titleBlock, selection, rasters, placed, paperSize, scale, frozen, overlay, mPerPx, drawnLines, overlayInForeground]);
+  }, [titleBlock, selection, rasters, placed, paperSize, scale, frozen, overlay, mPerPx, drawnLines, vlakken, notes, overlayInForeground]);
 
   // ── Mirror complete tekening-state naar de module-level singleton ─
   // Aparte effect (los van het snapshot event boven) zodat we ALLE
@@ -4028,6 +4314,13 @@ export default function SonderingstekeningView() {
         lon: c.lon,
         label: c.label,
       })),
+      vlakken: vlakken.map((v) => ({
+        id: v.id,
+        points: v.points.map((p) => ({ lat: p.lat, lon: p.lon })),
+        fillColor: v.fillColor,
+        strokeColor: v.strokeColor,
+      })),
+      notes: notes.map((n) => ({ id: n.id, lat: n.lat, lon: n.lon, text: n.text })),
       overlay: overlay
         ? {
             id: overlay.id,
@@ -4050,6 +4343,8 @@ export default function SonderingstekeningView() {
     rasters,
     drawnLines,
     coordTags,
+    vlakken,
+    notes,
     overlay,
     titleBlock,
   ]);
@@ -4116,6 +4411,17 @@ export default function SonderingstekeningView() {
         lon: c.lon,
         label: c.label,
       })),
+    );
+    setVlakken(
+      (pending.vlakken ?? []).map((v) => ({
+        id: v.id,
+        points: v.points.map((p) => ({ lat: p.lat, lon: p.lon })),
+        fillColor: v.fillColor,
+        strokeColor: v.strokeColor,
+      })),
+    );
+    setNotes(
+      (pending.notes ?? []).map((n) => ({ id: n.id, lat: n.lat, lon: n.lon, text: n.text })),
     );
     if (pending.overlay) {
       setOverlay({
@@ -4534,7 +4840,7 @@ export default function SonderingstekeningView() {
       <div className="tek-canvas" ref={canvasRef}>
         <div className="tek-paper-stage" style={paperStageStyle}>
         <div
-          className={`tek-paper tek-paper-${paperSize}${dragOver ? " tek-paper-dragover" : ""}${frozen ? " tek-paper-frozen" : ""}${placeMode || drawMode || coordMode ? " tek-paper-placing" : ""}`}
+          className={`tek-paper tek-paper-${paperSize}${dragOver ? " tek-paper-dragover" : ""}${frozen ? " tek-paper-frozen" : ""}${placeMode || drawMode || coordMode || vlakMode || noteMode ? " tek-paper-placing" : ""}`}
           style={paperStyle}
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}

@@ -92,6 +92,16 @@ const lineIcon =
   `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
   `<path stroke-linecap="round" stroke-width="2" d="M4 20L20 4"/></svg>`;
 
+// Vlak — polygon met lichte vulling.
+const vlakIcon =
+  `<svg fill="currentColor" fill-opacity="0.25" stroke="currentColor" viewBox="0 0 24 24">` +
+  `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8l6-4 10 3-2 11-9 2-5-7z"/></svg>`;
+
+// Opmerking — tekstballon.
+const noteIcon =
+  `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
+  `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h8M8 14h5m-9 6l3.5-3H18a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v14z"/></svg>`;
+
 // Maatlijn — horizontale lijn met uiteinde-tikken (┤───┤).
 const dimensionIcon =
   `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
@@ -307,6 +317,18 @@ export default function SonderingstekeningTab() {
             label={t("tekening.coordTag", "RD-coördinaat")}
             size="large"
             onClick={() => dispatch("ogs:tekening-coord-tag")}
+          />
+          <RibbonButton
+            icon={vlakIcon}
+            label={t("tekening.drawVlak", "Vlak")}
+            size="large"
+            onClick={() => dispatch("ogs:tekening-draw-vlak")}
+          />
+          <RibbonButton
+            icon={noteIcon}
+            label={t("tekening.addNote", "Opmerking")}
+            size="large"
+            onClick={() => dispatch("ogs:tekening-add-note")}
           />
         </RibbonGroup>
 

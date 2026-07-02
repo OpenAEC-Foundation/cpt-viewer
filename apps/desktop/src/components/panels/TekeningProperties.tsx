@@ -65,10 +65,12 @@ interface Snapshot {
    *  live als de gebruiker met het muiswiel in- of uitzoomt. */
   liveScale?: number;
   frozen?: boolean;
-  selectionKind: "raster" | "marker" | "overlay" | "line" | null;
+  selectionKind: "raster" | "marker" | "overlay" | "line" | "vlak" | "note" | null;
   selectionId: string | null;
   selectedRaster?: RasterSnapshot | null;
   selectedMarker?: { id: string; kleefmeting: boolean } | null;
+  selectedVlak?: { id: string; fillColor: string; strokeColor: string } | null;
+  selectedNote?: { id: string; text: string } | null;
   selectedOverlay?: OverlaySnapshot | null;
   /** Properties van de geselecteerde lijn — id + huidige override-
    *  kleur (undefined = kind-default). De kleur-picker in dit paneel
@@ -411,6 +413,74 @@ export default function TekeningProperties() {
               onClick={deleteSelection}
             >
               Verwijder lijn
+            </button>
+          </div>
+        )}
+
+        {snap.selectionKind === "vlak" && snap.selectedVlak && (
+          <div className="tekprops-body">
+            <p className="tekprops-hint">Vlak {snap.selectedVlak.id}</p>
+            <label className="tekprops-field tekprops-field-wide">
+              <span>Vulkleur</span>
+              <input
+                type="color"
+                value={snap.selectedVlak.fillColor}
+                onChange={(e) =>
+                  window.dispatchEvent(
+                    new CustomEvent("ogs:tekening-update-vlak", {
+                      detail: { id: snap.selectionId!, patch: { fillColor: e.target.value } },
+                    }),
+                  )
+                }
+              />
+            </label>
+            <label className="tekprops-field tekprops-field-wide">
+              <span>Randkleur</span>
+              <input
+                type="color"
+                value={snap.selectedVlak.strokeColor}
+                onChange={(e) =>
+                  window.dispatchEvent(
+                    new CustomEvent("ogs:tekening-update-vlak", {
+                      detail: { id: snap.selectionId!, patch: { strokeColor: e.target.value } },
+                    }),
+                  )
+                }
+              />
+            </label>
+            <button
+              type="button"
+              className="tekprops-btn tekprops-btn-danger"
+              onClick={deleteSelection}
+            >
+              Verwijder vlak
+            </button>
+          </div>
+        )}
+
+        {snap.selectionKind === "note" && snap.selectedNote && (
+          <div className="tekprops-body">
+            <p className="tekprops-hint">Opmerking {snap.selectedNote.id}</p>
+            <label className="tekprops-field tekprops-field-wide">
+              <span>Tekst</span>
+              <textarea
+                rows={3}
+                value={snap.selectedNote.text}
+                onChange={(e) =>
+                  window.dispatchEvent(
+                    new CustomEvent("ogs:tekening-update-note", {
+                      detail: { id: snap.selectionId!, text: e.target.value },
+                    }),
+                  )
+                }
+              />
+            </label>
+            <button
+              type="button"
+              className="tekprops-btn tekprops-btn-danger"
+              onClick={deleteSelection}
+            >
+              Verwijder opmerking
             </button>
           </div>
         )}

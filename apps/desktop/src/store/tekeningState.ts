@@ -63,6 +63,22 @@ export interface TekeningCoordTag {
   label?: string;
 }
 
+/** Getekend vlak (polygon) met vul- en randkleur. */
+export interface TekeningVlak {
+  id: string;
+  points: { lat: number; lon: number }[];
+  fillColor: string;
+  strokeColor: string;
+}
+
+/** Vrije tekst-opmerking op het papier. */
+export interface TekeningNote {
+  id: string;
+  lat: number;
+  lon: number;
+  text: string;
+}
+
 export interface TekeningOverlay {
   id: string;
   name: string;
@@ -99,6 +115,10 @@ export interface TekeningFullState {
   rasters: TekeningRaster[];
   lines: TekeningLine[];
   coordTags: TekeningCoordTag[];
+  /** Getekende vlakken (optioneel — oudere snapshots hebben dit niet). */
+  vlakken?: TekeningVlak[];
+  /** Tekst-opmerkingen (optioneel). */
+  notes?: TekeningNote[];
   overlay: TekeningOverlay | null;
   titleBlock: TekeningTitleBlock;
 }

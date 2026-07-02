@@ -927,3 +927,26 @@
   white-space: nowrap;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 }
+
+/* ── Opmerking (tekst-note) op het papier ────────────────────────
+   Wit kaartje met amber-rand, leesbaar over kaart/luchtfoto. */
+.tek-note {
+  display: inline-block;
+  transform: translate(6px, -50%);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #d97706;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font: 600 13px 'Inter', sans-serif;
+  color: #36363e;
+  white-space: pre-wrap;
+  max-width: 240px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.tek-note.selected {
+  border-width: 2px;
+  border-color: #92400e;
+  box-shadow: 0 0 8px rgba(217, 119, 6, 0.6);
+}

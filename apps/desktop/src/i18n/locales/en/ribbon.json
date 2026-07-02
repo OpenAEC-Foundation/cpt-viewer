@@ -15,7 +15,9 @@
     "addOverlay": "Add",
     "exportGroup": "Export",
     "exportPdf": "Export PDF",
-    "print": "Print"
+    "print": "Print",
+    "drawVlak": "Area",
+    "addNote": "Note"
   },
   "file": "File",
   "open": "Open",
