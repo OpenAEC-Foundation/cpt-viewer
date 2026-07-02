@@ -96,11 +96,20 @@ pub async fn generate_report_core(
     .map_err(|e| format!("spawn_blocking join failed: {e}"))?
 }
 
-/// Haalt een PDOK-luchtfoto (WMS GetMap, EPSG:28992) op als achtergrond voor
-/// de overzichtskaart in het rapport. Berekent een VIERKANTE RD-bbox rond de
-/// sondeerlocaties (min. 150 m halve zijde, anders data-extent + 40% marge)
-/// zodat er context omheen zichtbaar is. Geeft `None` bij geen posities of een
-/// netwerk-/serverfout — het rapport valt dan terug op het kale RD-raster.
+/// Cache voor de laatst opgehaalde basiskaart, gekeyd op de bbox-string.
+/// De rapport-preview regenereert bij elke sectie-toggle en elke
+/// projectmeta-wijziging — zonder cache betekende dat telkens opnieuw
+/// dezelfde WMS-downloads (en offline 2×10s timeout-stalls per preview).
+static BASEMAP_CACHE: std::sync::Mutex<Option<(String, cpt_core::OverviewBasemap)>> =
+    std::sync::Mutex::new(None);
+
+/// Haalt de basiskaart voor de overzichtskaart in het rapport op (PDOK WMS,
+/// EPSG:28992): de luchtfoto als ondergrond én de kadastrale kaart
+/// (percelen + bebouwing, transparante PNG) als overlay — cpt-core zet daar
+/// een wit halftone-scherm tussen zodat de kadastrale lijnen scherp lezen.
+/// Berekent een VIERKANTE RD-bbox rond de sondeerlocaties (min. 150 m halve
+/// zijde, anders data-extent + 40% marge). Geeft `None` bij geen posities of
+/// een netwerk-/serverfout — het rapport valt dan terug op het kale RD-raster.
 async fn fetch_overview_basemap(cpts: &[cpt_core::Cpt]) -> Option<cpt_core::OverviewBasemap> {
     let positions: Vec<(f64, f64)> = cpts
         .iter()
@@ -118,44 +127,84 @@ async fn fetch_overview_basemap(cpts: &[cpt_core::Cpt]) -> Option<cpt_core::Over
     // Vierkante box: minstens 150 m halve zijde, anders data-extent + 40% marge.
     let half = ((xmax - xmin).max(ymax - ymin) / 2.0 * 1.4).max(150.0);
     let (bxmin, bxmax, bymin, bymax) = (cx - half, cx + half, cy - half, cy + half);
+    let bbox = format!("{bxmin:.1},{bymin:.1},{bxmax:.1},{bymax:.1}");
 
-    let url = format!(
-        "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?service=WMS&version=1.1.1&request=GetMap\
-         &layers=Actueel_orthoHR&srs=EPSG:28992&bbox={bxmin:.1},{bymin:.1},{bxmax:.1},{bymax:.1}\
-         &width=1200&height=1200&format=image/jpeg&styles="
-    );
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .user_agent("OpenGeoStudio/0.1")
-        .build()
-        .ok()?;
-    // Tot 2 pogingen: een eerste cold-start HTTPS-request (DNS + TLS) faalt
-    // soms net. Lukt het ook dan niet, dan valt de overzichtskaart terug op
-    // het kale RD-raster — geen harde fout in het rapport.
-    for attempt in 1..=2u8 {
-        match client.get(&url).send().await {
-            Ok(resp) if resp.status().is_success() => {
-                if let Ok(b) = resp.bytes().await {
-                    let bytes = b.to_vec();
-                    // Echte JPEG begint met FF D8; bij een WMS-fout krijg je
-                    // XML/tekst terug — die negeren we.
-                    if bytes.len() >= 1000 && bytes.starts_with(&[0xFF, 0xD8]) {
-                        return Some(cpt_core::OverviewBasemap {
-                            image_bytes: bytes,
-                            mime: "image/jpeg".to_string(),
-                            x_min: bxmin,
-                            x_max: bxmax,
-                            y_min: bymin,
-                            y_max: bymax,
-                        });
-                    }
-                }
+    // Cache-hit? Zelfde bbox → zelfde kaartlagen, geen netwerk nodig.
+    if let Ok(guard) = BASEMAP_CACHE.lock() {
+        if let Some((key, bm)) = guard.as_ref() {
+            if *key == bbox {
+                return Some(bm.clone());
             }
-            Ok(resp) => eprintln!("[basemap] poging {attempt}: HTTP {}", resp.status()),
-            Err(e) => eprintln!("[basemap] poging {attempt}: {e}"),
         }
     }
-    None
+
+    let foto_url = format!(
+        "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?service=WMS&version=1.1.1&request=GetMap\
+         &layers=Actueel_orthoHR&srs=EPSG:28992&bbox={bbox}\
+         &width=1200&height=1200&format=image/jpeg&styles="
+    );
+    // Kadastrale kaart als groepslaag — bevat perceelgrenzen én bebouwing,
+    // met transparent=true zodat alleen de lijnen/vlakken over de foto komen.
+    let kad_url = format!(
+        "https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0?service=WMS&version=1.1.1&request=GetMap\
+         &layers=Kadastralekaart&srs=EPSG:28992&bbox={bbox}\
+         &width=1200&height=1200&format=image/png&transparent=true&styles="
+    );
+    // Zelfde client-config (timeout + canonieke user-agent) als al het
+    // andere PDOK/BRO-verkeer.
+    let client = super::bro_api::http_client().ok()?;
+
+    // Tot 2 pogingen per laag: een eerste cold-start HTTPS-request (DNS +
+    // TLS) faalt soms net. De twee lagen worden parallel opgehaald. De foto
+    // is verplicht (anders fallback op RD-raster); de kadastrale overlay is
+    // best-effort — zonder overlay tonen we de foto op volle sterkte.
+    async fn fetch_wms(
+        client: &reqwest::Client,
+        url: &str,
+        magic: &[u8],
+        label: &str,
+    ) -> Option<Vec<u8>> {
+        for attempt in 1..=2u8 {
+            match client.get(url).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    if let Ok(b) = resp.bytes().await {
+                        let bytes = b.to_vec();
+                        // Magic-check: bij een WMS-fout krijg je XML/tekst
+                        // terug — die negeren we.
+                        if bytes.len() >= 1000 && bytes.starts_with(magic) {
+                            return Some(bytes);
+                        }
+                    }
+                }
+                Ok(resp) => {
+                    eprintln!("[basemap] {label} poging {attempt}: HTTP {}", resp.status())
+                }
+                Err(e) => eprintln!("[basemap] {label} poging {attempt}: {e}"),
+            }
+        }
+        None
+    }
+
+    let (foto, kad) = tokio::join!(
+        fetch_wms(&client, &foto_url, &[0xFF, 0xD8], "luchtfoto"),
+        fetch_wms(&client, &kad_url, &[0x89, 0x50, 0x4E, 0x47], "kadastrale kaart"),
+    );
+
+    let foto = foto?;
+    let bm = cpt_core::OverviewBasemap {
+        image_bytes: foto,
+        mime: "image/jpeg".to_string(),
+        overlay_mime: kad.as_ref().map(|_| "image/png".to_string()),
+        overlay_bytes: kad,
+        x_min: bxmin,
+        x_max: bxmax,
+        y_min: bymin,
+        y_max: bymax,
+    };
+    if let Ok(mut guard) = BASEMAP_CACHE.lock() {
+        *guard = Some((bbox, bm.clone()));
+    }
+    Some(bm)
 }
 
 // ─── Tauri command wrappers ────────────────────────────────────────

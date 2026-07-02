@@ -153,7 +153,9 @@ pub async fn fetch_bro_object_metadata(
 // Internals
 // ───────────────────────────────────────────────────────────────────
 
-fn http_client() -> Result<reqwest::Client, String> {
+/// Gedeelde HTTP-client-config (timeout + canonieke user-agent) voor alle
+/// PDOK/BRO-verkeer — ook hergebruikt door de rapport-basiskaart-fetch.
+pub(crate) fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(HTTP_TIMEOUT)
         .user_agent("OpenGeoStudio/0.1 (+https://github.com/OpenAEC-Foundation/open-geotechniek-studio)")
