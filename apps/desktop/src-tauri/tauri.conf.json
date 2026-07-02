@@ -61,6 +61,10 @@
       "vendor/WebView2Loader.dll": "vendor/WebView2Loader.dll"
     },
     "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
+      },
       "nsis": {
         "installMode": "perMachine",
         "installerIcon": "icons/icon.ico",
