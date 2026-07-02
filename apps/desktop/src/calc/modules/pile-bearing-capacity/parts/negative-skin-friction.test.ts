@@ -80,8 +80,11 @@ describe("negative skin friction — regression: zone-clip + water-split", () =>
     expect(result.fnkD).toBeLessThan(70);
   });
 
-  it("σ_top = 0 (geen overburden boven paalkop), σ_bot ≈ 75 kPa (= 9,34 × 8)", () => {
-    expect(result.layers[0].sigmaRepTop).toBeCloseTo(0, 1);
-    expect(result.layers[0].sigmaRepBottom).toBeCloseTo(9.34 * 8, 1);
+  it("σ_top = overburden vanaf ontgraving (+0,84 → +0,34 = 0,5 m × γ′ 8 = 4 kPa)", () => {
+    // Sinds de σ0-fix weegt de grond tussen ontgravingsniveau en paalkop
+    // mee (geverifieerd tegen de referentie: kleefniveau NAP 0,00 geeft
+    // Fnk = 1 kN i.p.v. 0). Deze case: 0,5 m × (18−10) = 4 kPa op de kop.
+    expect(result.layers[0].sigmaRepTop).toBeCloseTo(4, 1);
+    expect(result.layers[0].sigmaRepBottom).toBeCloseTo(4 + 9.34 * 8, 1);
   });
 });

@@ -21,7 +21,28 @@ export function computeNegKleef(input: PileInput): NegKleefResult {
   // paalkop en negKleefBottomNap loopt) alleen voor het zone-gedeelte
   // bijdraagt. Zonder deze clip werd de volledige laagdikte gebruikt,
   // wat leidde tot een sterke overschatting van Fnk.
+  //
+  // σ0: de verticale korrelspanning op paalkop-niveau is NIET nul
+  // wanneer het ontgravingsniveau (= maaiveld na ontgraven) boven de
+  // paalkop ligt — de grond dáárboven weegt mee. Geverifieerd tegen de
+  // externe referentie-berekening: bij kleefniveau NAP 0,00 (ΔLnk
+  // slechts 0,34 m) print die Fnk = 1 kN, wat alleen reproduceert met
+  // overburden vanaf het ontgravingsniveau (+0,84); zonder σ0 komt er
+  // 0 kN uit. We lopen het profiel af van ontgraving tot zoneTop; voor
+  // het stuk boven de bovenste profiellaag geldt de γ van die laag.
   let sigmaCum = 0;
+  if (input.excavationNap > zoneTop && input.soilProfile.length > 0) {
+    let nap = input.excavationNap;
+    while (nap > zoneTop + 1e-9) {
+      const step = Math.min(0.05, nap - zoneTop);
+      const mid = nap - step / 2;
+      const lay =
+        input.soilProfile.find((l) => l.startNap >= mid && mid > l.endNap) ??
+        input.soilProfile[0];
+      sigmaCum += (lay.gammaK - lay.gammaW) * step;
+      nap -= step;
+    }
+  }
   const layers: NegKleefLayerResult[] = inZone.map((l) => {
     const layerTop = Math.min(l.startNap, zoneTop); // hoogste NAP binnen zone
     const layerBot = Math.max(l.endNap, zoneBot);   // laagste NAP binnen zone
