@@ -3434,56 +3434,34 @@ export default function SonderingstekeningView() {
         }, 600);
       });
     };
-    // ── Exporteer PDF — rastert het papier op ware A2/A3-grootte en
-    // schrijft een echt PDF-bestand (geen print-dialog). Zelfde
-    // scherm-fase-truc als onPrint: papier off-screen op mm-grootte
-    // zetten zodat Leaflet de volledige tile-grid opbouwt, dan
-    // html-to-image → jsPDF → save-dialog. Alle zware imports lazy
-    // zodat de tekening-tab er niet trager van opent.
+    // ── Exporteer PDF — rastert het papier ZOALS HET OP HET SCHERM
+    // staat en schrijft een echt PDF-bestand (geen print-dialog).
+    //
+    // BEWUST géén off-screen-vergroting naar ware mm-grootte (zoals de
+    // print-route doet): html-to-image moet dan honderden extra
+    // Leaflet-tiles als data-URL's in één gigantische SVG inlinen en
+    // dat crashte de WebView2-renderer (OOM → white screen). Het
+    // schermformaat heeft alleen de al geladen tiles; scherpte komt van
+    // de dynamische pixelratio (doel ±3000 px breed ≈ 180 dpi op A3).
+    // Zware imports lazy zodat de tekening-tab er niet trager van opent.
     let exporting = false;
     const doExportPdf = async () => {
       if (exporting) return;
       const paperEl = document.querySelector<HTMLElement>(".tek-paper");
-      const map = mapRef.current;
-      if (!paperEl || !map) return;
+      if (!paperEl || paperEl.clientWidth < 50) return;
       exporting = true;
       const snap = getLatestTekening();
       const isA2 = (snap?.paperSize ?? "A3") === "A2";
       const wMm = isA2 ? 594 : 420;
       const hMm = isA2 ? 420 : 297;
-      const styleEl = document.createElement("style");
-      styleEl.id = "tek-export-style";
-      styleEl.textContent =
-        `body.tek-printing .tek-paper {` +
-        `  position: fixed !important; left: -200vw !important; top: 0 !important;` +
-        `  width: ${wMm}mm !important; height: ${hMm}mm !important;` +
-        `  max-width: none !important; max-height: none !important;` +
-        `  margin: 0 !important; box-shadow: none !important; border: none !important;` +
-        `  transform: none !important; z-index: 99999 !important; pointer-events: none !important; }` +
-        `body.tek-printing .tek-paper-stage { visibility: hidden !important; }`;
-      document.head.appendChild(styleEl);
-      document.body.classList.add("tek-printing");
       setToast("PDF exporteren…");
-      const cleanup = () => {
-        document.body.classList.remove("tek-printing");
-        styleEl.parentNode?.removeChild(styleEl);
-        try { map.invalidateSize(); } catch { /* noop */ }
-      };
       try {
-        // Leaflet de nieuwe grootte laten zien + tiles laten binnenkomen.
-        await new Promise<void>((r) => requestAnimationFrame(() => r()));
-        try { map.invalidateSize(); } catch { /* noop */ }
-        await new Promise((r) => window.setTimeout(r, 900));
-
         const { toPng } = await import("html-to-image");
+        const ratio = Math.max(1, Math.min(3, 3000 / paperEl.clientWidth));
         const dataUrl = await toPng(paperEl, {
-          pixelRatio: 2, // ~192 dpi op A2/A3 — scherp genoeg voor print
+          pixelRatio: ratio,
           backgroundColor: "#ffffff",
-          // Overschrijf de off-screen-positionering op de gekloonde root,
-          // anders schuift de capture zelf mee naar -200vw.
-          style: { left: "0", top: "0", transform: "none" },
         });
-        cleanup();
 
         const { jsPDF } = await import("jspdf");
         const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: [wMm, hMm] });
@@ -3507,7 +3485,6 @@ export default function SonderingstekeningView() {
           setToast("PDF geëxporteerd");
         }
       } catch (err) {
-        cleanup();
         console.error("tekening-export-pdf failed", err);
         setToast("PDF-export mislukt");
       } finally {
