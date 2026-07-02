@@ -114,16 +114,16 @@
   background: var(--theme-bg);
   overflow: hidden; /* CAD-style viewport: clip overflow, no scrollbars */
 }
-/* Wanneer freeze aanstaat krijgt de canvas scrollbars zodat de
-   gebruiker — die nu met scroll-wheel het hele papier kan in/uit-
-   zoomen — kan pannen door scrollen. align-items + justify-content
-   wisselen naar flex-start zodat het ingezoomde papier vanuit de
-   linkerbovenhoek scrolt; anders blijft het verticaal/horizontaal
-   gecentreerd op de oude viewport-positie en is scrollen onmogelijk. */
+/* Freeze: zoomen gaat naar de cursor toe en pannen via klik+sleep
+   (CSS-translate op de stage) — het papier blijft gewoon gecentreerd
+   en de canvas clipt. De oude flex-start + scrollbars-aanpak zoomde
+   vast vanaf linksboven ("links gelokt") en is vervangen. */
 .tek-view.tek-view-frozen .tek-canvas {
-  overflow: auto;
-  align-items: flex-start;
-  justify-content: flex-start;
+  overflow: hidden;
+  cursor: grab;
+}
+.tek-view.tek-view-frozen .tek-canvas:active {
+  cursor: grabbing;
 }
 
 /* Stage-wrapper: heeft de visuele (gescaled) afmetingen van het
@@ -362,10 +362,12 @@
 .tek-marker-label {
   position: absolute;
   left: 52px; /* mee-geschaald (was 26px voor 24px icon) */
-  top: -2px;
-  font: 700 13px 'Inter', sans-serif;
+  top: -4px;
+  /* 13px → 17px: sondeernummer moet op afdruk-schaal leesbaar zijn
+     (gebruiker-verzoek: "dat sondeernummer mag wat groter"). */
+  font: 700 17px 'Inter', sans-serif;
   color: #1e3a8a;
-  text-shadow: 0 0 2px white, 0 0 2px white;
+  text-shadow: 0 0 2px white, 0 0 3px white;
   white-space: nowrap;
 }
 
@@ -895,4 +897,33 @@
     box-shadow: none !important;
     border: none !important;
   }
+}
+
+/* ── Plaats/teken-modus: crosshair i.p.v. het Leaflet-handje ─────
+   Tijdens sondering/boring plaatsen, lijn/maatlijn tekenen en RD-
+   coördinaat plaatsen is een grab-cursor onlogisch — je bent aan het
+   plaatsen, niet aan het pannen. */
+.tek-paper-placing .leaflet-container,
+.tek-paper-placing .leaflet-grab,
+.tek-paper-placing .leaflet-interactive {
+  cursor: crosshair !important;
+}
+
+/* Preview-label voor de maatlijn-rubber-band (iets doorzichtiger dan
+   het definitieve label zodat het duidelijk een preview is). */
+.tek-dim-label-preview span {
+  opacity: 0.75;
+}
+
+/* Live RD-coördinaat-preview naast de cursor tijdens coord-mode. */
+.tek-coord-preview span {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #d97706;
+  border-radius: 3px;
+  padding: 1px 6px;
+  font: 600 11px 'JetBrains Mono', monospace;
+  color: #36363e;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 }

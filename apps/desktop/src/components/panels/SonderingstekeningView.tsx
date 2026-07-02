@@ -466,6 +466,13 @@ export default function SonderingstekeningView() {
    */
   const activeSnapRef = useRef<L.LatLng | null>(null);
   const placedLayerRef = useRef<L.LayerGroup | null>(null);
+  /**
+   * Preview-laag voor teken-tools: rubber-band lijn tussen de eerste
+   * draw-klik en de cursor, en het live RD-coördinaat-label tijdens
+   * coord-mode. Lazy aangemaakt in de mousemove-handler; leeggemaakt
+   * zodra de tool uit gaat of de tweede klik valt.
+   */
+  const drawPreviewLayerRef = useRef<L.LayerGroup | null>(null);
   const rasterLayerRef = useRef<L.LayerGroup | null>(null);
   const handlesLayerRef = useRef<L.LayerGroup | null>(null);
   const coordLayerRef = useRef<L.LayerGroup | null>(null);
@@ -702,16 +709,22 @@ export default function SonderingstekeningView() {
   // achtergrond) / true = boven alles (handig om de afbeelding kort als
   // hoofd-content te zien). Geforceerd via CSS-klasse op het IMG.
   const [overlayInForeground, setOverlayInForeground] = useState(false);
-  // CSS-zoom op het hele papier wanneer frozen aanstaat — gebruiker-
-  // verzoek: bij freeze mag je wél in/uitzoomen op de tekening (incl.
-  // kader) zonder dat de Leaflet-map zelf reageert. Vermenigvuldigt
-  // met paperLayout.viewScale in de uiteindelijke transform.
-  const [tekZoom, setTekZoom] = useState(1);
-  // Reset paper-zoom wanneer freeze uitgaat zodat de volgende freeze
-  // weer op 100% start.
+  // CSS-zoom + pan op het hele papier wanneer frozen aanstaat —
+  // gebruiker-verzoek: bij freeze mag je wél vrij in/uitzoomen (naar de
+  // cursor toe, niet vast aan linksboven) én pannen op de tekening
+  // (incl. kader), zonder dat de Leaflet-map zelf reageert. `z`
+  // vermenigvuldigt met paperLayout.viewScale; x/y verschuiven de
+  // stage in canvas-pixels.
+  const [tekView, setTekView] = useState({ z: 1, x: 0, y: 0 });
+  // Reset zoom+pan wanneer freeze uitgaat zodat de volgende freeze
+  // weer op 100% en gecentreerd start.
   useEffect(() => {
-    if (!frozen) setTekZoom(1);
+    if (!frozen) setTekView({ z: 1, x: 0, y: 0 });
   }, [frozen]);
+  // Ref-spiegel zodat de pan-drag-handler (init-effect, [] deps) de
+  // actuele zoom/pan kan lezen zonder her-binden per wijziging.
+  const tekViewRef = useRef(tekView);
+  useEffect(() => { tekViewRef.current = tekView; }, [tekView]);
   const frozenRef = useRef(false);
   useEffect(() => { frozenRef.current = frozen; }, [frozen]);
   // titleBlockOpen state removed — title block is edited via the
@@ -947,8 +960,12 @@ export default function SonderingstekeningView() {
 
   useEffect(() => {
     drawModeRef.current = drawMode;
-    // Reset the in-flight start point whenever the tool toggles off.
-    if (!drawMode) drawStartRef.current = null;
+    // Reset the in-flight start point whenever the tool toggles off,
+    // en ruim de rubber-band preview op.
+    if (!drawMode) {
+      drawStartRef.current = null;
+      drawPreviewLayerRef.current?.clearLayers();
+    }
   }, [drawMode]);
 
   // Map-mousemove handler: registreert cursor-positie + verzorgt move-
@@ -960,6 +977,83 @@ export default function SonderingstekeningView() {
     if (!map) return;
     const onMM = (e: L.LeafletMouseEvent) => {
       lastMouseLLRef.current = { lat: e.latlng.lat, lng: e.latlng.lng };
+
+      // ── Teken-previews ────────────────────────────────────────
+      // Rubber-band: na de 1e draw-klik loopt er live een stippellijn
+      // van het startpunt naar de cursor (snap-positie als die er is),
+      // met een meter-label bij maatlijnen. Coord-mode: het RD-
+      // coördinaat van de cursor volgt live mee, zodat "één klik en
+      // hij zit erop" ook visueel klopt.
+      const previewCursor = activeSnapRef.current ?? e.latlng;
+      const wantsLinePreview = !!drawModeRef.current && !!drawStartRef.current;
+      const wantsCoordPreview = !!coordModeRef.current;
+      if (wantsLinePreview || wantsCoordPreview) {
+        if (!drawPreviewLayerRef.current) {
+          drawPreviewLayerRef.current = L.layerGroup().addTo(map);
+        }
+        const layer = drawPreviewLayerRef.current;
+        layer.clearLayers();
+        if (wantsLinePreview) {
+          const start = drawStartRef.current!;
+          const isDim = drawModeRef.current === "dimension";
+          layer.addLayer(
+            L.polyline(
+              [[start.lat, start.lon], [previewCursor.lat, previewCursor.lng]],
+              {
+                color: isDim ? "#d97706" : "#36363e",
+                weight: 1.6,
+                opacity: 0.8,
+                dashArray: "6 5",
+                interactive: false,
+              },
+            ),
+          );
+          if (isDim) {
+            const dist = map.distance(
+              [start.lat, start.lon],
+              [previewCursor.lat, previewCursor.lng],
+            );
+            const mid = L.latLng(
+              (start.lat + previewCursor.lat) / 2,
+              (start.lon + previewCursor.lng) / 2,
+            );
+            const lbl = dist < 1 ? `${(dist * 100).toFixed(0)} cm`
+              : dist < 1000 ? `${dist.toFixed(2)} m`
+              : `${(dist / 1000).toFixed(2)} km`;
+            layer.addLayer(
+              L.marker(mid, {
+                icon: L.divIcon({
+                  className: "tek-dim-label tek-dim-label-preview",
+                  html: `<span>${lbl}</span>`,
+                  iconSize: [160, 36],
+                  iconAnchor: [80, 18],
+                }),
+                interactive: false,
+              }),
+            );
+          }
+        }
+        if (wantsCoordPreview) {
+          const [xRd, yRd] = WGS84_TO_RD.forward([
+            previewCursor.lng,
+            previewCursor.lat,
+          ]);
+          layer.addLayer(
+            L.marker(previewCursor, {
+              icon: L.divIcon({
+                className: "tek-coord-preview",
+                html: `<span>${xRd.toFixed(2)} / ${yRd.toFixed(2)}</span>`,
+                iconSize: [180, 20],
+                iconAnchor: [-10, 24],
+              }),
+              interactive: false,
+            }),
+          );
+        }
+      } else if (drawPreviewLayerRef.current) {
+        drawPreviewLayerRef.current.clearLayers();
+      }
+
       const mm = moveModeRef.current;
       const anchor = moveAnchorRef.current;
       if (!mm || !anchor) return;
@@ -1032,6 +1126,44 @@ export default function SonderingstekeningView() {
     if (!cadMode) cadStepRef.current = null;
   }, [cadMode]);
 
+  // ── CAD-toetsencombinaties: TR = trim, RO = roteer +90°, MV = move ─
+  // Twee losse toetsen binnen 800 ms (AutoCAD-stijl commando's). "M"
+  // start move-modus al direct (zie M/G-shortcut), dus MV werkt sowieso;
+  // we vangen hem hier expliciet zodat de "V" geen bijeffect heeft.
+  useEffect(() => {
+    let prev: { key: string; t: number } | null = null;
+    const CHORDS: Record<string, () => void> = {
+      tr: () => window.dispatchEvent(new CustomEvent("ogs:tekening-cad-trim")),
+      ro: () =>
+        window.dispatchEvent(
+          new CustomEvent("ogs:tekening-rotate", { detail: { deg: 90 } }),
+        ),
+      // mv: geen actie nodig — "m" heeft move-modus dan al gestart.
+      mv: () => {},
+    };
+    const onKey = (e: KeyboardEvent) => {
+      const tgt = e.target as HTMLElement | null;
+      const tag = tgt?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tgt?.isContentEditable) return;
+      const k = e.key.toLowerCase();
+      if (k.length !== 1 || !/[a-z]/.test(k)) { prev = null; return; }
+      const now = Date.now();
+      if (prev && now - prev.t < 800) {
+        const chord = prev.key + k;
+        const fire = CHORDS[chord];
+        if (fire) {
+          e.preventDefault();
+          fire();
+          prev = null;
+          return;
+        }
+      }
+      prev = { key: k, t: now };
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // ── Render freehand lines + dimensions ──────────────────────
   useEffect(() => {
     const layer = drawnLayerRef.current;
@@ -1050,10 +1182,18 @@ export default function SonderingstekeningView() {
           color: isSelected ? "#d97706" : baseColor,
           weight: isSelected ? 3.2 : 2,
           opacity: 0.9,
-          interactive: true,
+          // De zichtbare lijn vangt zelf geen kliks meer — dat doet de
+          // brede onzichtbare hit-lijn hieronder. Een 2px-stroke was
+          // vrijwel niet aan te klikken, waardoor trim/extend/offset en
+          // selecteren "niet leken te werken".
+          interactive: false,
         },
       );
-      line.on("click", (ev) => {
+      const hitLine = L.polyline(
+        [[ln.lat1, ln.lon1], [ln.lat2, ln.lon2]],
+        { color: "#000", weight: 14, opacity: 0.001, interactive: true },
+      );
+      hitLine.on("click", (ev) => {
         L.DomEvent.stopPropagation(ev);
         // CAD-tools onderscheppen de lijn-klik VOOR de normale
         // select-flow. Het klikpunt zelf hebben we nodig (vooral voor
@@ -1092,6 +1232,7 @@ export default function SonderingstekeningView() {
         setSelection({ kind: "line", id: ln.id });
       });
       layer.addLayer(line);
+      layer.addLayer(hitLine);
       if (ln.kind === "dimension") {
         // Compute great-circle distance in metres + render a small
         // amber label at the midpoint.
@@ -4155,7 +4296,10 @@ export default function SonderingstekeningView() {
       rect?.remove();
       rect = null;
       dragStart = null;
-      map.dragging.enable();
+      // Freeze respecteren: de select-drag schakelde dragging tijdelijk
+      // uit, maar onvoorwaardelijk her-inschakelen hief de freeze op —
+      // daarna kon je 'bevroren' kaarten gewoon weer verslepen.
+      if (!frozenRef.current) map.dragging.enable();
     };
 
     container.addEventListener("mousedown", onMouseDown, true);
@@ -4175,7 +4319,10 @@ export default function SonderingstekeningView() {
       window.removeEventListener("mouseup", onMouseUp);
       window.removeEventListener("keydown", onKey);
       rect?.remove();
-      try { map.dragging.enable(); } catch { /* map weg */ }
+      // Dit effect her-runt bij elke placed/rasters/lines/overlay-mutatie;
+      // de cleanup mag een actieve freeze dus NIET opheffen (dat gebeurde
+      // eerst wél — elk geplaatst object 'ontdooide' de kaart stilletjes).
+      try { if (!frozenRef.current) map.dragging.enable(); } catch { /* map weg */ }
     };
   }, [placed, rasters, coordTags, drawnLines, overlay]);
 
@@ -4251,7 +4398,7 @@ export default function SonderingstekeningView() {
   // van de stage uitlijnt — anders zit het halverwege buiten beeld.
   // Effectieve scale = base view-fit × user-zoom (alleen actief tijdens
   // freeze; zie wheel-handler hieronder).
-  const effectiveScale = paperLayout.viewScale * tekZoom;
+  const effectiveScale = paperLayout.viewScale * tekView.z;
   const paperStyle = useMemo<React.CSSProperties>(
     () => ({
       width: `${paperLayout.pxW}px`,
@@ -4267,32 +4414,83 @@ export default function SonderingstekeningView() {
   // Stage-wrapper: heeft de zichtbare (gescaled) afmetingen, zodat de
   // canvas-flex-layout de paper netjes kan centreren. Zonder deze
   // wrapper kent CSS de echte gescaled-grootte niet (transform raakt
-  // alleen rendering, niet de layout-box).
+  // alleen rendering, niet de layout-box). De pan-offset (alleen bij
+  // freeze ≠ 0) verschuift de stage als geheel.
   const paperStageStyle = useMemo<React.CSSProperties>(
     () => ({
       position: "relative",
       width: `${paperLayout.pxW * effectiveScale}px`,
       height: `${paperLayout.pxH * effectiveScale}px`,
       flex: "0 0 auto",
+      transform: `translate(${tekView.x}px, ${tekView.y}px)`,
     }),
-    [paperLayout.pxW, paperLayout.pxH, effectiveScale],
+    [paperLayout.pxW, paperLayout.pxH, effectiveScale, tekView.x, tekView.y],
   );
 
-  // Wheel-zoom op de canvas wanneer frozen aanstaat — vergroot/verkleint
-  // tekZoom waardoor de hele paper-stage (papier + frame + markers) als
-  // één geheel meeschaalt. Native addEventListener met passive:false
-  // zodat preventDefault werkt (React's onWheel is standaard passive).
+  // Wheel-zoom op de canvas wanneer frozen aanstaat — zoomt NAAR DE
+  // CURSOR toe (het punt onder de muis blijft op zijn plek) i.p.v. vast
+  // aan linksboven, door de pan-offset mee te schalen. Native
+  // addEventListener met passive:false zodat preventDefault werkt
+  // (React's onWheel is standaard passive).
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       if (!frozenRef.current) return;
       e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const cx = e.clientX - rect.left - rect.width / 2;
+      const cy = e.clientY - rect.top - rect.height / 2;
       const factor = e.deltaY > 0 ? 1 / 1.15 : 1.15;
-      setTekZoom((z) => Math.min(8, Math.max(0.25, z * factor)));
+      setTekView((v) => {
+        const nz = Math.min(8, Math.max(0.25, v.z * factor));
+        const f = nz / v.z;
+        // Cursor-punt vasthouden: pan zo bijstellen dat (cx,cy) —
+        // gemeten t.o.v. het canvas-midden (flex-centrering) — vóór en
+        // ná de zoom op hetzelfde schermpunt ligt.
+        return { z: nz, x: cx - (cx - v.x) * f, y: cy - (cy - v.y) * f };
+      });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // Pan-drag op het bevroren papier: plain klik+sleep verschuift de
+  // stage (CSS-translate). Alleen actief bij freeze en zonder actieve
+  // plaats/teken/coord-modus zodat een gewone klik die tools blijft
+  // bedienen; een drag-drempel van 3 px laat klikken ongemoeid.
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    let start: { mx: number; my: number; x: number; y: number } | null = null;
+    let panning = false;
+    const onDown = (e: MouseEvent) => {
+      if (!frozenRef.current || e.button !== 0 || e.shiftKey) return;
+      if (placeModeRef.current || drawModeRef.current || coordModeRef.current || cadModeRef.current) return;
+      const v = tekViewRef.current;
+      start = { mx: e.clientX, my: e.clientY, x: v.x, y: v.y };
+    };
+    const onMove = (e: MouseEvent) => {
+      if (!start) return;
+      const dx = e.clientX - start.mx;
+      const dy = e.clientY - start.my;
+      if (!panning && Math.hypot(dx, dy) < 3) return;
+      panning = true;
+      e.preventDefault();
+      setTekView((v) => ({ ...v, x: start!.x + dx, y: start!.y + dy }));
+    };
+    const onUp = () => {
+      start = null;
+      panning = false;
+    };
+    el.addEventListener("mousedown", onDown);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      el.removeEventListener("mousedown", onDown);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
   }, []);
 
   return (
@@ -4307,7 +4505,7 @@ export default function SonderingstekeningView() {
       <div className="tek-canvas" ref={canvasRef}>
         <div className="tek-paper-stage" style={paperStageStyle}>
         <div
-          className={`tek-paper tek-paper-${paperSize}${dragOver ? " tek-paper-dragover" : ""}${frozen ? " tek-paper-frozen" : ""}`}
+          className={`tek-paper tek-paper-${paperSize}${dragOver ? " tek-paper-dragover" : ""}${frozen ? " tek-paper-frozen" : ""}${placeMode || drawMode || coordMode ? " tek-paper-placing" : ""}`}
           style={paperStyle}
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}

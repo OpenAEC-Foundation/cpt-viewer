@@ -201,7 +201,9 @@ interface PileGraphicProps {
   input: PileInput;
   result: PileResult;
   material: "steel" | "concrete";
-  isCircular: boolean;
+  /** Alleen nog relevant voor de doorsnede-subcomponent; het zijaanzicht
+   *  is voor ronde én vierkante palen een rechte rechthoek. */
+  isCircular?: boolean;
   yPileTop: number;
   yPileToe: number;
   yNkBot: number;
@@ -219,7 +221,6 @@ function PileGraphic({
   input,
   result,
   material,
-  isCircular,
   yPileTop,
   yPileToe,
   yNkBot,
@@ -318,7 +319,9 @@ function PileGraphic({
       {bodyH > 0 && (
         hasRebarCage ? (
           <>
-            {/* Buitenste staal-buis: grijs */}
+            {/* Buitenste staal-buis: grijs. Het ZIJAANZICHT van een ronde
+                paal is gewoon een rechthoek — de eerdere rx=diaPx/2 maakte
+                er een capsule met ronde onderkant van. */}
             <rect
               x={xPileLeft}
               y={yTopClamped}
@@ -327,8 +330,6 @@ function PileGraphic({
               fill="#9ca3af"
               stroke={stroke}
               strokeWidth={1.5}
-              rx={isCircular ? diaPx / 2 : 0}
-              ry={isCircular ? Math.min(diaPx / 2, 6) : 0}
             />
             {/* Beton-vulling: beige rect binnen de staal-buis. Inset =
                 wanddikte van de paal (clamp aan visueel zinvol). */}
@@ -336,7 +337,6 @@ function PileGraphic({
               const wallPx = Math.max(1.5, Math.min(diaPx * 0.18, input.wallThicknessMm / 6));
               const innerW = diaPx - 2 * wallPx;
               const innerX = xPileLeft + wallPx;
-              const innerRx = isCircular ? Math.max(0, innerW / 2) : 0;
               if (innerW <= 0) return null;
               return (
                 <rect
@@ -346,8 +346,6 @@ function PileGraphic({
                   height={Math.max(0, bodyH - 2 * wallPx)}
                   fill="#d4a574"
                   stroke="none"
-                  rx={innerRx}
-                  ry={isCircular ? Math.min(innerRx, 6) : 0}
                 />
               );
             })()}
@@ -361,8 +359,6 @@ function PileGraphic({
             fill={fill}
             stroke={stroke}
             strokeWidth={1.5}
-            rx={isCircular ? diaPx / 2 : 0}
-            ry={isCircular ? Math.min(diaPx / 2, 6) : 0}
           />
         )
       )}
@@ -408,11 +404,13 @@ function PileGraphic({
           per gebruikers-wens (visueel rustigere paal-graphic). */}
       {showFnk && (
         <g className="pile-gfx-arrow pile-gfx-arrow--fnk">
+          {/* Nette VERTICALE pijl omlaag langs de schacht — de eerdere
+              schuine lijn oogde als een losse streep ("rommelig"). */}
           <line
-            x1={xArrowStart}
-            x2={xArrowStart + arrowLenFor(Fnk)}
-            y1={yNkMid - 8}
-            y2={yNkMid + 4}
+            x1={xArrowStart + 5}
+            x2={xArrowStart + 5}
+            y1={yNkMid - arrowLenFor(Fnk) / 2}
+            y2={yNkMid + arrowLenFor(Fnk) / 2}
             stroke="#dc2626"
             strokeWidth={1.5}
             markerEnd="url(#pile-arrow-down)"
@@ -422,11 +420,14 @@ function PileGraphic({
 
       {showRs && shaftArrowYs.map((y, i) => (
         <g key={`rs-${i}`} className="pile-gfx-arrow pile-gfx-arrow--rs">
+          {/* Verticale pijl omhoog — schachtwrijving werkt langs de
+              schacht; de schuine groene streepjes van eerst lazen niet
+              als krachten. */}
           <line
-            x1={xArrowStart}
-            x2={xArrowStart + arrowLenFor(Rs)}
-            y1={y + 4}
-            y2={y - 8}
+            x1={xArrowStart + 5}
+            x2={xArrowStart + 5}
+            y1={y + arrowLenFor(Rs) / 2}
+            y2={y - arrowLenFor(Rs) / 2}
             stroke="#16a34a"
             strokeWidth={1.2}
             markerEnd="url(#pile-arrow-up)"
@@ -784,8 +785,10 @@ function CptOverlayChart({ cpt, input, result, onChange }: ChartProps) {
       // NAP increases UPWARDS while SVG-y increases DOWNWARDS — dus -dy.
       const napPerVbPx = (bounds.napTop - bounds.napBot) / PLOT_H;
       let newNap = drag.startNap - dyVb * napPerVbPx;
-      // Snap to nearest 0,05 m.
-      newNap = Math.round(newNap * 20) / 20;
+      // Snap to nearest 0,05 m. De extra toFixed(2)-ronde haalt de
+      // binaire-float-staart weg (82/20 → 4.1000000000000005) die anders
+      // letterlijk in de number-inputs van het InputPanel verscheen.
+      newNap = Number((Math.round(newNap * 20) / 20).toFixed(2));
       // Voorkom no-op-updates (zelfde waarde → geen onChange-storm).
       // posKleefTopNap kan undefined zijn in oude IFCX-files; fall-back
       // naar negKleefBottomNap (default = pos-kleef begint waar neg-kleef
