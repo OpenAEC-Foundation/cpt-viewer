@@ -48,16 +48,23 @@ const frameIcon =
   `d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z"/>` +
   `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M12 19v-4h9"/></svg>`;
 
+// Sonderingsraster — een regelmatig rooster van sondeer-driehoekjes (2×2)
+// binnen een licht kader, i.p.v. een kaal grid. Leest meteen als "een
+// raster vól sonderingen".
 const rasterIcon =
   `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
-  `<g stroke-linecap="round" stroke-linejoin="round" stroke-width="2">` +
-  `<rect x="3" y="3" width="18" height="18" rx="1"/>` +
-  `<path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></g></svg>`;
+  `<rect x="3" y="3" width="18" height="18" rx="1" stroke-width="1.4" opacity="0.55"/>` +
+  `<g stroke-width="1.4" stroke-linejoin="round">` +
+  `<path d="M6 7h4l-2 4z"/><path d="M14 7h4l-2 4z"/>` +
+  `<path d="M6 14h4l-2 4z"/><path d="M14 14h4l-2 4z"/></g></svg>`;
 
+// RD-coördinaat — een survey-kruisdraad: cirkel met doorstekende assen en
+// een middenpunt. Leest als "prik hier een exact coördinaatpunt".
 const tagIcon =
   `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
-  `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ` +
-  `d="M7 7h.01M7 3h5a2 2 0 011.414.586l8 8a2 2 0 010 2.828l-8 8a2 2 0 01-2.828 0l-8-8A2 2 0 013 12V7a4 4 0 014-4z"/></svg>`;
+  `<circle cx="12" cy="12" r="6" stroke-width="2"/>` +
+  `<path stroke-linecap="round" stroke-width="2" d="M12 2v4M12 18v4M2 12h4M18 12h4"/>` +
+  `<circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>`;
 
 // ── Bewerken-icons (select / move / copy / delete) ────────────────
 // Heroicons-style strokes that match the rest of the ribbon. The Bewerken
