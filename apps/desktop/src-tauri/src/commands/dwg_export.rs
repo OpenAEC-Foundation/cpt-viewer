@@ -10,11 +10,17 @@
 //! `.dxf` → DXF (ASCII), anders → DWG (binair).
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
-use acadrust::entities::{EntityType, Line, LwPolyline, Point, Text};
+use acadrust::entities::{
+    BoundaryEdge, BoundaryPath, EntityType, Hatch, Line, LwPolyline, Point, PolylineEdge,
+    RasterImage, Text,
+};
+use acadrust::objects::{ImageDefinition, ObjectType};
 use acadrust::tables::Layer;
-use acadrust::types::{Color, Vector2, Vector3};
+use acadrust::types::{Color, Handle, Vector2, Vector3};
 use acadrust::{CadDocument, DwgWriter, DxfWriter};
+use base64::Engine;
 use serde::Deserialize;
 
 /// Eén tekenobject in het door de frontend aangeleverde CAD-model.
@@ -43,6 +49,31 @@ pub struct DwgEntity {
     pub rotation: Option<f64>,
 }
 
+/// Eén georefereerde afbeelding (image-overlay) in de export. De bytes
+/// worden als sidecar-bestand naast de DWG/DXF geschreven; het CAD-bestand
+/// verwijst er relatief naar (net als een externe xref).
+#[derive(Deserialize)]
+pub struct DwgImage {
+    /// Bestandsnaam-stam voor het sidecar-bestand (zonder pad/extensie).
+    pub name: String,
+    /// Extensie zonder punt ("png" / "jpg").
+    #[serde(default)]
+    pub ext: String,
+    /// Ruwe base64 (zonder `data:`-URL-prefix).
+    pub data_base64: String,
+    /// Invoegpunt (linksonder) in RD [easting, northing].
+    pub insertion: [f64; 2],
+    /// Breedte en hoogte in tekeningeenheden (meters).
+    pub world_width: f64,
+    pub world_height: f64,
+    /// Rotatie in graden (tegen de klok in). Draait om het invoegpunt.
+    #[serde(default)]
+    pub rotation: f64,
+    /// Pixelafmetingen (metadata + aspect).
+    pub px_w: f64,
+    pub px_h: f64,
+}
+
 /// Volledige export-payload.
 #[derive(Deserialize)]
 pub struct DwgPayload {
@@ -51,6 +82,9 @@ pub struct DwgPayload {
     /// zodat de lagen in CAD een herkenbare kleur krijgen. Optioneel.
     #[serde(default)]
     pub layer_colors: HashMap<String, i16>,
+    /// Georefereerde afbeeldingen (image-overlays). Optioneel.
+    #[serde(default)]
+    pub images: Vec<DwgImage>,
 }
 
 /// Bouw het CAD-document en schrijf het naar `path`. `.dxf` → DXF, anders
@@ -118,8 +152,68 @@ pub fn export_dwg(payload: DwgPayload, path: String) -> Result<(), String> {
                         .map_err(|e| e.to_string())?;
                 }
             }
+            "hatch" => {
+                // Gevuld vlak ("arcering"): solid hatch met de punten als
+                // gesloten polyline-rand.
+                if ent.points.len() >= 3 {
+                    let mut hatch = Hatch::new();
+                    let verts: Vec<Vector2> =
+                        ent.points.iter().map(|p| Vector2::new(p[0], p[1])).collect();
+                    let mut bp = BoundaryPath::new();
+                    bp.add_edge(BoundaryEdge::Polyline(PolylineEdge::new(verts, true)));
+                    hatch.paths.push(bp);
+                    hatch.common.layer = ent.layer.clone();
+                    doc.add_entity(EntityType::Hatch(hatch))
+                        .map_err(|e| e.to_string())?;
+                }
+            }
             _ => {}
         }
+    }
+
+    // Georefereerde afbeeldingen: schrijf elk als sidecar-bestand naast de
+    // uitvoer en voeg een RasterImage + ImageDefinition toe die er relatief
+    // naar verwijst, zodat de afbeelding met de DWG/DXF meereist.
+    if !payload.images.is_empty() {
+        doc.layers.add(Layer::new("AFBEELDINGEN")).ok();
+    }
+    let out_dir = Path::new(&path).parent().map(|p| p.to_path_buf());
+    for (idx, im) in payload.images.iter().enumerate() {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(im.data_base64.trim())
+            .map_err(|e| format!("afbeelding {idx}: base64-fout: {e}"))?;
+        let ext = if im.ext.is_empty() { "png" } else { im.ext.as_str() };
+        let fname = format!("{}_afb{}.{}", im.name, idx + 1, ext);
+        if let Some(dir) = &out_dir {
+            std::fs::write(dir.join(&fname), &bytes)
+                .map_err(|e| format!("afbeelding {idx}: sidecar schrijven mislukt: {e}"))?;
+        }
+        let px_w = im.px_w.max(1.0);
+        let px_h = im.px_h.max(1.0);
+        let mut img = RasterImage::with_size(
+            &fname,
+            Vector3::new(im.insertion[0], im.insertion[1], 0.0),
+            px_w,
+            px_h,
+            im.world_width.max(0.01),
+            im.world_height.max(0.01),
+        );
+        if im.rotation.abs() > 1e-6 {
+            let r = im.rotation.to_radians();
+            let (c, s) = (r.cos(), r.sin());
+            let uw = im.world_width.max(0.01) / px_w;
+            let vh = im.world_height.max(0.01) / px_h;
+            img.u_vector = Vector3::new(uw * c, uw * s, 0.0);
+            img.v_vector = Vector3::new(-vh * s, vh * c, 0.0);
+        }
+        let def_handle = Handle::new(doc.next_handle());
+        let mut def = ImageDefinition::new(fname.clone());
+        def.set_size_pixels(px_w as u32, px_h as u32);
+        img.definition_handle = Some(def_handle);
+        img.common.layer = "AFBEELDINGEN".to_string();
+        doc.objects.insert(def_handle, ObjectType::ImageDefinition(def));
+        doc.add_entity(EntityType::RasterImage(img))
+            .map_err(|e| e.to_string())?;
     }
 
     let lower = path.to_lowercase();

@@ -376,7 +376,7 @@ const rdToLl = ([x, y]: RdPoint): { lat: number; lon: number } => {
 /** Eén CAD-object in de DWG/DXF-export-payload (RD-coördinaten, meters). */
 interface DwgExportEntity {
   layer: string;
-  type: "line" | "polyline" | "point" | "text";
+  type: "line" | "polyline" | "point" | "text" | "hatch";
   points: [number, number][];
   text?: string;
   closed?: boolean;
@@ -419,7 +419,11 @@ function buildDwgPayload(
     kadasterFeatures: GeoJSON.Feature[];
   },
   rdCoords: boolean,
-): { entities: DwgExportEntity[]; layer_colors: Record<string, number> } {
+): {
+  entities: DwgExportEntity[];
+  layer_colors: Record<string, number>;
+  origin: [number, number];
+} {
   const ents: DwgExportEntity[] = [];
   const toRd = (lat: number, lon: number): [number, number] => {
     const [x, y] = WGS84_TO_RD.forward([lon, lat]);
@@ -447,11 +451,21 @@ function buildDwgPayload(
   }
 
   for (const l of src.lines) {
-    ents.push({
-      layer: l.kind === "dimension" ? "MAATLIJNEN" : "LIJNEN",
-      type: "line",
-      points: [toRd(l.lat1, l.lon1), toRd(l.lat2, l.lon2)],
-    });
+    const a = toRd(l.lat1, l.lon1);
+    const b = toRd(l.lat2, l.lon2);
+    const layer = l.kind === "dimension" ? "MAATLIJNEN" : "LIJNEN";
+    ents.push({ layer, type: "line", points: [a, b] });
+    if (l.kind === "dimension") {
+      // Meterafstand als tekstlabel bij het midden van de maatlijn.
+      const dist = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      ents.push({
+        layer,
+        type: "text",
+        points: [[(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + OFF]],
+        text: `${dist.toFixed(2)} m`,
+        height: LABEL_H,
+      });
+    }
   }
 
   for (const c of src.coordTags) {
@@ -462,7 +476,12 @@ function buildDwgPayload(
   }
 
   for (const v of src.vlakken) {
-    if (v.points.length >= 2) {
+    if (v.points.length >= 3) {
+      // Gevuld vlak: een solid hatch (arcering) plus een omtreklijn.
+      const pts = v.points.map((p) => toRd(p.lat, p.lon));
+      ents.push({ layer: "VLAKKEN", type: "hatch", points: pts, closed: true });
+      ents.push({ layer: "VLAKKEN", type: "polyline", points: pts, closed: true });
+    } else if (v.points.length >= 2) {
       ents.push({
         layer: "VLAKKEN",
         type: "polyline",
@@ -498,6 +517,7 @@ function buildDwgPayload(
   pushRings(src.bagFeatures, "GIS_GEBOUWEN");
   pushRings(src.kadasterFeatures, "GIS_PERCELEN");
 
+  let origin: [number, number] = [0, 0];
   if (!rdCoords && ents.length) {
     let minX = Infinity;
     let minY = Infinity;
@@ -508,13 +528,14 @@ function buildDwgPayload(
       }
     }
     if (Number.isFinite(minX) && Number.isFinite(minY)) {
+      origin = [minX, minY];
       for (const e of ents) {
         e.points = e.points.map(([x, y]) => [x - minX, y - minY]);
       }
     }
   }
 
-  return { entities: ents, layer_colors: DWG_LAYER_COLORS };
+  return { entities: ents, layer_colors: DWG_LAYER_COLORS, origin };
 }
 
 /**
@@ -5094,7 +5115,7 @@ export default function SonderingstekeningView() {
         "Op RD-coördinaten exporteren (EPSG:28992)?\n\nJa = ware RD-coördinaten (georefereerd).\nNee = lokale oorsprong, tekening bij 0,0.",
         { title: "DWG/DXF-export", kind: "info" },
       );
-      const { entities, layer_colors } = buildDwgPayload(
+      const { entities, layer_colors, origin } = buildDwgPayload(
         {
           markers: placed,
           rasters,
@@ -5107,7 +5128,59 @@ export default function SonderingstekeningView() {
         },
         rdCoords,
       );
-      if (!entities.length) {
+      // Georefereerde afbeelding-overlay meenemen als RasterImage (+ sidecar).
+      type DwgImagePayload = {
+        name: string;
+        ext: string;
+        data_base64: string;
+        insertion: [number, number];
+        world_width: number;
+        world_height: number;
+        rotation: number;
+        px_w: number;
+        px_h: number;
+      };
+      const images: DwgImagePayload[] = [];
+      if (overlay && overlay.kind === "image" && overlay.src && overlay.widthMeters) {
+        // Effectief centrum: lees bij voorkeur de live imageOverlay-bounds
+        // (betrouwbaarder dan de state-center, die null kan zijn =
+        // "kaartcentrum bij plaatsing").
+        let clat = overlay.centerLat ?? null;
+        let clon = overlay.centerLon ?? null;
+        const ovLayer = overlayLayerRef.current;
+        if ((clat == null || clon == null) && ovLayer) {
+          const c = ovLayer.getBounds().getCenter();
+          clat = c.lat;
+          clon = c.lng;
+        }
+        if (clat != null && clon != null) {
+          const src = overlay.src;
+          const comma = src.indexOf(",");
+          const b64 = comma >= 0 ? src.slice(comma + 1) : src;
+          const semi = src.indexOf(";");
+          const mime = comma > 0 ? src.slice(5, semi > 0 ? semi : comma) : "";
+          const ext = /jpe?g/i.test(mime) ? "jpg" : "png";
+          const aspect = overlayAspectRef.current > 0 ? overlayAspectRef.current : 0.75;
+          const w = overlay.widthMeters;
+          const h = w * aspect;
+          const [cx, cy] = WGS84_TO_RD.forward([clon, clat]);
+          const nameSafe = (overlay.name || "afbeelding")
+            .replace(/\.[^./\\]+$/, "")
+            .replace(/[\\/:*?"<>|]/g, "_");
+          images.push({
+            name: nameSafe,
+            ext,
+            data_base64: b64,
+            insertion: [cx - w / 2 - origin[0], cy - h / 2 - origin[1]],
+            world_width: w,
+            world_height: h,
+            rotation: overlayRotation,
+            px_w: 1000,
+            px_h: Math.max(1, Math.round(1000 * aspect)),
+          });
+        }
+      }
+      if (!entities.length && !images.length) {
         setToast("Niets te exporteren");
         setTimeout(() => setToast(null), 2500);
         return;
@@ -5129,10 +5202,12 @@ export default function SonderingstekeningView() {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
         await invoke("export_dwg", {
-          payload: { entities, layer_colors },
+          payload: { entities, layer_colors, images },
           path: dst,
         });
-        setToast(`Geëxporteerd (${entities.length} objecten)`);
+        setToast(
+          `Geëxporteerd (${entities.length} objecten${images.length ? ` + ${images.length} afb.` : ""})`,
+        );
       } catch (err) {
         console.error("export_dwg failed", err);
         setToast(`DWG-export mislukt: ${String(err)}`);
@@ -5146,7 +5221,7 @@ export default function SonderingstekeningView() {
     window.addEventListener("ogs:tekening-export-dwg", onExportDwg);
     return () =>
       window.removeEventListener("ogs:tekening-export-dwg", onExportDwg);
-  }, [placed, rasters, drawnLines, coordTags, vlakken, notes]);
+  }, [placed, rasters, drawnLines, coordTags, vlakken, notes, overlay, overlayRotation]);
 
   return (
     <div
