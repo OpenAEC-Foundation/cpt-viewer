@@ -3298,7 +3298,9 @@ export default function SonderingstekeningView() {
       if (exportSuppress && r.hideInExport) continue;
       const isSelected =
         selection?.kind === "raster" && selection.id === r.id;
-      const fill = isSelected ? "#f59e0b" : "#1e40af";
+      // Nog uit te voeren sonderingen = OPEN driehoekjes (niet gevuld),
+      // conform de tekening-conventie: gevuld = uitgevoerd, open = gepland.
+      const fill = "none";
       const stroke = isSelected ? "#92400e" : "#1e3a8a";
       // Derived sondering markers — nu WEL klikbaar zodat je het raster
       // ook door op een sondering-symbool te klikken selecteert (niet
@@ -3317,7 +3319,7 @@ export default function SonderingstekeningView() {
             className: "tek-raster-marker",
             html: `<div class="tek-marker tek-marker-raster${isSelected ? " selected" : ""}">
                      <svg viewBox="0 0 10 12" overflow="visible"><polygon points="1,1 9,1 5,9"
-                       fill="${fill}" stroke="${stroke}" stroke-width="0.8" />${
+                       fill="${fill}" stroke="${stroke}" stroke-width="1.1" stroke-linejoin="round" />${
                          r.kleefmeting
                            ? `<line x1="1" y1="10.8" x2="9" y2="10.8" stroke="${stroke}" stroke-width="1" stroke-linecap="round" />`
                            : ""
@@ -4158,18 +4160,25 @@ export default function SonderingstekeningView() {
       // Verberg rasters met hideInExport vóór de capture; kort wachten
       // zodat de React-re-render + Leaflet-redraw eerst klaar zijn.
       setExportSuppress(true);
-      await new Promise((res) => setTimeout(res, 160));
+      await new Promise((res) => setTimeout(res, 180));
+      await new Promise((res) => requestAnimationFrame(() => res(null)));
       try {
-        const { toPng } = await import("html-to-image");
+        // JPEG i.p.v. PNG — een luchtfoto-kaart als PNG wordt tientallen
+        // MB's en jsPDF's PNG-pad decodeert + hercomprimeert dat in pure
+        // JS met meerdere bitmap-kopieën in het geheugen (WebView2 OOM →
+        // crash + corrupt half-geschreven bestand). JPEG is 1-3 MB en
+        // gaat ONGEWIJZIGD (passthrough) het PDF in.
+        const { toJpeg } = await import("html-to-image");
         const ratio = Math.max(1, Math.min(3, 3000 / paperEl.clientWidth));
-        const dataUrl = await toPng(paperEl, {
+        const dataUrl = await toJpeg(paperEl, {
           pixelRatio: ratio,
+          quality: 0.92,
           backgroundColor: "#ffffff",
         });
 
         const { jsPDF } = await import("jspdf");
         const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: [wMm, hMm] });
-        doc.addImage(dataUrl, "PNG", 0, 0, wMm, hMm);
+        doc.addImage(dataUrl, "JPEG", 0, 0, wMm, hMm);
         const fname = `${(snap?.titleBlock?.project || "situatietekening").replace(/[\\/:*?"<>|]/g, "_")}.pdf`;
 
         const { IS_TAURI } = await import("../../utils/platform");
@@ -5026,6 +5035,30 @@ export default function SonderingstekeningView() {
   // Belangrijk: gebruik de exacte MM_TO_PX float (geen Math.round)
   // zodat de schaal-berekening pixel-perfect uitkomt. Anders schiet
   // bv. 1:500 naar 1:502.
+  // ── RD-coördinatentabel voor nog uit te voeren sonderingen ─────
+  // Automatisch tabelletje op het papier met de RD-coördinaten van alle
+  // geplande sonderingen: raster-cellen (R01-S01, …) + los geplaatste
+  // sonderingen. Boringen blijven buiten de tabel. Rasters die bij
+  // export verborgen zijn, vallen tijdens de capture ook uit de tabel
+  // zodat het PDF consistent blijft.
+  const plannedCoordRows = useMemo(() => {
+    const rows: { id: string; x: number; y: number }[] = [];
+    for (const r of rasters) {
+      if (exportSuppress && r.hideInExport) continue;
+      for (const pt of rasterPoints(r)) {
+        const cellIdx = pt.rIdx * r.cols + pt.cIdx + 1;
+        const [x, y] = WGS84_TO_RD.forward([pt.lon, pt.lat]);
+        rows.push({ id: `${r.id}-S${String(cellIdx).padStart(2, "0")}`, x, y });
+      }
+    }
+    for (const p of placed) {
+      if ((p.kind ?? "sondering") === "bore") continue;
+      const [x, y] = WGS84_TO_RD.forward([p.lon, p.lat]);
+      rows.push({ id: p.id, x, y });
+    }
+    return rows;
+  }, [rasters, placed, exportSuppress]);
+
   const paperLayout = useMemo(() => {
     const MM_TO_PX = 96 / 25.4;
     const { wMm, hMm } = PAPER_MM[paperSize];
@@ -5327,6 +5360,40 @@ export default function SonderingstekeningView() {
               heeft geen rotatie). Bedrukt op het papier zoals een
               traditionele tekening; bedoeld vooral voor de PDF-print. */}
           <NorthArrow />
+          {/* Automatische RD-coördinatentabel — linksboven op het papier,
+              met de nog uit te voeren sonderingen (raster-cellen + los
+              geplaatste). pointer-events uit zodat teken-kliks eronder
+              gewoon op de kaart landen; gaat vanzelf mee in de PDF. */}
+          {plannedCoordRows.length > 0 && (
+            <div className="tek-coord-table">
+              <div className="tek-coord-table-title">
+                Nog uit te voeren sonderingen (RD)
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nr</th>
+                    <th>X (m)</th>
+                    <th>Y (m)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {plannedCoordRows.slice(0, 40).map((row, i) => (
+                    <tr key={`${row.id}-${i}`}>
+                      <td>{row.id}</td>
+                      <td>{row.x.toFixed(2)}</td>
+                      <td>{row.y.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {plannedCoordRows.length > 40 && (
+                <div className="tek-coord-table-more">
+                  + {plannedCoordRows.length - 40} niet getoond
+                </div>
+              )}
+            </div>
+          )}
           {/* Title block (Detailblad layout — mirrors page 2 of
               OpenAEC-style-book/preview-titleblock.html). A bottom-strip
               title bar with a project header row + 2×3 cell grid + logo

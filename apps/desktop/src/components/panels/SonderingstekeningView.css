@@ -579,6 +579,69 @@
   cursor: grabbing;
 }
 
+/* ── RD-coördinatentabel (nog uit te voeren sonderingen) ─────────
+   Automatisch tabelletje linksboven op het papier. pointer-events
+   none zodat teken-kliks er dwars doorheen op de kaart landen; het
+   tabelletje print/exporteert gewoon mee (het is DOM op het papier). */
+.tek-coord-table {
+  position: absolute;
+  top: 26px;
+  left: 26px;
+  z-index: 900;
+  pointer-events: none;
+  background: #ffffff;
+  border: 1.2px solid #1c1917;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  min-width: 168px;
+}
+.tek-coord-table-title {
+  background: #1e3a8a;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 3px 8px;
+}
+.tek-coord-table table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.tek-coord-table th,
+.tek-coord-table td {
+  font-size: 9.5px;
+  line-height: 1.25;
+  padding: 1.5px 8px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 0.6px solid #d6d3d1;
+  color: #1c1917;
+}
+.tek-coord-table th {
+  background: #f5f5f4;
+  font-weight: 600;
+  border-bottom: 1px solid #1c1917;
+}
+.tek-coord-table th:first-child,
+.tek-coord-table td:first-child {
+  text-align: left;
+  font-weight: 600;
+}
+.tek-coord-table td:nth-child(2),
+.tek-coord-table td:nth-child(3) {
+  font-family: "Cascadia Mono", "Consolas", monospace;
+}
+.tek-coord-table tr:last-child td {
+  border-bottom: none;
+}
+.tek-coord-table-more {
+  font-size: 8.5px;
+  color: #57534e;
+  padding: 2px 8px 3px;
+  border-top: 0.6px solid #d6d3d1;
+  font-style: italic;
+}
+
 /* Inline edit panel that appears in the toolbox when a raster is selected. */
 .tek-tool-group-edit {
   border: 1px solid var(--amber, #d97706);
