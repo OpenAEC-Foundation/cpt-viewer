@@ -428,7 +428,19 @@ fn report_tools() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "cpt_ids": { "type": "array", "items": { "type": "string" } },
-                    "project": project_meta_schema.clone()
+                    "project": project_meta_schema.clone(),
+                    "sections": {
+                        "type": "object",
+                        "description": "Optionele sectie-selectie; weggelaten = alle standaard-secties.",
+                        "properties": {
+                            "cover":      { "type": "boolean" },
+                            "coordTable": { "type": "boolean" },
+                            "map":        { "type": "boolean" },
+                            "perCpt":     { "type": "boolean" },
+                            "sbtLegend":  { "type": "boolean" },
+                            "metadata":   { "type": "boolean" }
+                        }
+                    }
                 },
                 "required": ["cpt_ids", "project"]
             }

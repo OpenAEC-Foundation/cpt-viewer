@@ -8,6 +8,10 @@
 //! bouwt daar een CAD-document van en schrijft het naar het door de
 //! gebruiker gekozen pad. De bestandsextensie bepaalt het formaat:
 //! `.dxf` → DXF (ASCII), anders → DWG (binair).
+//!
+//! De REST-API gebruikt dezelfde opbouw via `export_dwg_bytes` en geeft
+//! het bestand als bytes terug (de afbeelding-sidecars levert de client
+//! daar zelf aan — hij bezit de base64 immers al).
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -28,11 +32,11 @@ use serde::Deserialize;
 pub struct DwgEntity {
     /// Laagnaam, bv. "SONDERINGEN", "LIJNEN", "GIS_GEBOUWEN".
     pub layer: String,
-    /// Objecttype: "line" | "polyline" | "point" | "text".
+    /// Objecttype: "line" | "polyline" | "point" | "text" | "hatch".
     #[serde(rename = "type")]
     pub kind: String,
-    /// RD-punten als [easting, northing]. line = 2 punten, polyline = n,
-    /// point/text = 1.
+    /// RD-punten als [easting, northing]. line = 2 punten, polyline/hatch
+    /// = n, point/text = 1.
     #[serde(default)]
     pub points: Vec<[f64; 2]>,
     /// Tekstinhoud (alleen bij kind == "text").
@@ -87,14 +91,19 @@ pub struct DwgPayload {
     pub images: Vec<DwgImage>,
 }
 
-/// Bouw het CAD-document en schrijf het naar `path`. `.dxf` → DXF, anders
-/// DWG. Geeft een leesbare foutmelding terug bij mislukken.
-#[tauri::command]
-pub fn export_dwg(payload: DwgPayload, path: String) -> Result<(), String> {
+/// Resultaat van [`build_document`]: het CAD-document plus de afbeelding-
+/// sidecars (bestandsnaam → bytes) waar het document relatief naar verwijst.
+pub struct BuiltDocument {
+    pub doc: CadDocument,
+    pub sidecars: Vec<(String, Vec<u8>)>,
+}
+
+/// Bouw het CAD-document uit de payload. Gedeeld door het Tauri-command
+/// (schrijft naar een pad + sidecars ernaast) en de REST-API (geeft bytes
+/// terug). Layers worden vooraf aangemaakt zodat elke CAD-lezer ze kent.
+pub fn build_document(payload: &DwgPayload) -> Result<BuiltDocument, String> {
     let mut doc = CadDocument::new();
 
-    // Lagen vooraf aanmaken (met kleur) zodat elke CAD-lezer ze kent en
-    // de entities er netjes op belanden.
     let mut seen: HashSet<&str> = HashSet::new();
     for ent in &payload.entities {
         if seen.insert(ent.layer.as_str()) {
@@ -171,23 +180,19 @@ pub fn export_dwg(payload: DwgPayload, path: String) -> Result<(), String> {
         }
     }
 
-    // Georefereerde afbeeldingen: schrijf elk als sidecar-bestand naast de
-    // uitvoer en voeg een RasterImage + ImageDefinition toe die er relatief
-    // naar verwijst, zodat de afbeelding met de DWG/DXF meereist.
+    // Georefereerde afbeeldingen: RasterImage + ImageDefinition die
+    // relatief naar het sidecar-bestand verwijzen. De bytes zelf gaan
+    // als sidecars terug naar de caller (pad-schrijven of client).
+    let mut sidecars: Vec<(String, Vec<u8>)> = Vec::new();
     if !payload.images.is_empty() {
         doc.layers.add(Layer::new("AFBEELDINGEN")).ok();
     }
-    let out_dir = Path::new(&path).parent().map(|p| p.to_path_buf());
     for (idx, im) in payload.images.iter().enumerate() {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(im.data_base64.trim())
             .map_err(|e| format!("afbeelding {idx}: base64-fout: {e}"))?;
         let ext = if im.ext.is_empty() { "png" } else { im.ext.as_str() };
         let fname = format!("{}_afb{}.{}", im.name, idx + 1, ext);
-        if let Some(dir) = &out_dir {
-            std::fs::write(dir.join(&fname), &bytes)
-                .map_err(|e| format!("afbeelding {idx}: sidecar schrijven mislukt: {e}"))?;
-        }
         let px_w = im.px_w.max(1.0);
         let px_h = im.px_h.max(1.0);
         let mut img = RasterImage::with_size(
@@ -214,15 +219,54 @@ pub fn export_dwg(payload: DwgPayload, path: String) -> Result<(), String> {
         doc.objects.insert(def_handle, ObjectType::ImageDefinition(def));
         doc.add_entity(EntityType::RasterImage(img))
             .map_err(|e| e.to_string())?;
+        sidecars.push((fname, bytes));
+    }
+
+    Ok(BuiltDocument { doc, sidecars })
+}
+
+/// Bouw het document en geef het CAD-bestand als bytes terug ("dxf" of
+/// "dwg"). Gaat via een tijdelijk bestand omdat de acadrust-writers naar
+/// paden schrijven. De sidecars worden hier bewust NIET geschreven — de
+/// caller (REST-client) bezit de afbeeldingsbytes zelf al.
+pub fn export_dwg_bytes(payload: &DwgPayload, format: &str) -> Result<Vec<u8>, String> {
+    let built = build_document(payload)?;
+    let ext = if format.eq_ignore_ascii_case("dwg") { "dwg" } else { "dxf" };
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("ogs-dwg-export-{}.{ext}", std::process::id()));
+    if ext == "dxf" {
+        DxfWriter::new(&built.doc)
+            .write_to_file(&tmp)
+            .map_err(|e| e.to_string())?;
+    } else {
+        DwgWriter::write_to_file(&tmp, &built.doc).map_err(|e| e.to_string())?;
+    }
+    let bytes = std::fs::read(&tmp).map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_file(&tmp);
+    Ok(bytes)
+}
+
+/// Tauri-command: bouw het document, schrijf sidecars naast het doel-pad
+/// en schrijf het CAD-bestand. De bestandsextensie bepaalt het formaat:
+/// `.dxf` → DXF (ASCII), anders DWG (binair).
+#[tauri::command]
+pub fn export_dwg(payload: DwgPayload, path: String) -> Result<(), String> {
+    let built = build_document(&payload)?;
+
+    if let Some(dir) = Path::new(&path).parent() {
+        for (fname, bytes) in &built.sidecars {
+            std::fs::write(dir.join(fname), bytes)
+                .map_err(|e| format!("sidecar {fname}: schrijven mislukt: {e}"))?;
+        }
     }
 
     let lower = path.to_lowercase();
     if lower.ends_with(".dxf") {
-        DxfWriter::new(&doc)
+        DxfWriter::new(&built.doc)
             .write_to_file(&path)
             .map_err(|e| e.to_string())?;
     } else {
-        DwgWriter::write_to_file(&path, &doc).map_err(|e| e.to_string())?;
+        DwgWriter::write_to_file(&path, &built.doc).map_err(|e| e.to_string())?;
     }
     Ok(())
 }

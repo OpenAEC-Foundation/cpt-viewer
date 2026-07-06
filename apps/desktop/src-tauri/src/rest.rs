@@ -1,9 +1,10 @@
 //! Lokale REST/HTTP-API — `open-geo-studio --serve [--port 8787]`.
 //!
-//! Biedt dezelfde kern-operaties als de MCP-server (CPT importeren/parsen,
-//! lagen detecteren, rapport genereren, BRO ophalen), maar over HTTP zodat
-//! externe tools (scripts, CI, andere applicaties) ermee kunnen integreren
-//! zonder de GUI of de stdio-MCP-transport.
+//! Biedt de volledige kern van de tool over HTTP zodat externe tools
+//! (scripts, CI, andere applicaties) ermee kunnen integreren zonder de
+//! GUI of de stdio-MCP-transport: CPT's importeren/parsen, lagen
+//! detecteren, rapport-PDF's genereren, CSV/GeoJSON/DWG/DXF exporteren,
+//! IFC/IFCX genereren en de BRO bevragen.
 //!
 //! Dezelfde herbruikbare `*_core`-functies worden aangeroepen als door de
 //! Tauri-commands en de MCP-server — één bron van waarheid, geen
@@ -13,15 +14,25 @@
 //! Er is bewust GEEN externe binding/0.0.0.0 — een lokale API zonder auth
 //! mag niet zomaar op het netwerk staan.
 //!
-//! Endpoints:
+//! Endpoints (GET /api geeft dezelfde lijst machine-leesbaar terug):
+//!   GET    /api                        → deze index (zelfbeschrijvend)
 //!   GET    /api/health                 → status + aantal geladen CPT's
-//!   GET    /api/cpts                    → lijst geparste CPT's
+//!   GET    /api/cpts                   → lijst geparste CPT's (incl. meetdata)
 //!   POST   /api/cpts        {content,filename} → parse + opslaan, geeft CPT
+//!   GET    /api/cpts/:id               → één CPT (incl. meetdata)
 //!   DELETE /api/cpts/:id               → CPT uit de cache verwijderen
 //!   GET    /api/cpts/:id/layers        → Robertson-laagdetectie
-//!   POST   /api/report     {cpt_ids,project} → PDF-rapport (application/pdf)
-//!   POST   /api/bro/area   {bbox}      → BRO-objecten in bbox (GeoJSON-achtig)
-//!   GET    /api/bro/cpt/:bro_id        → BRO CPT-XML
+//!   GET    /api/cpts/:id/csv           → meetdata als CSV (text/csv)
+//!   POST   /api/export/geojson {cpt_ids} → GeoJSON FeatureCollection
+//!   POST   /api/export/dwg  {format?,entities,…} → DXF/DWG-bytes
+//!   POST   /api/report      {cpt_ids,project,sections?} → PDF
+//!   POST   /api/ifc         {cpt_ids,project,format?} → IFC4x3/IFCX
+//!   POST   /api/project/ifcx {payload}  → IFCX-preview van tekening-state
+//!   POST   /api/bro/area    {bbox}      → BRO-sonderingen in bbox
+//!   POST   /api/bro/bores   {bbox}      → BRO-boringen in bbox
+//!   GET    /api/bro/cpt/:bro_id         → BRO CPT-XML
+//!   GET    /api/bro/bore/:bro_id        → BRO boring-XML
+//!   GET    /api/bro/meta/:kind/:bro_id  → BRO object-metadata (kind: cpt|bore)
 
 use std::sync::Arc;
 
@@ -35,7 +46,10 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::commands::{bro_api as bro_cmd, cpt as cpt_cmd, report as report_cmd};
+use crate::commands::{
+    bro_api as bro_cmd, cpt as cpt_cmd, dwg_export as dwg_cmd, export as export_cmd,
+    ifc as ifc_cmd, project as project_cmd, report as report_cmd,
+};
 use crate::state::AppState;
 use cpt_core::Cpt;
 
@@ -78,28 +92,66 @@ pub fn run(port: u16) {
 async fn serve(app: Arc<AppState>, port: u16) -> std::io::Result<()> {
     let state = ApiState { app };
     let router = Router::new()
+        .route("/api", get(index))
         .route("/api/health", get(health))
         .route("/api/cpts", get(list_cpts).post(open_cpt))
-        .route("/api/cpts/:id", delete(close_cpt))
+        .route("/api/cpts/:id", get(get_cpt).delete(close_cpt))
         .route("/api/cpts/:id/layers", get(detect_layers))
+        .route("/api/cpts/:id/csv", get(cpt_csv))
+        .route("/api/export/geojson", post(export_geojson))
+        .route("/api/export/dwg", post(export_dwg))
         .route("/api/report", post(report))
+        .route("/api/ifc", post(generate_ifc))
+        .route("/api/project/ifcx", post(project_ifcx))
         .route("/api/bro/area", post(bro_area))
+        .route("/api/bro/bores", post(bro_bores))
         .route("/api/bro/cpt/:bro_id", get(bro_cpt))
+        .route("/api/bro/bore/:bro_id", get(bro_bore))
+        .route("/api/bro/meta/:kind/:bro_id", get(bro_meta))
         // Axum's default body-limiet is 2 MB — te klein voor realistische
-        // GEF/BRO-XML-uploads (JSON-escaping blaast ze verder op), waardoor
-        // POST /api/cpts met 413 faalde op precies de bestanden waarvoor de
-        // API bestaat. 64 MB dekt elk redelijk sondeerbestand.
+        // GEF/BRO-XML-uploads en DWG-payloads met base64-afbeeldingen.
+        // 64 MB dekt elk redelijk sondeerbestand.
         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
         .with_state(state);
 
     let addr = format!("127.0.0.1:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     eprintln!("[rest] Open Geotechniek Studio REST API → http://{addr}");
-    eprintln!("[rest] GET /api/health · POST /api/cpts · GET /api/cpts/:id/layers · POST /api/report");
+    eprintln!("[rest] GET /api toont alle endpoints · zie ook docs/API.md");
     axum::serve(listener, router).await
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────
+
+/// Zelfbeschrijvende index — machine-leesbare endpoint-catalogus zodat een
+/// client (of mens met curl) zonder documentatie op weg kan.
+async fn index() -> Json<Value> {
+    Json(json!({
+        "service": "Open Geotechniek Studio REST API",
+        "version": env!("CARGO_PKG_VERSION"),
+        "docs": "docs/API.md in de repository",
+        "endpoints": [
+            { "method": "GET",    "path": "/api",                      "description": "Deze index" },
+            { "method": "GET",    "path": "/api/health",               "description": "Status + aantal geladen CPT's" },
+            { "method": "GET",    "path": "/api/cpts",                 "description": "Lijst geparste CPT's (incl. meetdata)" },
+            { "method": "POST",   "path": "/api/cpts",                 "description": "GEF- of BRO-XML parsen en cachen", "body": { "content": "string (bestandsinhoud)", "filename": "string" } },
+            { "method": "GET",    "path": "/api/cpts/:id",             "description": "Eén CPT (incl. meetdata)" },
+            { "method": "DELETE", "path": "/api/cpts/:id",             "description": "CPT uit de cache verwijderen" },
+            { "method": "GET",    "path": "/api/cpts/:id/layers",      "description": "Robertson-laagdetectie" },
+            { "method": "GET",    "path": "/api/cpts/:id/csv",         "description": "Meetdata als CSV (text/csv)" },
+            { "method": "POST",   "path": "/api/export/geojson",       "description": "GeoJSON FeatureCollection van CPT-locaties", "body": { "cpt_ids": ["string"] } },
+            { "method": "POST",   "path": "/api/export/dwg",           "description": "Situatietekening-geometrie naar DXF (default) of DWG; response = CAD-bytes", "body": { "format": "dxf|dwg (optioneel)", "entities": [{ "layer": "string", "type": "line|polyline|point|text|hatch", "points": [[0.0, 0.0]], "text": "string?", "closed": "bool?", "height": "f64?", "rotation": "f64?" }], "layer_colors": { "LAAG": 5 }, "images": "optioneel, zie docs" } },
+            { "method": "POST",   "path": "/api/report",               "description": "Multi-CPT PDF-rapport (application/pdf)", "body": { "cpt_ids": ["string"], "project": { "title": "string", "client": "string", "location": "string", "project_number": "string", "author": "string", "date": "YYYY-MM-DD" }, "sections": "optioneel: { cover, coordTable, map, perCpt, sbtLegend, metadata }" } },
+            { "method": "POST",   "path": "/api/ifc",                  "description": "IFC4x3 of IFCX genereren uit geladen CPT's", "body": { "cpt_ids": ["string"], "project": { "title": "string" }, "format": "ifc4x3|ifcx (default ifc4x3)" } },
+            { "method": "POST",   "path": "/api/project/ifcx",         "description": "IFCX-preview van een volledige tekening-state (payload = ifcgis-JSON)" },
+            { "method": "POST",   "path": "/api/bro/area",             "description": "BRO-sonderingen binnen bbox", "body": { "bbox": { "min_lat": 0.0, "min_lon": 0.0, "max_lat": 0.0, "max_lon": 0.0 } } },
+            { "method": "POST",   "path": "/api/bro/bores",            "description": "BRO-boringen binnen bbox (zelfde body als /api/bro/area)" },
+            { "method": "GET",    "path": "/api/bro/cpt/:bro_id",      "description": "BRO CPT-XML (importeer via POST /api/cpts)" },
+            { "method": "GET",    "path": "/api/bro/bore/:bro_id",     "description": "BRO boring-XML" },
+            { "method": "GET",    "path": "/api/bro/meta/:kind/:bro_id", "description": "BRO object-metadata; kind = cpt | bore" },
+        ],
+    }))
+}
 
 async fn health(State(s): State<ApiState>) -> Json<Value> {
     let cpts_loaded = s.app.cpts.lock().map(|m| m.len()).unwrap_or(0);
@@ -132,6 +184,17 @@ async fn open_cpt(
     Ok(Json(serde_json::to_value(cpt).map_err(|e| e.to_string())?))
 }
 
+async fn get_cpt(
+    State(s): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let cache = s.app.cpts.lock().map_err(|e| e.to_string())?;
+    let cpt = cache
+        .get(&id)
+        .ok_or_else(|| format!("onbekende CPT id: {id}"))?;
+    Ok(Json(serde_json::to_value(cpt).map_err(|e| e.to_string())?))
+}
+
 async fn close_cpt(
     State(s): State<ApiState>,
     Path(id): Path<String>,
@@ -148,6 +211,56 @@ async fn detect_layers(
     Ok(Json(serde_json::to_value(layers).map_err(|e| e.to_string())?))
 }
 
+async fn cpt_csv(
+    State(s): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    let csv = export_cmd::csv_string_core(&id, &s.app)?;
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/csv; charset=utf-8")],
+        csv,
+    )
+        .into_response())
+}
+
+#[derive(Deserialize)]
+struct GeoJsonBody {
+    cpt_ids: Vec<String>,
+}
+
+async fn export_geojson(
+    State(s): State<ApiState>,
+    Json(b): Json<GeoJsonBody>,
+) -> Result<Json<Value>, ApiError> {
+    Ok(Json(export_cmd::geojson_value_core(&b.cpt_ids, &s.app)?))
+}
+
+#[derive(Deserialize)]
+struct DwgBody {
+    /// "dxf" (default — meest robuuste round-trip) of "dwg".
+    #[serde(default)]
+    format: Option<String>,
+    #[serde(flatten)]
+    payload: dwg_cmd::DwgPayload,
+}
+
+async fn export_dwg(Json(b): Json<DwgBody>) -> Result<Response, ApiError> {
+    let format = b.format.unwrap_or_else(|| "dxf".into());
+    // CPU-gebonden en schrijft een temp-bestand — buiten de async-pool.
+    let bytes = tokio::task::spawn_blocking(move || {
+        dwg_cmd::export_dwg_bytes(&b.payload, &format)
+    })
+    .await
+    .map_err(|e| format!("dwg task: {e}"))??;
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/octet-stream")],
+        bytes,
+    )
+        .into_response())
+}
+
 #[derive(Deserialize)]
 struct ReportBody {
     cpt_ids: Vec<String>,
@@ -158,20 +271,15 @@ struct ReportBody {
     sections: Option<cpt_core::ReportSections>,
 }
 
-async fn report(
-    State(s): State<ApiState>,
-    Json(b): Json<ReportBody>,
-) -> Result<Response, ApiError> {
-    // Snapshot de gevraagde CPT's uit de cache (zelfde patroon als de
-    // Tauri-command + MCP-tool) zodat de async render zonder lock draait.
-    // Onbekende ids zijn een HARDE fout: stilletjes overslaan gaf een
-    // HTTP 200 met een rapport waarin een sondering ontbrak — voor een
-    // script/CI-consument een ondetecteerbaar half resultaat.
-    let (cpts, missing): (Vec<Cpt>, Vec<String>) = {
+/// Snapshot de gevraagde CPT's uit de cache. Onbekende ids zijn een HARDE
+/// fout: stilletjes overslaan gaf een HTTP 200 met een half resultaat —
+/// voor een script/CI-consument ondetecteerbaar.
+fn snapshot_cpts(ids: &[String], s: &ApiState) -> Result<Vec<Cpt>, ApiError> {
+    let (found, missing): (Vec<Cpt>, Vec<String>) = {
         let cache = s.app.cpts.lock().map_err(|e| e.to_string())?;
         let mut found = Vec::new();
         let mut missing = Vec::new();
-        for id in &b.cpt_ids {
+        for id in ids {
             match cache.get(id) {
                 Some(c) => found.push(c.clone()),
                 None => missing.push(id.clone()),
@@ -185,14 +293,51 @@ async fn report(
             missing.join(", "),
         )));
     }
-    if cpts.is_empty() {
+    if found.is_empty() {
         return Err(ApiError("geen cpt_ids opgegeven".into()));
     }
+    Ok(found)
+}
+
+async fn report(
+    State(s): State<ApiState>,
+    Json(b): Json<ReportBody>,
+) -> Result<Response, ApiError> {
+    let cpts = snapshot_cpts(&b.cpt_ids, &s)?;
     let bytes = report_cmd::preview_report_core(cpts, b.project, b.sections).await?;
     Ok((
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/pdf")],
         bytes,
+    )
+        .into_response())
+}
+
+#[derive(Deserialize)]
+struct IfcBody {
+    cpt_ids: Vec<String>,
+    project: ifc_cmd::ProjectMetaInput,
+    /// "ifc4x3" (default) of "ifcx".
+    #[serde(default)]
+    format: Option<String>,
+}
+
+async fn generate_ifc(
+    State(s): State<ApiState>,
+    Json(b): Json<IfcBody>,
+) -> Result<Json<Value>, ApiError> {
+    let cpts = snapshot_cpts(&b.cpt_ids, &s)?;
+    let format = b.format.unwrap_or_else(|| "ifc4x3".into());
+    let result = ifc_cmd::generate_ifc_core(b.project, cpts, format).await?;
+    Ok(Json(serde_json::to_value(result).map_err(|e| e.to_string())?))
+}
+
+async fn project_ifcx(Json(payload): Json<Value>) -> Result<Response, ApiError> {
+    let text = project_cmd::preview_project_ifcx_core(payload)?;
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+        text,
     )
         .into_response())
 }
@@ -207,6 +352,11 @@ async fn bro_area(Json(b): Json<AreaBody>) -> Result<Json<Value>, ApiError> {
     Ok(Json(serde_json::to_value(features).map_err(|e| e.to_string())?))
 }
 
+async fn bro_bores(Json(b): Json<AreaBody>) -> Result<Json<Value>, ApiError> {
+    let features = bro_cmd::fetch_bro_bores_core(b.bbox).await?;
+    Ok(Json(serde_json::to_value(features).map_err(|e| e.to_string())?))
+}
+
 async fn bro_cpt(Path(bro_id): Path<String>) -> Result<Response, ApiError> {
     let xml = bro_cmd::fetch_bro_cpt_core(&bro_id).await?;
     Ok((
@@ -215,4 +365,21 @@ async fn bro_cpt(Path(bro_id): Path<String>) -> Result<Response, ApiError> {
         xml,
     )
         .into_response())
+}
+
+async fn bro_bore(Path(bro_id): Path<String>) -> Result<Response, ApiError> {
+    let xml = bro_cmd::fetch_bro_bore_core(&bro_id).await?;
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/xml")],
+        xml,
+    )
+        .into_response())
+}
+
+async fn bro_meta(
+    Path((kind, bro_id)): Path<(String, String)>,
+) -> Result<Json<Value>, ApiError> {
+    let meta = bro_cmd::fetch_bro_object_metadata_core(&bro_id, &kind).await?;
+    Ok(Json(serde_json::to_value(meta).map_err(|e| e.to_string())?))
 }

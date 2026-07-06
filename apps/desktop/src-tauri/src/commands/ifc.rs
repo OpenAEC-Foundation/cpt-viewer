@@ -39,7 +39,9 @@ pub struct ProjectMetaInput {
     pub project_number: String,
     #[serde(default)]
     pub author: String,
-    /// ISO 8601 (`YYYY-MM-DD`).
+    /// ISO 8601 (`YYYY-MM-DD`). Weggelaten of onparsebaar → vandaag
+    /// (zie `into_meta`), dus veilig optioneel voor API-consumenten.
+    #[serde(default)]
     pub date: String,
 }
 

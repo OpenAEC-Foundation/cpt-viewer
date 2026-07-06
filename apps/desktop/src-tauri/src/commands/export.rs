@@ -8,7 +8,9 @@ use crate::state::AppState;
 
 // ─── Core implementations ──────────────────────────────────────────
 
-pub fn export_csv_core(cpt_id: &str, path: &str, state: &AppState) -> Result<(), String> {
+/// CSV-inhoud voor één CPT als string — gedeeld door de bestand-export
+/// (Tauri) en de REST-API (inline response).
+pub fn csv_string_core(cpt_id: &str, state: &AppState) -> Result<String, String> {
     let cpts = state.cpts.lock().unwrap();
     let cpt = cpts.get(cpt_id).ok_or_else(|| format!("unknown CPT id: {cpt_id}"))?;
     let mut s = String::new();
@@ -25,14 +27,20 @@ pub fn export_csv_core(cpt_id: &str, path: &str, state: &AppState) -> Result<(),
             p.inclination.map(|v| v.to_string()).unwrap_or_default(),
         ));
     }
+    Ok(s)
+}
+
+pub fn export_csv_core(cpt_id: &str, path: &str, state: &AppState) -> Result<(), String> {
+    let s = csv_string_core(cpt_id, state)?;
     std::fs::write(path, s).map_err(|e| e.to_string())
 }
 
-pub fn export_geojson_core(
+/// GeoJSON FeatureCollection voor de opgegeven CPT's — gedeeld door de
+/// bestand-export (Tauri) en de REST-API (inline response).
+pub fn geojson_value_core(
     cpt_ids: &[String],
-    path: &str,
     state: &AppState,
-) -> Result<(), String> {
+) -> Result<serde_json::Value, String> {
     use serde_json::{json, Value};
     let cpts = state.cpts.lock().unwrap();
     let mut features: Vec<Value> = Vec::new();
@@ -57,7 +65,15 @@ pub fn export_geojson_core(
             }));
         }
     }
-    let fc = json!({ "type": "FeatureCollection", "features": features });
+    Ok(json!({ "type": "FeatureCollection", "features": features }))
+}
+
+pub fn export_geojson_core(
+    cpt_ids: &[String],
+    path: &str,
+    state: &AppState,
+) -> Result<(), String> {
+    let fc = geojson_value_core(cpt_ids, state)?;
     std::fs::write(path, serde_json::to_string_pretty(&fc).unwrap()).map_err(|e| e.to_string())
 }
 

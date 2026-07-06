@@ -411,8 +411,14 @@ impl McpServer {
                         .filter_map(|id| cache.get(id).cloned())
                         .collect()
                 };
+                // Optionele sectie-selectie — zelfde vorm als de GUI/REST
+                // (cover, coordTable, map, perCpt, sbtLegend, metadata).
+                let sections: Option<cpt_core::ReportSections> = args
+                    .get("sections")
+                    .cloned()
+                    .and_then(|v| serde_json::from_value(v).ok());
                 let bytes = tokio_rt()
-                    .block_on(report_cmd::preview_report_core(cpts, project, None))?;
+                    .block_on(report_cmd::preview_report_core(cpts, project, sections))?;
                 // PDF-bytes als base64 in JSON-respons — voor stdio-MCP is
                 // dat een veilige manier zonder binary corruption.
                 use base64::Engine;
