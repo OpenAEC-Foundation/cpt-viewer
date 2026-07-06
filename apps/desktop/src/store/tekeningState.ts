@@ -45,6 +45,8 @@ export interface TekeningRaster {
   spacingX: number;
   spacingY: number;
   rotation: number;
+  /** Verberg dit raster in de PDF- en DWG-export (blijft wél op scherm). */
+  hideInExport?: boolean;
 }
 
 export interface TekeningLine {
@@ -175,6 +177,7 @@ export function tekeningStateToIfcgis(s: TekeningFullState): unknown {
       spacing_x: r.spacingX,
       spacing_y: r.spacingY,
       rotation: r.rotation,
+      ...(r.hideInExport ? { hide_in_export: true } : {}),
     })),
     lines: s.lines.map((l) => ({
       id: l.id,
@@ -236,6 +239,7 @@ export function tekeningStateFromIfcgis(j: unknown): TekeningFullState | null {
       spacingX: Number(r.spacing_x),
       spacingY: Number(r.spacing_y),
       rotation: Number(r.rotation),
+      hideInExport: Boolean(r.hide_in_export),
     }),
   );
   const lines = (Array.isArray(t.lines) ? t.lines : []).map(

@@ -41,6 +41,8 @@ interface RasterSnapshot {
   rotation: number;
   /** Kleefmeting-streepje onder elke rastercel (NEN-symbool). */
   kleefmeting?: boolean;
+  /** Verberg dit raster in de PDF-/DWG-export (blijft wél op scherm). */
+  hideInExport?: boolean;
 }
 
 interface OverlaySnapshot {
@@ -311,6 +313,14 @@ export default function TekeningProperties() {
                 onChange={(e) => updateRaster({ kleefmeting: e.target.checked })}
               />
               <span>Kleefmeting (streepje onder symbool)</span>
+            </label>
+            <label className="tekprops-field tekprops-field-wide tekprops-checkbox">
+              <input
+                type="checkbox"
+                checked={!!snap.selectedRaster.hideInExport}
+                onChange={(e) => updateRaster({ hideInExport: e.target.checked })}
+              />
+              <span>Raster verbergen in PDF-/DWG-export</span>
             </label>
             <button
               type="button"

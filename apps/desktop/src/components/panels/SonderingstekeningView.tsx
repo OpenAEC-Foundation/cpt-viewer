@@ -140,6 +140,8 @@ interface PlacedRaster {
    *  voor sondering met plaatselijke wrijving). Per raster togglebaar
    *  in het Eigenschappen-paneel. */
   kleefmeting?: boolean;
+  /** Verberg dit raster in de PDF-/DWG-export (blijft wél op scherm). */
+  hideInExport?: boolean;
 }
 
 /** A selection identifies which object the user is currently editing. */
@@ -807,6 +809,9 @@ export default function SonderingstekeningView() {
   // Move-knop "armed": gebruiker klikte Verplaatsen zonder selectie —
   // de eerstvolgende objectselectie start dan meteen de cursor-move.
   const moveArmedRef = useRef(false);
+  // Tijdens een PDF-export tijdelijk true: rasters met hideInExport
+  // worden dan even niet gerenderd zodat ze niet in de capture belanden.
+  const [exportSuppress, setExportSuppress] = useState(false);
   // Snapshot van de originele posities + anchor-cursor op het moment
   // dat move-modus startte. Tijdens mousemove berekenen we cursor-delta
   // en passen die toe op de oorspronkelijke posities — zodat een
@@ -3124,6 +3129,8 @@ export default function SonderingstekeningView() {
     if (!layer) return;
     layer.clearLayers();
     for (const r of rasters) {
+      // Bij PDF-export rasters met hideInExport even niet tekenen.
+      if (exportSuppress && r.hideInExport) continue;
       const isSelected =
         selection?.kind === "raster" && selection.id === r.id;
       const fill = isSelected ? "#f59e0b" : "#1e40af";
@@ -3175,6 +3182,43 @@ export default function SonderingstekeningView() {
         interactive: true,
       });
       rect.on("click", selectThisRaster);
+      // Drag-to-move: is het raster geselecteerd, dan verplaatst een
+      // mousedown+sleep ergens op het raster-vlak het hele raster. De
+      // move-listeners hangen aan de MAP (niet aan de rect), zodat de
+      // per-frame re-render van dit effect de rect kan vervangen zonder
+      // de sleep te onderbreken. Kaart-pan gaat uit tijdens de drag.
+      if (isSelected) {
+        rect.on("mousedown", (ev) => {
+          const me = ev as L.LeafletMouseEvent;
+          L.DomEvent.stop(me);
+          const map = mapRef.current;
+          if (!map) return;
+          draggingRef.current = true;
+          try { map.dragging.disable(); } catch { /* noop */ }
+          const [mx0, my0] = WGS84_TO_RD.forward([me.latlng.lng, me.latlng.lat]);
+          const [cx0, cy0] = WGS84_TO_RD.forward([r.centerLon, r.centerLat]);
+          const onMove = (mv: L.LeafletMouseEvent) => {
+            const [mx, my] = WGS84_TO_RD.forward([mv.latlng.lng, mv.latlng.lat]);
+            const nll = WGS84_TO_RD.inverse([cx0 + (mx - mx0), cy0 + (my - my0)]);
+            setRasters((prev) =>
+              prev.map((rr) =>
+                rr.id === r.id
+                  ? { ...rr, centerLat: nll[1], centerLon: nll[0] }
+                  : rr,
+              ),
+            );
+          };
+          const onUp = () => {
+            draggingRef.current = false;
+            try { if (!frozenRef.current) map.dragging.enable(); } catch { /* noop */ }
+            map.off("mousemove", onMove);
+            map.off("mouseup", onUp);
+            setHandleRedraw((n) => n + 1);
+          };
+          map.on("mousemove", onMove);
+          map.on("mouseup", onUp);
+        });
+      }
       // Label showing rows × cols at the center.
       const lbl = L.marker([r.centerLat, r.centerLon], {
         icon: L.divIcon({
@@ -3188,7 +3232,7 @@ export default function SonderingstekeningView() {
       layer.addLayer(rect);
       layer.addLayer(lbl);
     }
-  }, [rasters, selection]);
+  }, [rasters, selection, exportSuppress]);
 
   // ── Render edit handles for the selected raster ─────────────────
   // We draw 4 corner handles (anisotropic resize), 4 edge midpoint
@@ -3896,6 +3940,10 @@ export default function SonderingstekeningView() {
       const wMm = isA2 ? 594 : 420;
       const hMm = isA2 ? 420 : 297;
       setToast("PDF exporteren…");
+      // Verberg rasters met hideInExport vóór de capture; kort wachten
+      // zodat de React-re-render + Leaflet-redraw eerst klaar zijn.
+      setExportSuppress(true);
+      await new Promise((res) => setTimeout(res, 160));
       try {
         const { toPng } = await import("html-to-image");
         const ratio = Math.max(1, Math.min(3, 3000 / paperEl.clientWidth));
@@ -3930,6 +3978,7 @@ export default function SonderingstekeningView() {
         setToast("PDF-export mislukt");
       } finally {
         exporting = false;
+        setExportSuppress(false);
         setTimeout(() => setToast(null), 3000);
       }
     };
@@ -4285,6 +4334,7 @@ export default function SonderingstekeningView() {
             spacingY: selectedRaster.spacingY,
             rotation: selectedRaster.rotation,
             kleefmeting: !!selectedRaster.kleefmeting,
+            hideInExport: !!selectedRaster.hideInExport,
           }
         : null,
       selectedOverlay: selectedOverlay
