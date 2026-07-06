@@ -263,6 +263,7 @@ pub fn run() {
             commands::report::open_report_pdf,
             commands::export::export_csv,
             commands::export::export_geojson,
+            commands::dwg_export::export_dwg,
             commands::project::save_project_ifcgis,
             commands::project::open_project_ifcgis,
             commands::project::save_project_ifcgis_full,

@@ -373,6 +373,150 @@ const rdToLl = ([x, y]: RdPoint): { lat: number; lon: number } => {
   return { lat: ll[1], lon: ll[0] };
 };
 
+/** Eén CAD-object in de DWG/DXF-export-payload (RD-coördinaten, meters). */
+interface DwgExportEntity {
+  layer: string;
+  type: "line" | "polyline" | "point" | "text";
+  points: [number, number][];
+  text?: string;
+  closed?: boolean;
+  height?: number;
+  rotation?: number;
+}
+
+/** ACI-kleurindex per laag, zodat de lagen in CAD een herkenbare kleur
+ *  krijgen. 1=rood 2=geel 3=groen 4=cyaan 5=blauw 7=wit. */
+const DWG_LAYER_COLORS: Record<string, number> = {
+  SONDERINGEN: 5,
+  BORINGEN: 1,
+  RASTER: 5,
+  LIJNEN: 7,
+  MAATLIJNEN: 2,
+  COORDINATEN: 3,
+  VLAKKEN: 4,
+  OPMERKINGEN: 2,
+  GIS_GEBOUWEN: 8,
+  GIS_PERCELEN: 9,
+};
+
+/**
+ * Stel de volledige DWG/DXF-export samen uit de tekening-state + de
+ * gecachte GIS-features (BAG-gebouwen, kadastrale percelen). Alle
+ * geometrie gaat naar RD (EPSG:28992, meters). Bij `rdCoords = false`
+ * wordt alles verschoven naar een lokale oorsprong (min-x/min-y), handig
+ * omdat absolute RD-coördinaten (x≈100k, y≈450k) in sommige CAD-pakketten
+ * onhandig ver van de oorsprong liggen.
+ */
+function buildDwgPayload(
+  src: {
+    markers: PlacedSondering[];
+    rasters: PlacedRaster[];
+    lines: DrawnLine[];
+    coordTags: CoordTag[];
+    vlakken: PlacedVlak[];
+    notes: PlacedNote[];
+    bagFeatures: GeoJSON.Feature[];
+    kadasterFeatures: GeoJSON.Feature[];
+  },
+  rdCoords: boolean,
+): { entities: DwgExportEntity[]; layer_colors: Record<string, number> } {
+  const ents: DwgExportEntity[] = [];
+  const toRd = (lat: number, lon: number): [number, number] => {
+    const [x, y] = WGS84_TO_RD.forward([lon, lat]);
+    return [x, y];
+  };
+  const LABEL_H = 1.2; // teksthoogte in meters
+  const OFF = 0.8; // label-offset t.o.v. het punt
+
+  for (const m of src.markers) {
+    const [x, y] = toRd(m.lat, m.lon);
+    const layer = m.kind === "bore" ? "BORINGEN" : "SONDERINGEN";
+    ents.push({ layer, type: "point", points: [[x, y]] });
+    ents.push({ layer, type: "text", points: [[x + OFF, y + OFF]], text: m.id, height: LABEL_H });
+  }
+
+  for (const r of src.rasters) {
+    if (r.hideInExport) continue;
+    for (const pt of rasterPoints(r)) {
+      ents.push({ layer: "SONDERINGEN", type: "point", points: [toRd(pt.lat, pt.lon)] });
+    }
+    const corners = rasterCornersLatLng(r).map((c) => toRd(c.lat, c.lng));
+    if (corners.length >= 2) {
+      ents.push({ layer: "RASTER", type: "polyline", points: corners, closed: true });
+    }
+  }
+
+  for (const l of src.lines) {
+    ents.push({
+      layer: l.kind === "dimension" ? "MAATLIJNEN" : "LIJNEN",
+      type: "line",
+      points: [toRd(l.lat1, l.lon1), toRd(l.lat2, l.lon2)],
+    });
+  }
+
+  for (const c of src.coordTags) {
+    const [x, y] = toRd(c.lat, c.lon);
+    ents.push({ layer: "COORDINATEN", type: "point", points: [[x, y]] });
+    const label = c.label && c.label.trim() ? c.label : `${x.toFixed(2)}, ${y.toFixed(2)}`;
+    ents.push({ layer: "COORDINATEN", type: "text", points: [[x + OFF, y + OFF]], text: label, height: LABEL_H });
+  }
+
+  for (const v of src.vlakken) {
+    if (v.points.length >= 2) {
+      ents.push({
+        layer: "VLAKKEN",
+        type: "polyline",
+        points: v.points.map((p) => toRd(p.lat, p.lon)),
+        closed: true,
+      });
+    }
+  }
+
+  for (const n of src.notes) {
+    if (!n.text.trim()) continue;
+    ents.push({ layer: "OPMERKINGEN", type: "text", points: [toRd(n.lat, n.lon)], text: n.text, height: LABEL_H });
+  }
+
+  const pushRings = (features: GeoJSON.Feature[], layer: string) => {
+    for (const f of features) {
+      const g = f.geometry;
+      if (!g) continue;
+      const polys: GeoJSON.Position[][][] =
+        g.type === "Polygon"
+          ? [(g as GeoJSON.Polygon).coordinates]
+          : g.type === "MultiPolygon"
+            ? (g as GeoJSON.MultiPolygon).coordinates
+            : [];
+      for (const poly of polys) {
+        for (const ring of poly) {
+          const pts = ring.map((pos) => toRd(pos[1], pos[0]));
+          if (pts.length >= 2) ents.push({ layer, type: "polyline", points: pts, closed: true });
+        }
+      }
+    }
+  };
+  pushRings(src.bagFeatures, "GIS_GEBOUWEN");
+  pushRings(src.kadasterFeatures, "GIS_PERCELEN");
+
+  if (!rdCoords && ents.length) {
+    let minX = Infinity;
+    let minY = Infinity;
+    for (const e of ents) {
+      for (const [x, y] of e.points) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+      }
+    }
+    if (Number.isFinite(minX) && Number.isFinite(minY)) {
+      for (const e of ents) {
+        e.points = e.points.map(([x, y]) => [x - minX, y - minY]);
+      }
+    }
+  }
+
+  return { entities: ents, layer_colors: DWG_LAYER_COLORS };
+}
+
 /**
  * Snijpunt van twee oneindige lijnen door A-B en C-D in RD.
  * Geeft het punt + de parameters t (langs AB) en u (langs CD).
@@ -4931,6 +5075,78 @@ export default function SonderingstekeningView() {
       window.removeEventListener("mouseup", onUp);
     };
   }, []);
+
+  // ── DWG/DXF-export (inclusief GIS-lagen) ───────────────────────
+  // Aparte listener met de tekening-state in de deps zodat de closure
+  // altijd de actuele objecten ziet. GIS-features komen live uit de
+  // snap-refs. De gebruiker kiest RD- of lokale coördinaten en het
+  // doelformaat (.dwg / .dxf) via de opslaan-dialoog.
+  useEffect(() => {
+    const doExportDwg = async () => {
+      const { IS_TAURI } = await import("../../utils/platform");
+      if (!IS_TAURI) {
+        setToast("DWG-export werkt alleen in de desktop-app");
+        setTimeout(() => setToast(null), 3000);
+        return;
+      }
+      const { ask, save } = await import("@tauri-apps/plugin-dialog");
+      const rdCoords = await ask(
+        "Op RD-coördinaten exporteren (EPSG:28992)?\n\nJa = ware RD-coördinaten (georefereerd).\nNee = lokale oorsprong, tekening bij 0,0.",
+        { title: "DWG/DXF-export", kind: "info" },
+      );
+      const { entities, layer_colors } = buildDwgPayload(
+        {
+          markers: placed,
+          rasters,
+          lines: drawnLines,
+          coordTags,
+          vlakken,
+          notes,
+          bagFeatures: snapBagFeaturesRef.current,
+          kadasterFeatures: snapKadasterFeaturesRef.current,
+        },
+        rdCoords,
+      );
+      if (!entities.length) {
+        setToast("Niets te exporteren");
+        setTimeout(() => setToast(null), 2500);
+        return;
+      }
+      const snap = getLatestTekening();
+      const base = (snap?.titleBlock?.project || "situatietekening").replace(
+        /[\\/:*?"<>|]/g,
+        "_",
+      );
+      const dst = await save({
+        defaultPath: `${base}.dwg`,
+        filters: [
+          { name: "CAD-tekening (DWG)", extensions: ["dwg"] },
+          { name: "CAD-uitwisseling (DXF)", extensions: ["dxf"] },
+        ],
+      });
+      if (!dst) return;
+      setToast("DWG exporteren…");
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("export_dwg", {
+          payload: { entities, layer_colors },
+          path: dst,
+        });
+        setToast(`Geëxporteerd (${entities.length} objecten)`);
+      } catch (err) {
+        console.error("export_dwg failed", err);
+        setToast(`DWG-export mislukt: ${String(err)}`);
+      } finally {
+        setTimeout(() => setToast(null), 4000);
+      }
+    };
+    const onExportDwg = () => {
+      void doExportDwg();
+    };
+    window.addEventListener("ogs:tekening-export-dwg", onExportDwg);
+    return () =>
+      window.removeEventListener("ogs:tekening-export-dwg", onExportDwg);
+  }, [placed, rasters, drawnLines, coordTags, vlakken, notes]);
 
   return (
     <div

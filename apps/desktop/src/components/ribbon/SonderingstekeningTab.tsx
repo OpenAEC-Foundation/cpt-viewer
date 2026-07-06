@@ -83,6 +83,15 @@ const quotesIcon =
   `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ` +
   `d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>`;
 
+// Exporteer-DWG-icon — CAD-tekeningbestand: document met omgevouwen hoek
+// en een polyline erin (vector-tekening).
+const dwgIcon =
+  `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
+  `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ` +
+  `d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/>` +
+  `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M14 3v6h6"/>` +
+  `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M7.5 17l2.5-3.5 2 2.5 2.5-3.5"/></svg>`;
+
 // Exporteer-PDF-icon — document met omlaag-pijl (download/opslaan).
 const exportPdfIcon =
   `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
@@ -379,6 +388,16 @@ export default function SonderingstekeningTab() {
         </RibbonGroup>
 
         <RibbonGroup label={t("tekening.exportGroup", "Export")}>
+          <RibbonButton
+            icon={dwgIcon}
+            label={t("tekening.exportDwg", "Exporteer DWG")}
+            size="large"
+            title={t(
+              "tekening.exportDwgHint",
+              "Exporteer de tekening inclusief GIS-lagen (gebouwen, percelen) naar DWG/DXF. Kies RD- of lokale coördinaten; kies .dwg of .dxf in de opslaan-dialoog.",
+            )}
+            onClick={() => dispatch("ogs:tekening-export-dwg")}
+          />
           <RibbonButton
             icon={exportPdfIcon}
             label={t("tekening.exportPdf", "Exporteer PDF")}

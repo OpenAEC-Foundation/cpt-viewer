@@ -51,3 +51,4 @@ axum = "0.7"
 cpt-core       = { path = "../../../../crates-warehouse/cpt-core" }
 openaec-core   = { path = "../../../../crates-warehouse/openaec-core" }
 openaec-engine = { path = "../../../../crates-warehouse/openaec-engine" }
+acadrust = "0.4.0"
