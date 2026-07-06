@@ -804,6 +804,9 @@ export default function SonderingstekeningView() {
   >(null);
   const moveModeRef = useRef<typeof moveMode>(null);
   useEffect(() => { moveModeRef.current = moveMode; }, [moveMode]);
+  // Move-knop "armed": gebruiker klikte Verplaatsen zonder selectie —
+  // de eerstvolgende objectselectie start dan meteen de cursor-move.
+  const moveArmedRef = useRef(false);
   // Snapshot van de originele posities + anchor-cursor op het moment
   // dat move-modus startte. Tijdens mousemove berekenen we cursor-delta
   // en passen die toe op de oorspronkelijke posities — zodat een
@@ -916,6 +919,55 @@ export default function SonderingstekeningView() {
   // originele positie). Geeft de gebruiker zonder ribbon-tussenstap
   // een snelle "move-grip" zoals in CAD/3D-software.
   useEffect(() => {
+    // Bouw origin + zet de cursor-getrackte move-modus aan voor `sel`.
+    // Gedeeld door de M/G-sneltoets én de ribbon "Verplaatsen"-knop (via
+    // het ogs:tekening-begin-move event). Retourneert false als het
+    // object niet verplaatsbaar is of de cursorpositie nog onbekend is.
+    const startMove = (sel: typeof selection): boolean => {
+      if (!sel) return false;
+      const map = mapRef.current;
+      if (!map) return false;
+      const cursorLL = lastMouseLLRef.current;
+      if (!cursorLL) return false;
+      let origin: Record<string, number> | null = null;
+      if (sel.kind === "overlay" && overlay && overlay.id === sel.id) {
+        const cLat = overlay.centerLat ?? map.getCenter().lat;
+        const cLon = overlay.centerLon ?? map.getCenter().lng;
+        origin = { centerLat: cLat, centerLon: cLon };
+      } else if (sel.kind === "marker") {
+        const m = placed.find((p) => p.id === sel.id);
+        if (m) origin = { lat: m.lat, lon: m.lon };
+      } else if (sel.kind === "line") {
+        const l = drawnLines.find((x) => x.id === sel.id);
+        if (l) origin = { lat1: l.lat1, lon1: l.lon1, lat2: l.lat2, lon2: l.lon2 };
+      } else if (sel.kind === "raster") {
+        const r = rasters.find((x) => x.id === sel.id);
+        if (r) origin = { centerLat: r.centerLat, centerLon: r.centerLon };
+      }
+      if (!origin) return false;
+      // Vlak/note zijn (nog) niet vrij te verplaatsen — de guard smalt
+      // ook het type zodat setMoveMode alleen move-bare kinds krijgt.
+      if (sel.kind === "vlak" || sel.kind === "note") return false;
+      moveAnchorRef.current = {
+        anchorLat: cursorLL.lat,
+        anchorLon: cursorLL.lng,
+        origin,
+      };
+      setMoveMode(sel);
+      return true;
+    };
+
+    // "Armed" Verplaatsen-knop: de gebruiker klikte Move zonder selectie.
+    // Zodra er nu een object geselecteerd wordt, start de verplaatsing
+    // meteen — precies "klik Move → klik object → verplaatsen".
+    if (moveArmedRef.current && selection) {
+      moveArmedRef.current = false;
+      if (startMove(selection)) {
+        setToast("Beweeg de muis en klik om neer te zetten (Esc = annuleren)");
+        setTimeout(() => setToast(null), 2600);
+      }
+    }
+
     const onKey = (e: KeyboardEvent) => {
       // Sneltoets alleen op M/m of G/g, en niet wanneer focus op een
       // input/textarea zit (anders kan de gebruiker geen "G" typen in
@@ -925,42 +977,32 @@ export default function SonderingstekeningView() {
       const tag = tgt?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tgt?.isContentEditable) return;
       if (!selection) return;
-      const map = mapRef.current;
-      if (!map) return;
-      // Bepaal originele positie + bouw delta-base
-      const cursorLL = lastMouseLLRef.current;
-      if (!cursorLL) return;
-      let origin: Record<string, number> | null = null;
-      if (selection.kind === "overlay" && overlay && overlay.id === selection.id) {
-        const cLat = overlay.centerLat ?? map.getCenter().lat;
-        const cLon = overlay.centerLon ?? map.getCenter().lng;
-        origin = { centerLat: cLat, centerLon: cLon };
-      } else if (selection.kind === "marker") {
-        const m = placed.find((p) => p.id === selection.id);
-        if (m) origin = { lat: m.lat, lon: m.lon };
-      } else if (selection.kind === "line") {
-        const l = drawnLines.find((x) => x.id === selection.id);
-        if (l) origin = { lat1: l.lat1, lon1: l.lon1, lat2: l.lat2, lon2: l.lon2 };
-      } else if (selection.kind === "raster") {
-        const r = rasters.find((x) => x.id === selection.id);
-        if (r) origin = { centerLat: r.centerLat, centerLon: r.centerLon };
-      }
-      if (!origin) return;
-      // Vlak/note zijn (nog) niet via de M/G-move-shortcut te verplaatsen;
-      // origin blijft voor die kinds sowieso null, maar de expliciete
-      // guard smalt het type zodat setMoveMode alleen de move-bare kinds
-      // krijgt.
-      if (selection.kind === "vlak" || selection.kind === "note") return;
       e.preventDefault();
-      moveAnchorRef.current = {
-        anchorLat: cursorLL.lat,
-        anchorLon: cursorLL.lng,
-        origin,
-      };
-      setMoveMode(selection);
+      startMove(selection);
     };
+
+    // Ribbon "Verplaatsen"-knop. Met selectie → direct starten; zonder
+    // selectie → "arm" de tool zodat de volgende objectklik hem start.
+    const onBeginMove = () => {
+      if (selection) {
+        if (startMove(selection)) {
+          setToast("Beweeg de muis en klik om neer te zetten (Esc = annuleren)");
+          setTimeout(() => setToast(null), 2600);
+        } else {
+          setToast("Dit object kun je niet verplaatsen");
+          setTimeout(() => setToast(null), 2200);
+        }
+      } else {
+        moveArmedRef.current = true;
+        setToast("Klik het object dat je wilt verplaatsen");
+        setTimeout(() => setToast(null), 3000);
+      }
+    };
+
     const onKeyCancel = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // Esc heft ook een gewapende (nog niet gestarte) Move op.
+      moveArmedRef.current = false;
       if (!moveModeRef.current) return;
       // Restore originele positie + clear move-modus
       const anchor = moveAnchorRef.current;
@@ -995,9 +1037,11 @@ export default function SonderingstekeningView() {
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("keydown", onKeyCancel);
+    window.addEventListener("ogs:tekening-begin-move", onBeginMove);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keydown", onKeyCancel);
+      window.removeEventListener("ogs:tekening-begin-move", onBeginMove);
     };
   }, [selection, overlay, placed, drawnLines, rasters]);
 
@@ -1508,9 +1552,9 @@ export default function SonderingstekeningView() {
     | null
   >(null);
   useEffect(() => {
-    handleCadLineClickRef.current = (mode, lineId, clickLat, clickLon) => {
+    handleCadLineClickRef.current = (mode, lineId) => {
       const step = cadStepRef.current;
-      // Stap 1 — referentielijn kiezen.
+      // Stap 1 — eerste lijn kiezen.
       if (!step || (step.kind !== "trim-ref" && step.kind !== "extend-ref")) {
         cadStepRef.current =
           mode === "trim"
@@ -1518,100 +1562,72 @@ export default function SonderingstekeningView() {
             : { kind: "extend-ref", refLineId: lineId };
         setToast(
           mode === "trim"
-            ? "Trim — klik nu de lijn die geknipt moet worden (het deel waar je klikt valt weg)"
-            : "Extend — klik nu het uiteinde van de lijn dat verlengd moet worden",
+            ? "Trim — klik nu de tweede lijn; beide worden op het snijpunt tot een hoek geknipt"
+            : "Extend — klik nu de tweede lijn; beide worden tot het snijpunt verlengd tot een hoek",
         );
         setTimeout(() => setToast(null), 4500);
         return;
       }
-      // Stap 2 — doel-lijn kiezen. Mag niet dezelfde zijn als de
-      // referentielijn (anders snijdt hij met zichzelf en krijg je
-      // geen zinvol resultaat).
-      const refId = step.refLineId;
-      if (lineId === refId) {
-        setToast("Kies een andere lijn dan de referentielijn");
+      // Stap 2 — tweede lijn kiezen. Mag niet dezelfde zijn als de
+      // eerste (een lijn snijdt niet zinvol met zichzelf).
+      const firstId = step.refLineId;
+      if (lineId === firstId) {
+        setToast("Kies een andere lijn dan de eerste");
         setTimeout(() => setToast(null), 2400);
         return;
       }
-      const refLine = drawnLines.find((l) => l.id === refId);
-      const tgtLine = drawnLines.find((l) => l.id === lineId);
-      if (!refLine || !tgtLine) {
+      const l1 = drawnLines.find((l) => l.id === firstId);
+      const l2 = drawnLines.find((l) => l.id === lineId);
+      if (!l1 || !l2) {
         cadStepRef.current = null;
+        setCadMode(null);
         return;
       }
-      const refA = llToRd(refLine.lat1, refLine.lon1);
-      const refB = llToRd(refLine.lat2, refLine.lon2);
-      const tgtA = llToRd(tgtLine.lat1, tgtLine.lon1);
-      const tgtB = llToRd(tgtLine.lat2, tgtLine.lon2);
-      const inter = lineIntersectionRd(refA, refB, tgtA, tgtB);
+      const a1 = llToRd(l1.lat1, l1.lon1);
+      const b1 = llToRd(l1.lat2, l1.lon2);
+      const a2 = llToRd(l2.lat1, l2.lon1);
+      const b2 = llToRd(l2.lat2, l2.lon2);
+      const inter = lineIntersectionRd(a1, b1, a2, b2);
       if (!inter) {
-        setToast("Lijnen zijn parallel — geen snijpunt");
+        setToast("Lijnen zijn parallel — geen snijpunt, geen hoek mogelijk");
         setTimeout(() => setToast(null), 2800);
         cadStepRef.current = null;
         setCadMode(null);
         return;
       }
-      const clickRd = llToRd(clickLat, clickLon);
-      if (mode === "trim") {
-        // Knip op het snijpunt. Twee scenario's:
-        //  (a) snijpunt valt BINNEN het target-segment (0 ≤ u ≤ 1)
-        //      → splits het in twee delen, gooi het deel weg waar
-        //      de gebruiker klikte.
-        //  (b) snijpunt valt BUITEN het target-segment → niets te
-        //      knippen (trim doet niets als de lijnen elkaar niet
-        //      écht raken). Toast + reset.
-        if (inter.u < 0.001 || inter.u > 0.999) {
-          setToast(
-            "Snijpunt ligt buiten de lijn — trim doet hier niets (gebruik Extend om eerst te verlengen)",
-          );
-          setTimeout(() => setToast(null), 4200);
-          cadStepRef.current = null;
-          setCadMode(null);
-          return;
-        }
-        // Bepaal welke kant van het snijpunt de gebruiker aanklikte.
-        // Projecteer de klik op de target-lijn (param tHit langs
-        // tgtA→tgtB) en vergelijk met inter.u.
-        const tgtDx = tgtB[0] - tgtA[0];
-        const tgtDy = tgtB[1] - tgtA[1];
-        const tgtLen2 = tgtDx * tgtDx + tgtDy * tgtDy;
-        const tHitNum = tgtLen2 > 0
-          ? ((clickRd[0] - tgtA[0]) * tgtDx + (clickRd[1] - tgtA[1]) * tgtDy) /
-            tgtLen2
-          : 0;
-        const interLL = rdToLl(inter.p);
-        // Houd het deel ZONDER de klik. Als de klik vóór het snijpunt
-        // ligt (tHit < u) blijft het deel ná het snijpunt (u → 1)
-        // bestaan; anders andersom.
-        const replacement: DrawnLine =
-          tHitNum < inter.u
-            ? { ...tgtLine, lat1: interLL.lat, lon1: interLL.lon }
-            : { ...tgtLine, lat2: interLL.lat, lon2: interLL.lon };
-        setDrawnLines((prev) =>
-          prev.map((l) => (l.id === tgtLine.id ? replacement : l)),
-        );
-        setToast("Lijn getrimd");
-        setTimeout(() => setToast(null), 1800);
-      } else {
-        // EXTEND — verleng het endpoint van de target dat het dichtst
-        // bij de klik ligt, tot aan de oneindige referentielijn. Het
-        // snijpunt zit per definitie op de referentie-lijn; we passen
-        // alleen het endpoint aan dat verlengd moet worden.
-        const distA = Math.hypot(clickRd[0] - tgtA[0], clickRd[1] - tgtA[1]);
-        const distB = Math.hypot(clickRd[0] - tgtB[0], clickRd[1] - tgtB[1]);
-        const interLL = rdToLl(inter.p);
-        const patch: Partial<DrawnLine> =
-          distA < distB
-            ? { lat1: interLL.lat, lon1: interLL.lon }
-            : { lat2: interLL.lat, lon2: interLL.lon };
-        setDrawnLines((prev) =>
-          prev.map((l) => (l.id === tgtLine.id ? { ...l, ...patch } : l)),
-        );
-        setToast("Lijn verlengd tot referentielijn");
-        setTimeout(() => setToast(null), 1800);
-      }
-      // Tool reset — gebruiker moet voor een volgende trim/extend
-      // opnieuw de knop indrukken. Voorkomt per-ongeluk-knippen.
+      // Hoek-join: verschuif per lijn het eindpunt dat het DICHTST bij
+      // het snijpunt ligt naar dat snijpunt. Ligt het snijpunt binnen
+      // een segment → het overstek-stuk wordt weggeknipt (trim-gevoel);
+      // ligt het erbuiten → de lijn wordt tot het snijpunt verlengd
+      // (extend-gevoel). In beide gevallen ontmoeten de twee lijnen
+      // elkaar in een strakke hoek — precies "punten naar elkaar toe".
+      // inter.t = parameter langs lijn 1, inter.u = langs lijn 2;
+      // < 0.5 → endpoint A (lat1/lon1) zit het dichtst bij het snijpunt.
+      const interLL = rdToLl(inter.p);
+      const patch1: Partial<DrawnLine> =
+        inter.t < 0.5
+          ? { lat1: interLL.lat, lon1: interLL.lon }
+          : { lat2: interLL.lat, lon2: interLL.lon };
+      const patch2: Partial<DrawnLine> =
+        inter.u < 0.5
+          ? { lat1: interLL.lat, lon1: interLL.lon }
+          : { lat2: interLL.lat, lon2: interLL.lon };
+      setDrawnLines((prev) =>
+        prev.map((l) =>
+          l.id === firstId
+            ? { ...l, ...patch1 }
+            : l.id === lineId
+              ? { ...l, ...patch2 }
+              : l,
+        ),
+      );
+      setToast(
+        mode === "trim"
+          ? "Lijnen op het snijpunt tot een hoek geknipt"
+          : "Lijnen tot het snijpunt verlengd tot een hoek",
+      );
+      setTimeout(() => setToast(null), 2000);
+      // Tool reset — voor een volgende hoek opnieuw de knop indrukken.
       cadStepRef.current = null;
       setCadMode(null);
     };
@@ -3299,6 +3315,9 @@ export default function SonderingstekeningView() {
       });
       handle.on("dragstart", (e) => {
         draggingRef.current = true;
+        // Kaart-pan uit tijdens de move-drag (net als bij de hoek-handles)
+        // zodat het verslepen van het raster niet ook de kaart mee-pant.
+        try { mapRef.current?.dragging.disable(); } catch { /* noop */ }
         const ll = (e.target as L.Marker).getLatLng();
         const [mx, my] = WGS84_TO_RD.forward([ll.lng, ll.lat]);
         dragStart.mouseRd = [mx, my];
@@ -4831,6 +4850,12 @@ export default function SonderingstekeningView() {
     const onDown = (e: MouseEvent) => {
       if (!frozenRef.current || e.button !== 0 || e.shiftKey) return;
       if (placeModeRef.current || drawModeRef.current || coordModeRef.current || cadModeRef.current) return;
+      // Niet het papier pannen wanneer de mousedown op een interactief
+      // object begint (marker, sleep-handle, lijn/raster-vorm) — dan wil
+      // de gebruiker dat object selecteren of slepen. Zonder deze guard
+      // sleepte een raster-handle het hele bevroren papier mee.
+      const tgt = e.target as HTMLElement | null;
+      if (tgt && tgt.closest(".leaflet-marker-icon, .leaflet-interactive, .tek-handle")) return;
       const v = tekViewRef.current;
       start = { mx: e.clientX, my: e.clientY, x: v.x, y: v.y };
     };

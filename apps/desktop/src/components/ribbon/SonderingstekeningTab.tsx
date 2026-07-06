@@ -224,9 +224,9 @@ export default function SonderingstekeningTab() {
               size="small"
               title={t(
                 "tekening.moveHint",
-                "Pijltjestoetsen verplaatsen 1 m (Shift = 5 m)",
+                "Klik Verplaatsen en dan het object (of selecteer eerst), beweeg de muis en klik om neer te zetten. Pijltjestoetsen = 1 m (Shift = 5 m).",
               )}
-              onClick={() => dispatch("ogs:tekening-move", { dx: 1, dy: 0 })}
+              onClick={() => dispatch("ogs:tekening-begin-move")}
             />
             <RibbonButton
               icon={copyIcon}
