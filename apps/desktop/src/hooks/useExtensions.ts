@@ -54,7 +54,10 @@ const SETTING_KEYS: Record<ExtensionId, string> = {
  *  prominente tussenstand-banner + ALPHA-badge blijven zichtbaar als
  *  herinnering dat de getallen nog NIET productie-geverifieerd zijn. */
 const DEFAULTS: Record<ExtensionId, boolean> = {
-  tekening: false,
+  // Situatietekening is een kernfunctie geworden — standaard AAN zodat de
+  // tab direct zichtbaar is, óók op de live webversie. Uitzetten kan nog
+  // steeds via Instellingen → Extensies.
+  tekening: true,
   offertes: false,
   "calc.pile-bearing-capacity": true,
   // `calc.kalendering` staat default AAN — module is in actieve ontwikkeling
