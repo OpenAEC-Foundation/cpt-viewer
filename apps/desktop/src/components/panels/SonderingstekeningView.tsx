@@ -4192,17 +4192,51 @@ export default function SonderingstekeningView() {
       await new Promise((res) => setTimeout(res, 180));
       await new Promise((res) => requestAnimationFrame(() => res(null)));
       try {
-        // JPEG i.p.v. PNG — een luchtfoto-kaart als PNG wordt tientallen
-        // MB's en jsPDF's PNG-pad decodeert + hercomprimeert dat in pure
-        // JS met meerdere bitmap-kopieën in het geheugen (WebView2 OOM →
-        // crash + corrupt half-geschreven bestand). JPEG is 1-3 MB en
-        // gaat ONGEWIJZIGD (passthrough) het PDF in.
-        const { toJpeg } = await import("html-to-image");
+        // Twee-staps capture i.p.v. html-to-image's toPng/toJpeg:
+        //  1. toSvg — serialiseert het papier (tiles inline als data-URLs).
+        //     Gemeten betrouwbaar en snel (±0,5 s).
+        //  2. Eigen rasterisatie: Image + canvas + toDataURL("image/jpeg").
+        // Reden: html-to-image's interne SVG→canvas-stap bleek in
+        // Chromium/WebView2 te kunnen hangen (promise resolvet nooit →
+        // "PDF exporteren…" voor altijd), en het oude PNG-pad joeg jsPDF
+        // door een pure-JS decode/hercompressie met meerdere bitmap-
+        // kopieën (WebView2 OOM → crash + corrupt bestand). JPEG is
+        // 1-3 MB en gaat ONGEWIJZIGD (passthrough) het PDF in; de eigen
+        // rasterisatie heeft een harde time-out zodat de export nooit
+        // meer eindeloos kan blijven hangen.
+        const { toSvg } = await import("html-to-image");
+        const svgUrl = await toSvg(paperEl, { backgroundColor: "#ffffff" });
         const ratio = Math.max(1, Math.min(3, 3000 / paperEl.clientWidth));
-        const dataUrl = await toJpeg(paperEl, {
-          pixelRatio: ratio,
-          quality: 0.92,
-          backgroundColor: "#ffffff",
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const img = new Image();
+          const timer = window.setTimeout(
+            () => reject(new Error("rasterisatie-time-out (30 s)")),
+            30000,
+          );
+          img.onload = () => {
+            window.clearTimeout(timer);
+            try {
+              const c = document.createElement("canvas");
+              c.width = Math.round(paperEl.clientWidth * ratio);
+              c.height = Math.round(paperEl.clientHeight * ratio);
+              const ctx = c.getContext("2d");
+              if (!ctx) {
+                reject(new Error("geen canvas-context"));
+                return;
+              }
+              ctx.fillStyle = "#ffffff";
+              ctx.fillRect(0, 0, c.width, c.height);
+              ctx.drawImage(img, 0, 0, c.width, c.height);
+              resolve(c.toDataURL("image/jpeg", 0.92));
+            } catch (e) {
+              reject(e instanceof Error ? e : new Error(String(e)));
+            }
+          };
+          img.onerror = () => {
+            window.clearTimeout(timer);
+            reject(new Error("SVG-rasterisatie mislukt"));
+          };
+          img.src = svgUrl;
         });
 
         const { jsPDF } = await import("jspdf");
