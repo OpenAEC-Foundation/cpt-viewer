@@ -554,6 +554,31 @@
   cursor: grabbing;
 }
 
+/* Move grip = blauwe cirkel met vierpijls-icoon in het rastermidden.
+   Duidelijk "pak-en-sleep"-symbool om het hele raster te verplaatsen. */
+.tek-handle-move-btn {
+  appearance: none;
+  background: #2563eb;
+  border: 2px solid #fafaf9;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  transition: background 0.12s ease;
+}
+.tek-handle-move-btn:hover {
+  background: #1d4ed8;
+}
+.tek-handle-move-btn:active {
+  background: #1e40af;
+  cursor: grabbing;
+}
+
 /* Inline edit panel that appears in the toolbox when a raster is selected. */
 .tek-tool-group-edit {
   border: 1px solid var(--amber, #d97706);

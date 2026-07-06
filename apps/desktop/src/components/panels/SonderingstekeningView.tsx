@@ -3390,7 +3390,9 @@ export default function SonderingstekeningView() {
           className: "tek-raster-label",
           html: `<div class="tek-raster-label-pill">${r.id} · ${r.rows}×${r.cols} · ${r.spacingX.toFixed(0)}×${r.spacingY.toFixed(0)} m</div>`,
           iconSize: [120, 18],
-          iconAnchor: [60, 9],
+          // Bij selectie zakt de pil onder het midden zodat de centrale
+          // move-grip er niet overheen valt.
+          iconAnchor: [60, isSelected ? -16 : 9],
         }),
         interactive: false,
       });
@@ -3553,6 +3555,54 @@ export default function SonderingstekeningView() {
       void idx;
       layer.addLayer(handle);
     });
+
+    // ── Move grip (center) ───────────────────────────────────────
+    // Expliciet verplaats-symbool in het midden van het geselecteerde
+    // raster: pak-en-sleep om het héle raster te verplaatsen (drag-and-
+    // drop). De kaart pant niet mee. Vult de subtielere edge-handles aan
+    // met een duidelijk vierpijls-icoon.
+    {
+      const gripDrag = { cxRd, cyRd, mouseRd: [0, 0] as [number, number] };
+      const grip = L.marker([raster.centerLat, raster.centerLon], {
+        icon: L.divIcon({
+          className: "tek-handle tek-handle-move",
+          html: `<button class="tek-handle-move-btn" type="button" title="Sleep om het raster te verplaatsen">
+            <svg viewBox="0 0 24 24" width="16" height="16">
+              <path d="M12 3v18M3 12h18" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" />
+              <path d="M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>`,
+          iconSize: [26, 26],
+          iconAnchor: [13, 13],
+        }),
+        draggable: true,
+      });
+      grip.on("dragstart", (e) => {
+        draggingRef.current = true;
+        try { mapRef.current?.dragging.disable(); } catch { /* noop */ }
+        const ll = (e.target as L.Marker).getLatLng();
+        const [mx, my] = WGS84_TO_RD.forward([ll.lng, ll.lat]);
+        gripDrag.mouseRd = [mx, my];
+      });
+      grip.on("dragend", onDragEnd);
+      grip.on("drag", (e) => {
+        const ll = (e as L.LeafletEvent & { latlng: L.LatLng }).latlng;
+        const [mx, my] = WGS84_TO_RD.forward([ll.lng, ll.lat]);
+        const newLL = WGS84_TO_RD.inverse([
+          gripDrag.cxRd + (mx - gripDrag.mouseRd[0]),
+          gripDrag.cyRd + (my - gripDrag.mouseRd[1]),
+        ]);
+        setRasters((prev) =>
+          prev.map((r) =>
+            r.id === raster.id
+              ? { ...r, centerLat: newLL[1], centerLon: newLL[0] }
+              : r,
+          ),
+        );
+      });
+      grip.on("click", (ev) => L.DomEvent.stopPropagation(ev));
+      layer.addLayer(grip);
+    }
 
     // ── Rotate button ────────────────────────────────────────────
     // Big amber circular button above the top edge. Press-and-hold +
