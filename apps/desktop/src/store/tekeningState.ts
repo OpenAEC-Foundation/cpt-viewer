@@ -47,6 +47,15 @@ export interface TekeningRaster {
   rotation: number;
   /** Verberg dit raster in de PDF- en DWG-export (blijft wél op scherm). */
   hideInExport?: boolean;
+  /** Kleefmeting-streepje onder elke rastercel (NEN-symbool). */
+  kleefmeting?: boolean;
+  /** Nummering-prefix voor de cellen (bv. "S" → S1, S2, …). Leeg =
+   *  default "R01-S01"-notatie. */
+  labelPrefix?: string;
+  /** Startnummer voor de celnummering (default 1). */
+  labelStart?: number;
+  /** Maximaal toegestane h-o-h-afstand (m) bij hoek-slepen. */
+  maxSpacing?: number;
 }
 
 export interface TekeningLine {
@@ -178,6 +187,10 @@ export function tekeningStateToIfcgis(s: TekeningFullState): unknown {
       spacing_y: r.spacingY,
       rotation: r.rotation,
       ...(r.hideInExport ? { hide_in_export: true } : {}),
+      ...(r.kleefmeting ? { kleefmeting: true } : {}),
+      ...(r.labelPrefix ? { label_prefix: r.labelPrefix } : {}),
+      ...(r.labelStart != null ? { label_start: r.labelStart } : {}),
+      ...(r.maxSpacing != null ? { max_spacing: r.maxSpacing } : {}),
     })),
     lines: s.lines.map((l) => ({
       id: l.id,
@@ -240,6 +253,14 @@ export function tekeningStateFromIfcgis(j: unknown): TekeningFullState | null {
       spacingY: Number(r.spacing_y),
       rotation: Number(r.rotation),
       hideInExport: Boolean(r.hide_in_export),
+      kleefmeting: Boolean(r.kleefmeting),
+      labelPrefix: typeof r.label_prefix === "string" ? r.label_prefix : undefined,
+      labelStart: Number.isFinite(Number(r.label_start))
+        ? Number(r.label_start)
+        : undefined,
+      maxSpacing: Number.isFinite(Number(r.max_spacing))
+        ? Number(r.max_spacing)
+        : undefined,
     }),
   );
   const lines = (Array.isArray(t.lines) ? t.lines : []).map(

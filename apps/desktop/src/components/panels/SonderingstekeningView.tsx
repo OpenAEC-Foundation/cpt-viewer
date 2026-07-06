@@ -142,6 +142,11 @@ interface PlacedRaster {
   kleefmeting?: boolean;
   /** Verberg dit raster in de PDF-/DWG-export (blijft wél op scherm). */
   hideInExport?: boolean;
+  /** Nummering-prefix voor de cellen (bv. "S" → S1, S2, …). Leeg/undefined
+   *  = default "R01-S01"-notatie met leading zero. */
+  labelPrefix?: string;
+  /** Startnummer voor de celnummering (default 1). */
+  labelStart?: number;
 }
 
 /** A selection identifies which object the user is currently editing. */
@@ -290,6 +295,23 @@ function rasterPoints(r: PlacedRaster): { lat: number; lon: number; rIdx: number
     }
   }
   return out;
+}
+
+/**
+ * Nummer-label voor rastercel `cellIdx0` (0-based, row-major). Met een
+ * gebruikers-prefix (bv. "S") wordt het S1, S2, … vanaf `labelStart`
+ * (default 1) — zonder leading zeros, zoals sondeerplannen dat noteren.
+ * Zonder prefix de default "R01-S01"-notatie. Gedeeld door de kaart-
+ * markers, de RD-coördinatentabel en de DWG-export zodat de nummering
+ * overal exact gelijk is.
+ */
+function rasterCellLabel(r: PlacedRaster, cellIdx0: number): string {
+  const prefix = r.labelPrefix?.trim();
+  if (prefix) {
+    const start = Number.isFinite(r.labelStart) ? (r.labelStart as number) : 1;
+    return `${prefix}${start + cellIdx0}`;
+  }
+  return `${r.id}-S${String(cellIdx0 + 1).padStart(2, "0")}`;
 }
 
 /**
@@ -442,7 +464,15 @@ function buildDwgPayload(
   for (const r of src.rasters) {
     if (r.hideInExport) continue;
     for (const pt of rasterPoints(r)) {
-      ents.push({ layer: "SONDERINGEN", type: "point", points: [toRd(pt.lat, pt.lon)] });
+      const [x, y] = toRd(pt.lat, pt.lon);
+      ents.push({ layer: "SONDERINGEN", type: "point", points: [[x, y]] });
+      ents.push({
+        layer: "SONDERINGEN",
+        type: "text",
+        points: [[x + OFF, y + OFF]],
+        text: rasterCellLabel(r, pt.rIdx * r.cols + pt.cIdx),
+        height: LABEL_H,
+      });
     }
     const corners = rasterCornersLatLng(r).map((c) => toRd(c.lat, c.lng));
     if (corners.length >= 2) {
@@ -3312,8 +3342,7 @@ export default function SonderingstekeningView() {
         setSelection({ kind: "raster", id: r.id });
       };
       for (const pt of rasterPoints(r)) {
-        const cellIdx = pt.rIdx * r.cols + pt.cIdx + 1;
-        const cellLabel = `${r.id}-S${String(cellIdx).padStart(2, "0")}`;
+        const cellLabel = rasterCellLabel(r, pt.rIdx * r.cols + pt.cIdx);
         const m = L.marker([pt.lat, pt.lon], {
           icon: L.divIcon({
             className: "tek-raster-marker",
@@ -4559,6 +4588,8 @@ export default function SonderingstekeningView() {
             rotation: selectedRaster.rotation,
             kleefmeting: !!selectedRaster.kleefmeting,
             hideInExport: !!selectedRaster.hideInExport,
+            labelPrefix: selectedRaster.labelPrefix ?? "",
+            labelStart: selectedRaster.labelStart ?? 1,
           }
         : null,
       selectedOverlay: selectedOverlay
@@ -4621,6 +4652,11 @@ export default function SonderingstekeningView() {
         spacingX: r.spacingX,
         spacingY: r.spacingY,
         rotation: r.rotation,
+        hideInExport: r.hideInExport,
+        kleefmeting: r.kleefmeting,
+        labelPrefix: r.labelPrefix,
+        labelStart: r.labelStart,
+        maxSpacing: r.maxSpacing,
       })),
       lines: drawnLines.map((l) => ({
         id: l.id,
@@ -4714,6 +4750,11 @@ export default function SonderingstekeningView() {
         spacingX: r.spacingX,
         spacingY: r.spacingY,
         rotation: r.rotation,
+        hideInExport: r.hideInExport,
+        kleefmeting: r.kleefmeting,
+        labelPrefix: r.labelPrefix,
+        labelStart: r.labelStart,
+        maxSpacing: r.maxSpacing,
       })),
     );
     setDrawnLines(
@@ -5046,9 +5087,8 @@ export default function SonderingstekeningView() {
     for (const r of rasters) {
       if (exportSuppress && r.hideInExport) continue;
       for (const pt of rasterPoints(r)) {
-        const cellIdx = pt.rIdx * r.cols + pt.cIdx + 1;
         const [x, y] = WGS84_TO_RD.forward([pt.lon, pt.lat]);
-        rows.push({ id: `${r.id}-S${String(cellIdx).padStart(2, "0")}`, x, y });
+        rows.push({ id: rasterCellLabel(r, pt.rIdx * r.cols + pt.cIdx), x, y });
       }
     }
     for (const p of placed) {

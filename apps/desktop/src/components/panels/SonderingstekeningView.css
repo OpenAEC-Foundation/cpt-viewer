@@ -580,13 +580,14 @@
 }
 
 /* ── RD-coördinatentabel (nog uit te voeren sonderingen) ─────────
-   Automatisch tabelletje linksboven op het papier. pointer-events
+   Automatisch tabelletje rechtsonder op het papier, direct boven het
+   titleblock (dat op bottom 10mm staat en ~50mm hoog is). pointer-events
    none zodat teken-kliks er dwars doorheen op de kaart landen; het
    tabelletje print/exporteert gewoon mee (het is DOM op het papier). */
 .tek-coord-table {
   position: absolute;
-  top: 26px;
-  left: 26px;
+  right: 10mm;
+  bottom: 62mm;
   z-index: 900;
   pointer-events: none;
   background: #ffffff;

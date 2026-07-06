@@ -43,6 +43,10 @@ interface RasterSnapshot {
   kleefmeting?: boolean;
   /** Verberg dit raster in de PDF-/DWG-export (blijft wél op scherm). */
   hideInExport?: boolean;
+  /** Nummering-prefix voor de cellen (bv. "S" → S1, S2, …). */
+  labelPrefix?: string;
+  /** Startnummer voor de celnummering (default 1). */
+  labelStart?: number;
 }
 
 interface OverlaySnapshot {
@@ -306,6 +310,34 @@ export default function TekeningProperties() {
                 {`${Math.round(snap.selectedRaster.rotation)}°`}
               </span>
             </label>
+            <div className="tekprops-row">
+              <label className="tekprops-field">
+                <span>Nummering</span>
+                <input
+                  type="text"
+                  value={snap.selectedRaster.labelPrefix ?? ""}
+                  placeholder="bv. S"
+                  title="Prefix voor de celnummering, bv. 'S' geeft S1, S2, … Leeg = standaard R01-S01-notatie."
+                  onChange={(e) =>
+                    updateRaster({ labelPrefix: e.target.value })
+                  }
+                />
+              </label>
+              <label className="tekprops-field">
+                <span>Startnr</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={999}
+                  value={snap.selectedRaster.labelStart ?? 1}
+                  onChange={(e) =>
+                    updateRaster({
+                      labelStart: Math.max(0, Math.min(999, Number(e.target.value) || 0)),
+                    })
+                  }
+                />
+              </label>
+            </div>
             <label className="tekprops-field tekprops-field-wide tekprops-checkbox">
               <input
                 type="checkbox"
