@@ -12,6 +12,7 @@ import {
   type TekeningFullState,
 } from "../../store/tekeningState";
 import { fetchBagPanden, fetchKadasterPercelen, fetchReverseAddress } from "../../utils/pdokWfs";
+import MapAddressSearch from "./MapAddressSearch";
 import { AdressenLayer } from "../../utils/adressenLayer";
 import ImageCropDialog from "./ImageCropDialog";
 import PdfCropDialog from "./PdfCropDialog";
@@ -5380,11 +5381,34 @@ export default function SonderingstekeningView() {
       window.removeEventListener("ogs:tekening-export-dwg", onExportDwg);
   }, [placed, rasters, drawnLines, coordTags, vlakken, notes, overlay, overlayRotation]);
 
+  // ── Zoekscherm: vlieg naar gezocht adres of coördinaat ─────────
+  // MapAddressSearch dispatcht `ogs:map-fly-to` (gedeeld met de Kaart-
+  // view). Alleen reageren wanneer de tekening de actieve view is,
+  // anders zou een zoekactie op de Kaart ook deze kaart verschuiven.
+  useEffect(() => {
+    const onFlyTo = (e: Event) => {
+      if (document.body.dataset.activeView !== "tekening") return;
+      const ce = e as CustomEvent<{ lat: number; lon: number; zoom?: number }>;
+      const { lat, lon, zoom } = ce.detail ?? {};
+      const map = mapRef.current;
+      if (!map || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
+      map.flyTo([lat, lon], zoom ?? map.getZoom(), { duration: 0.8 });
+    };
+    window.addEventListener("ogs:map-fly-to", onFlyTo as EventListener);
+    return () =>
+      window.removeEventListener("ogs:map-fly-to", onFlyTo as EventListener);
+  }, []);
+
   return (
     <div
       className={`tek-view${frozen ? " tek-view-frozen" : ""}`}
       ref={containerRef}
     >
+      {/* Zoekscherm — zweeft linksboven over de canvas, BUITEN het papier
+          zodat het nooit in de PDF-export of print belandt. Zelfde
+          component als op de Kaart: adressen, plaatsen én RD/WGS84-
+          coördinaten. */}
+      <MapAddressSearch />
       {/* Topbar verwijderd — papier + schaal worden gestuurd vanuit
           de TekeningProperties paneel rechts. Export PDF is uit het
           topbar gehaald (gebruik Bestand → Print of de ribbon-PDF

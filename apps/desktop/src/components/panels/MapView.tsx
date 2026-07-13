@@ -998,8 +998,12 @@ export default function MapView() {
     };
     map.on("zoomend", onZoomEnd);
 
-    // Fly-to handler triggered by the MapAddressSearch component.
+    // Fly-to handler triggered by the MapAddressSearch component. Het
+    // zoekscherm staat ook op de Situatietekening (zelfde event) — alleen
+    // reageren wanneer déze view actief is, anders verschuift een
+    // zoekactie op de tekening stiekem ook de Kaart.
     const onFlyTo = (e: Event) => {
+      if (document.body.dataset.activeView === "tekening") return;
       const ce = e as CustomEvent<{ lat: number; lon: number; zoom?: number }>;
       const { lat, lon, zoom } = ce.detail;
       if (Number.isFinite(lat) && Number.isFinite(lon)) {

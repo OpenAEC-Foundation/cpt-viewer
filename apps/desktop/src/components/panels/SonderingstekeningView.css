@@ -7,6 +7,9 @@
    ────────────────────────────────────────────────────────────────── */
 
 .tek-view {
+  /* relative zodat het zwevende zoekscherm (.map-addrsearch) zich aan de
+     view kan verankeren — buiten het papier, dus nooit in de PDF-export. */
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
