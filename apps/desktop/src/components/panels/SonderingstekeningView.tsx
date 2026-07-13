@@ -4263,11 +4263,11 @@ export default function SonderingstekeningView() {
         }
       } catch (err) {
         console.error("tekening-export-pdf failed", err);
-        setToast("PDF-export mislukt");
+        setToast(`PDF-export mislukt: ${String(err).slice(0, 160)}`);
       } finally {
         exporting = false;
         setExportSuppress(false);
-        setTimeout(() => setToast(null), 3000);
+        setTimeout(() => setToast(null), 6000);
       }
     };
     const onExportPdf = () => { void doExportPdf(); };
