@@ -1018,6 +1018,14 @@ body,
   to   { opacity: 1; }
 }
 
+/* ── ProjectSettingsDialog ── */
+/* De modal-body zelf is bewust padding-loos (sommige dialogs willen
+   full-bleed content). Het projectinfo-formulier krijgt daarom een eigen
+   binnenrand zodat de velden niet tegen de dialoograndjes plakken. */
+.ps-form {
+  padding: 20px 24px;
+}
+
 /* ── ProjectSettingsDialog: CPT-list section ── */
 .ps-section-title {
   font: 700 0.85rem var(--font-heading, "Space Grotesk"), 'Inter', sans-serif;

@@ -111,7 +111,7 @@ export default function ProjectSettingsDialog({ open, onClose }: ProjectSettings
           }}
         />
       ) : (
-        <form onSubmit={(e) => { e.preventDefault(); onClose(); }}>
+        <form className="ps-form" onSubmit={(e) => { e.preventDefault(); onClose(); }}>
           {/* Geen extra "Projectinfo"-header hier — die staat al in de
               modal-titelbalk; dubbel tonen ziet er onverzorgd uit. */}
           <Field label={t("title", "Titel")}
@@ -254,7 +254,7 @@ export default function ProjectSettingsDialog({ open, onClose }: ProjectSettings
 
 function NoProjectHint({ onClose, onCreate }: { onClose: () => void; onCreate: () => void }) {
   return (
-    <div style={{ padding: "16px 4px" }}>
+    <div style={{ padding: "20px 24px" }}>
       <p style={{ margin: 0, marginBottom: 12, color: "var(--theme-text)" }}>
         Geen project actief — open of maak een <code>.ifcgis</code> project.
       </p>
