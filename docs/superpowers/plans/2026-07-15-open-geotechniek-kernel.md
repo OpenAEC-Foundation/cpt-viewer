@@ -561,6 +561,7 @@ git commit -m "feat(bro-xml): parse geotechnical and geological boreholes"
 - Create: `C:/Users/rickd/Documents/GitHub/crates-warehouse/bro-xml/README.md`
 - Create: `C:/Users/rickd/Documents/GitHub/crates-warehouse/bro-xml/tests/reference_codes.rs`
 - Modify: `C:/Users/rickd/Documents/GitHub/crates-warehouse/bro-xml/src/lib.rs`
+- Modify: `C:/Users/rickd/Documents/GitHub/crates-warehouse/Cargo.toml`
 - Create: `C:/Users/rickd/Documents/GitHub/crates-warehouse/tools/bro-reference-codegen/Cargo.toml`
 - Create: `C:/Users/rickd/Documents/GitHub/crates-warehouse/tools/bro-reference-codegen/src/main.rs`
 
@@ -592,7 +593,7 @@ Define `ReferenceCodeSet` for geotechnical soil name, lithology, colour, and qua
 
 - [ ] **Step 4: Add isolated Rust code-generation tooling**
 
-Create a standalone tool crate under `tools/bro-reference-codegen` and add that path to the workspace `exclude` list, not `members`. Its output format must be deterministic: sort by code, escape Rust strings, and write the complete `reference_codes.rs` module to a caller-supplied path. The tool may use blocking `reqwest`; `bro-xml` itself must not depend on `reqwest`.
+Create a standalone tool crate under `tools/bro-reference-codegen`, set `publish = false` in its `[package]` table, and add it to workspace `members`. Its output format must be deterministic: sort by code, escape Rust strings, and write the complete `reference_codes.rs` module to a caller-supplied path. The tool may use blocking `reqwest`; `bro-xml` itself must not depend on `reqwest`. Do not modify the workspace `exclude` list.
 
 - [ ] **Step 5: Write the README with Bedrock attribution**
 
