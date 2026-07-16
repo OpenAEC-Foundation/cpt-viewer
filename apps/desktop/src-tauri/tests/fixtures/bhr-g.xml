@@ -4,16 +4,19 @@
   <projectName>Geologisch project</projectName>
   <projectNumber>GG-7</projectNumber>
   <researchReportDate><yearMonth>2026-02</yearMonth></researchReportDate>
-  <researchStartDate>2026-02-01</researchStartDate>
+  <unrelatedDate><date>1900-01-01</date></unrelatedDate>
   <accountableParty>ORG-77</accountableParty>
   <deliveryContext>register</deliveryContext>
   <finalDepthBoring>6.0</finalDepthBoring>
-  <boring />
+  <boring>
+    <boringStartDate><PartialDate><date>2026-02-01</date></PartialDate></boringStartDate>
+    <boringEndDate><PartialDate><date>2026-02-03</date></PartialDate></boringEndDate>
+  </boring>
   <descriptiveBoreholeLog>
     <layer><layer>
       <upperBoundary>0.0</upperBoundary>
       <lowerBoundary>2.0</lowerBoundary>
-      <lithology>zand</lithology>
+      <soilNameNEN5104>matigFijnZand</soilNameNEN5104>
       <colour>geel</colour>
       <grainSize>matigFijn</grainSize>
     </layer></layer>

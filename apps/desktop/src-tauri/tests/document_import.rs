@@ -50,7 +50,12 @@ fn bhr_g_dto_uses_lithology_and_readable_extension_labels() {
     );
     assert_eq!(value["data"]["metadata"]["project_number"], "GG-7");
     assert_eq!(value["data"]["metadata"]["description_date"], "2026-02");
-    assert_eq!(value["data"]["layers"][0]["soil_name"], "zand");
+    assert_eq!(value["data"]["metadata"]["start_date"], "2026-02-01");
+    assert_eq!(value["data"]["metadata"]["end_date"], "2026-02-03");
+    assert_eq!(
+        value["data"]["layers"][0]["soil_name"],
+        "matigFijnZand"
+    );
     assert_eq!(
         value["data"]["layers"][0]["secondary"][0],
         serde_json::json!({
