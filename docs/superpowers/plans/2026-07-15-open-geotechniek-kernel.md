@@ -875,9 +875,11 @@ Expected: all workspace tests pass. If existing absolute-path `cpt-core` fixture
 
 - [ ] **Step 5: Verify package metadata**
 
-Run: `cargo package -p open-geotechniek-kernel --allow-dirty`
+Run: `cargo package -p open-geotechniek-kernel --allow-dirty --no-verify`
 
-Expected: package verification succeeds and includes README and tests.
+Expected: package assembly succeeds and includes README, tests, and fixtures. Full
+verification is deferred until the local `bro-xml` and `cpt-core` dependency chain
+has been published; publishing crates is not part of this extraction task.
 
 - [ ] **Step 6: Commit Task 7**
 
@@ -1163,12 +1165,14 @@ cargo clippy -p bro-xml -p open-geotechniek-kernel --all-targets -- -D warnings
 cargo test -p bro-xml
 cargo test -p open-geotechniek-kernel
 cargo package -p bro-xml --allow-dirty
-cargo package -p open-geotechniek-kernel --allow-dirty
+cargo package -p open-geotechniek-kernel --allow-dirty --no-verify
 cargo test -p bro-xml --doc
 cargo test -p open-geotechniek-kernel --doc
 ```
 
-Expected: every command exits 0.
+Expected: every command exits 0. The kernel package is assembled with
+`--no-verify` because its local dependency chain is intentionally not published by
+this plan; its focused tests and doctests provide the verification step.
 
 From `cpt-viewer/apps/desktop`:
 
