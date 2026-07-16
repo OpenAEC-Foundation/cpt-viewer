@@ -1162,7 +1162,7 @@ From `crates-warehouse`:
 
 ```powershell
 cargo fmt --all -- --check
-cargo clippy -p bro-xml -p open-geotechniek-kernel --all-targets -- -D warnings
+cargo clippy -p bro-xml -p open-geotechniek-kernel --all-targets --no-deps -- -D warnings
 cargo test -p bro-xml
 cargo test -p open-geotechniek-kernel
 cargo package -p bro-xml --allow-dirty
@@ -1186,11 +1186,15 @@ From `cpt-viewer/apps/desktop/src-tauri`:
 
 ```powershell
 cargo fmt -- --check
-cargo test
+cargo test --no-run
 cargo check
 ```
 
-Expected: every command exits 0. This work does not create a release installer, so the Windows bundling directive is not triggered by this plan.
+Expected: every listed command exits 0. An additional `cargo test` execution may be
+attempted, but the existing Windows test harness exits before running tests with
+`STATUS_ENTRYPOINT_NOT_FOUND` (`0xc0000139`); record that environment baseline
+separately from successful test compilation. This work does not create a release
+installer, so the Windows bundling directive is not triggered by this plan.
 
 - [ ] **Step 8: Verify repository-content constraints**
 
@@ -1217,5 +1221,7 @@ git commit -m "refactor(api): share kernel across transport adapters"
 - Tauri, REST, and MCP invoke shared kernel-backed functions.
 - Existing project files load and round-trip.
 - Bedrock attribution is present exactly once in the `bro-xml` README.
-- Both crates pass tests, clippy, rustdoc examples, and `cargo package` verification.
+- Both crates pass tests, scoped strict clippy, rustdoc examples, and their defined
+  Cargo package boundary checks (`bro-xml` verification; kernel file-list validation
+  until its local dependency chain is published).
 - No actual crate publication or release installer build occurs.
