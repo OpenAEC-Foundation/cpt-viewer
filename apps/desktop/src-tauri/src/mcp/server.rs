@@ -242,7 +242,7 @@ impl McpServer {
             "get_app_state" => {
                 let tm = self.tenant_manager.lock().map_err(|e| e.to_string())?;
                 let tenants_count = tm.list_tenants().unwrap_or_default().len();
-                let cpts_count = self.app_state.cpts.lock().map_err(|e| e.to_string())?.len();
+                let cpts_count = self.app_state.with_project(|project| project.cpts().count())?;
                 Ok(json!({
                     "status": "running",
                     "version": env!("CARGO_PKG_VERSION"),
@@ -369,13 +369,12 @@ impl McpServer {
                     .map_err(|e| format!("Invalid cpt_ids: {}", e))?;
                 let format = arg_str("format")?;
                 // Snapshot CPTs zodat de async-werker zonder lock kan draaien.
-                let cpts: Vec<Cpt> = {
-                    let cache = self.app_state.cpts.lock().map_err(|e| e.to_string())?;
+                let cpts: Vec<Cpt> = self.app_state.with_project(|kernel_project| {
                     cpt_ids
                         .iter()
-                        .filter_map(|id| cache.get(id).cloned())
+                        .filter_map(|id| kernel_project.cpts().find(|cpt| cpt.id == *id).cloned())
                         .collect()
-                };
+                })?;
                 let result = tokio_rt()
                     .block_on(ifc_cmd::generate_ifc_core(project, cpts, format))?;
                 serde_json::to_string_pretty(&result).map_err(|e| e.to_string())
@@ -404,13 +403,12 @@ impl McpServer {
                 let project_val = arg_value("project")?;
                 let project: report_cmd::ProjectMetaInput = serde_json::from_value(project_val)
                     .map_err(|e| format!("Invalid project meta: {}", e))?;
-                let cpts: Vec<Cpt> = {
-                    let cache = self.app_state.cpts.lock().map_err(|e| e.to_string())?;
+                let cpts: Vec<Cpt> = self.app_state.with_project(|kernel_project| {
                     cpt_ids
                         .iter()
-                        .filter_map(|id| cache.get(id).cloned())
+                        .filter_map(|id| kernel_project.cpts().find(|cpt| cpt.id == *id).cloned())
                         .collect()
-                };
+                })?;
                 // Optionele sectie-selectie — zelfde vorm als de GUI/REST
                 // (cover, coordTable, map, perCpt, sbtLegend, metadata).
                 let sections: Option<cpt_core::ReportSections> = args
@@ -437,13 +435,12 @@ impl McpServer {
                 let project: report_cmd::ProjectMetaInput = serde_json::from_value(project_val)
                     .map_err(|e| format!("Invalid project meta: {}", e))?;
                 let output_path = arg_str("output_path")?;
-                let cpts: Vec<Cpt> = {
-                    let cache = self.app_state.cpts.lock().map_err(|e| e.to_string())?;
+                let cpts: Vec<Cpt> = self.app_state.with_project(|kernel_project| {
                     cpt_ids
                         .iter()
-                        .filter_map(|id| cache.get(id).cloned())
+                        .filter_map(|id| kernel_project.cpts().find(|cpt| cpt.id == *id).cloned())
                         .collect()
-                };
+                })?;
                 tokio_rt().block_on(
                     report_cmd::generate_report_core(cpts, project, output_path.clone(), None),
                 )?;

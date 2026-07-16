@@ -154,7 +154,7 @@ async fn index() -> Json<Value> {
 }
 
 async fn health(State(s): State<ApiState>) -> Json<Value> {
-    let cpts_loaded = s.app.cpts.lock().map(|m| m.len()).unwrap_or(0);
+    let cpts_loaded = s.app.with_project(|project| project.cpts().count()).unwrap_or(0);
     Json(json!({
         "status": "running",
         "service": "Open Geotechniek Studio REST API",
@@ -188,11 +188,10 @@ async fn get_cpt(
     State(s): State<ApiState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    let cache = s.app.cpts.lock().map_err(|e| e.to_string())?;
-    let cpt = cache
-        .get(&id)
+    let cpt = s.app
+        .with_project(|project| project.cpts().find(|cpt| cpt.id == id).cloned())?
         .ok_or_else(|| format!("onbekende CPT id: {id}"))?;
-    Ok(Json(serde_json::to_value(cpt).map_err(|e| e.to_string())?))
+    Ok(Json(serde_json::to_value(&cpt).map_err(|e| e.to_string())?))
 }
 
 async fn close_cpt(
@@ -275,18 +274,17 @@ struct ReportBody {
 /// fout: stilletjes overslaan gaf een HTTP 200 met een half resultaat —
 /// voor een script/CI-consument ondetecteerbaar.
 fn snapshot_cpts(ids: &[String], s: &ApiState) -> Result<Vec<Cpt>, ApiError> {
-    let (found, missing): (Vec<Cpt>, Vec<String>) = {
-        let cache = s.app.cpts.lock().map_err(|e| e.to_string())?;
+    let (found, missing): (Vec<Cpt>, Vec<String>) = s.app.with_project(|project| {
         let mut found = Vec::new();
         let mut missing = Vec::new();
         for id in ids {
-            match cache.get(id) {
-                Some(c) => found.push(c.clone()),
+            match project.cpts().find(|cpt| cpt.id == *id) {
+                Some(cpt) => found.push(cpt.clone()),
                 None => missing.push(id.clone()),
             }
         }
         (found, missing)
-    };
+    })?;
     if !missing.is_empty() {
         return Err(ApiError(format!(
             "onbekende cpt_ids: {} (importeer ze eerst via POST /api/cpts)",

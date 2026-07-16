@@ -1,8 +1,8 @@
-mod commands;
+pub mod commands;
 mod mcp;
 mod pdf;
 mod rest;
-mod state;
+pub mod state;
 
 use pdf::brand::BrandConfig;
 use pdf::engine::ReportEngine;
