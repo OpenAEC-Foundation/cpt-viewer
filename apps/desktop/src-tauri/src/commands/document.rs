@@ -140,7 +140,7 @@ fn validate_expected_kind(
     Err(format!("document is geen {expected_name}"))
 }
 
-fn object_to_dto(object: GeotechnicalObject, source_file: &str) -> ImportedDocumentDto {
+pub(crate) fn object_to_dto(object: GeotechnicalObject, source_file: &str) -> ImportedDocumentDto {
     match object {
         GeotechnicalObject::Cpt(cpt) => ImportedDocumentDto::Cpt(cpt),
         GeotechnicalObject::BhrGt(document) => {

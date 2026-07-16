@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dispatchDocument xmlns="http://www.broservices.nl/xsd/dsgt/1.1" xmlns:bhrgt="http://www.broservices.nl/xsd/bhrgt/2.1" xmlns:gml="http://www.opengis.net/gml/3.2">
+  <broId>BHR000000000001</broId>
+  <deliveryAccountableParty>00000001</deliveryAccountableParty>
+  <qualityRegime>IMBRO</qualityRegime>
+  <bhrgt:deliveredLocation>
+    <gml:Point srsName="urn:ogc:def:crs:EPSG::28992"><gml:pos>100000 450000</gml:pos></gml:Point>
+  </bhrgt:deliveredLocation>
+  <bhrgt:finalDepthBoring uom="m">2.0</bhrgt:finalDepthBoring>
+  <bhrgt:descriptionProcedure>ISO 14688</bhrgt:descriptionProcedure>
+  <bhrgt:boringProcedure>handboring</bhrgt:boringProcedure>
+  <bhrgt:descriptiveBoreholeLog>
+    <bhrgt:descriptionLocation><bhrgt:upperBoundary uom="m">0.0</bhrgt:upperBoundary><bhrgt:lowerBoundary uom="m">2.0</bhrgt:lowerBoundary></bhrgt:descriptionLocation>
+    <bhrgt:soilName>zand</bhrgt:soilName>
+    <bhrgt:colour>geel</bhrgt:colour>
+  </bhrgt:descriptiveBoreholeLog>
+</dispatchDocument>

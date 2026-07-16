@@ -3429,6 +3429,7 @@ dependencies = [
  "bro-xml",
  "chrono",
  "cpt-core",
+ "http-body-util",
  "lopdf 0.34.0",
  "open-geotechniek-kernel",
  "openaec-core",
@@ -3448,6 +3449,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
  "tokio",
+ "tower",
  "ttf-parser 0.25.1",
 ]
 

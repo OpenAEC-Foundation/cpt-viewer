@@ -54,3 +54,7 @@ bro-xml        = { path = "../../../../crates-warehouse/bro-xml" }
 openaec-core   = { path = "../../../../crates-warehouse/openaec-core" }
 openaec-engine = { path = "../../../../crates-warehouse/openaec-engine" }
 acadrust = "0.4.0"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

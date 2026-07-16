@@ -40,15 +40,15 @@ use axum::{
     extract::{Path, State},
     http::{header, StatusCode},
     response::{IntoResponse, Response},
-    routing::{delete, get, post},
+    routing::{get, post},
     Json, Router,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::commands::{
-    bro_api as bro_cmd, cpt as cpt_cmd, dwg_export as dwg_cmd, export as export_cmd,
-    ifc as ifc_cmd, project as project_cmd, report as report_cmd,
+    bro_api as bro_cmd, cpt as cpt_cmd, document as document_cmd, dwg_export as dwg_cmd,
+    export as export_cmd, ifc as ifc_cmd, project as project_cmd, report as report_cmd,
 };
 use crate::state::AppState;
 use cpt_core::Cpt;
@@ -89,11 +89,12 @@ pub fn run(port: u16) {
     });
 }
 
-async fn serve(app: Arc<AppState>, port: u16) -> std::io::Result<()> {
+fn router(app: Arc<AppState>) -> Router {
     let state = ApiState { app };
-    let router = Router::new()
+    Router::new()
         .route("/api", get(index))
         .route("/api/health", get(health))
+        .route("/api/objects", get(list_objects).post(open_object))
         .route("/api/cpts", get(list_cpts).post(open_cpt))
         .route("/api/cpts/:id", get(get_cpt).delete(close_cpt))
         .route("/api/cpts/:id/layers", get(detect_layers))
@@ -112,8 +113,11 @@ async fn serve(app: Arc<AppState>, port: u16) -> std::io::Result<()> {
         // GEF/BRO-XML-uploads en DWG-payloads met base64-afbeeldingen.
         // 64 MB dekt elk redelijk sondeerbestand.
         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
-        .with_state(state);
+        .with_state(state)
+}
 
+async fn serve(app: Arc<AppState>, port: u16) -> std::io::Result<()> {
+    let router = router(app);
     let addr = format!("127.0.0.1:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     eprintln!("[rest] Open Geotechniek Studio REST API → http://{addr}");
@@ -132,7 +136,9 @@ async fn index() -> Json<Value> {
         "docs": "docs/API.md in de repository",
         "endpoints": [
             { "method": "GET",    "path": "/api",                      "description": "Deze index" },
-            { "method": "GET",    "path": "/api/health",               "description": "Status + aantal geladen CPT's" },
+            { "method": "GET",    "path": "/api/health",               "description": "Status + aantallen geladen objecten en CPT's" },
+            { "method": "GET",    "path": "/api/objects",              "description": "Lijst van alle geotechnische objecten" },
+            { "method": "POST",   "path": "/api/objects",              "description": "Geotechnisch document parsen en cachen", "body": { "content": "string (bestandsinhoud)", "filename": "string" } },
             { "method": "GET",    "path": "/api/cpts",                 "description": "Lijst geparste CPT's (incl. meetdata)" },
             { "method": "POST",   "path": "/api/cpts",                 "description": "GEF- of BRO-XML parsen en cachen", "body": { "content": "string (bestandsinhoud)", "filename": "string" } },
             { "method": "GET",    "path": "/api/cpts/:id",             "description": "Eén CPT (incl. meetdata)" },
@@ -154,11 +160,15 @@ async fn index() -> Json<Value> {
 }
 
 async fn health(State(s): State<ApiState>) -> Json<Value> {
-    let cpts_loaded = s.app.with_project(|project| project.cpts().count()).unwrap_or(0);
+    let (objects_loaded, cpts_loaded) = s
+        .app
+        .with_project(|project| (project.objects().count(), project.cpts().count()))
+        .unwrap_or((0, 0));
     Json(json!({
         "status": "running",
         "service": "Open Geotechniek Studio REST API",
         "version": env!("CARGO_PKG_VERSION"),
+        "objects_loaded": objects_loaded,
         "cpts_loaded": cpts_loaded,
     }))
 }
@@ -168,12 +178,40 @@ async fn list_cpts(State(s): State<ApiState>) -> Result<Json<Value>, ApiError> {
     Ok(Json(serde_json::to_value(cpts).map_err(|e| e.to_string())?))
 }
 
+async fn list_objects(State(s): State<ApiState>) -> Result<Json<Value>, ApiError> {
+    let objects = s.app.with_project(|project| {
+        project
+            .objects()
+            .cloned()
+            .map(|object| document_cmd::object_to_dto(object, ""))
+            .collect::<Vec<_>>()
+    })?;
+    Ok(Json(
+        serde_json::to_value(objects).map_err(|error| error.to_string())?,
+    ))
+}
+
 #[derive(Deserialize)]
 struct OpenCptBody {
     /// Ruwe inhoud van het GEF- of BRO-XML-bestand.
     content: String,
     /// Bestandsnaam (de extensie stuurt formaat-detectie).
     filename: String,
+}
+
+async fn open_object(
+    State(s): State<ApiState>,
+    Json(b): Json<OpenCptBody>,
+) -> Result<Json<Value>, ApiError> {
+    let object = document_cmd::open_geotechnical_document_core(
+        &b.content,
+        &b.filename,
+        document_cmd::ExpectedDocumentKind::Any,
+        &s.app,
+    )?;
+    Ok(Json(
+        serde_json::to_value(object).map_err(|error| error.to_string())?,
+    ))
 }
 
 async fn open_cpt(
@@ -188,7 +226,8 @@ async fn get_cpt(
     State(s): State<ApiState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    let cpt = s.app
+    let cpt = s
+        .app
         .with_project(|project| project.cpts().find(|cpt| cpt.id == id).cloned())?
         .ok_or_else(|| format!("onbekende CPT id: {id}"))?;
     Ok(Json(serde_json::to_value(&cpt).map_err(|e| e.to_string())?))
@@ -207,13 +246,12 @@ async fn detect_layers(
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     let layers = cpt_cmd::detect_layers_core(&id, &s.app)?;
-    Ok(Json(serde_json::to_value(layers).map_err(|e| e.to_string())?))
+    Ok(Json(
+        serde_json::to_value(layers).map_err(|e| e.to_string())?,
+    ))
 }
 
-async fn cpt_csv(
-    State(s): State<ApiState>,
-    Path(id): Path<String>,
-) -> Result<Response, ApiError> {
+async fn cpt_csv(State(s): State<ApiState>, Path(id): Path<String>) -> Result<Response, ApiError> {
     let csv = export_cmd::csv_string_core(&id, &s.app)?;
     Ok((
         StatusCode::OK,
@@ -247,11 +285,9 @@ struct DwgBody {
 async fn export_dwg(Json(b): Json<DwgBody>) -> Result<Response, ApiError> {
     let format = b.format.unwrap_or_else(|| "dxf".into());
     // CPU-gebonden en schrijft een temp-bestand — buiten de async-pool.
-    let bytes = tokio::task::spawn_blocking(move || {
-        dwg_cmd::export_dwg_bytes(&b.payload, &format)
-    })
-    .await
-    .map_err(|e| format!("dwg task: {e}"))??;
+    let bytes = tokio::task::spawn_blocking(move || dwg_cmd::export_dwg_bytes(&b.payload, &format))
+        .await
+        .map_err(|e| format!("dwg task: {e}"))??;
     Ok((
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/octet-stream")],
@@ -327,7 +363,9 @@ async fn generate_ifc(
     let cpts = snapshot_cpts(&b.cpt_ids, &s)?;
     let format = b.format.unwrap_or_else(|| "ifc4x3".into());
     let result = ifc_cmd::generate_ifc_core(b.project, cpts, format).await?;
-    Ok(Json(serde_json::to_value(result).map_err(|e| e.to_string())?))
+    Ok(Json(
+        serde_json::to_value(result).map_err(|e| e.to_string())?,
+    ))
 }
 
 async fn project_ifcx(Json(payload): Json<Value>) -> Result<Response, ApiError> {
@@ -347,12 +385,16 @@ struct AreaBody {
 
 async fn bro_area(Json(b): Json<AreaBody>) -> Result<Json<Value>, ApiError> {
     let features = bro_cmd::fetch_bro_area_core(b.bbox).await?;
-    Ok(Json(serde_json::to_value(features).map_err(|e| e.to_string())?))
+    Ok(Json(
+        serde_json::to_value(features).map_err(|e| e.to_string())?,
+    ))
 }
 
 async fn bro_bores(Json(b): Json<AreaBody>) -> Result<Json<Value>, ApiError> {
     let features = bro_cmd::fetch_bro_bores_core(b.bbox).await?;
-    Ok(Json(serde_json::to_value(features).map_err(|e| e.to_string())?))
+    Ok(Json(
+        serde_json::to_value(features).map_err(|e| e.to_string())?,
+    ))
 }
 
 async fn bro_cpt(Path(bro_id): Path<String>) -> Result<Response, ApiError> {
@@ -375,9 +417,86 @@ async fn bro_bore(Path(bro_id): Path<String>) -> Result<Response, ApiError> {
         .into_response())
 }
 
-async fn bro_meta(
-    Path((kind, bro_id)): Path<(String, String)>,
-) -> Result<Json<Value>, ApiError> {
+async fn bro_meta(Path((kind, bro_id)): Path<(String, String)>) -> Result<Json<Value>, ApiError> {
     let meta = bro_cmd::fetch_bro_object_metadata_core(&bro_id, &kind).await?;
     Ok(Json(serde_json::to_value(meta).map_err(|e| e.to_string())?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    fn json_request(uri: &str, body: Value) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    fn get_request(uri: &str) -> Request<Body> {
+        Request::builder().uri(uri).body(Body::empty()).unwrap()
+    }
+
+    async fn response_json(response: Response) -> Value {
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn generic_object_route_imports_borehole() {
+        let app = router(Arc::new(AppState::default()));
+        let response = app
+            .oneshot(json_request(
+                "/api/objects",
+                json!({
+                    "content": include_str!("../tests/fixtures/bhr-gt-minimal.xml"),
+                    "filename": "bore.xml"
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["kind"], "bore");
+        assert_eq!(body["data"]["id"], "BHR000000000001");
+    }
+
+    #[tokio::test]
+    async fn generic_object_list_and_health_count_all_objects() {
+        let state = Arc::new(AppState::default());
+        document_cmd::open_geotechnical_document_core(
+            include_str!("../tests/fixtures/bhr-gt-minimal.xml"),
+            "bore.xml",
+            document_cmd::ExpectedDocumentKind::Any,
+            &state,
+        )
+        .unwrap();
+        let objects = response_json(
+            router(state.clone())
+                .oneshot(get_request("/api/objects"))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(objects[0]["kind"], "bore");
+        assert_eq!(objects[0]["data"]["id"], "BHR000000000001");
+
+        let health = response_json(
+            router(state)
+                .oneshot(get_request("/api/health"))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(health["objects_loaded"], 1);
+        assert_eq!(health["cpts_loaded"], 0);
+    }
 }
