@@ -760,7 +760,7 @@ export async function loadBoreFromContent(
   path?: string,
 ): Promise<Bore> {
   const { geotechnicalDocument } = await import("../utils/platform");
-  const imported = await geotechnicalDocument.parse(xml, filename);
+  const imported = await geotechnicalDocument.parse(xml, filename, "bore");
   if (imported.kind !== "bore") {
     throw new Error(`${filename} bevat een CPT, geen boring.`);
   }
@@ -907,7 +907,7 @@ export async function addBoreToActiveProject(
   filename: string,
 ): Promise<Bore> {
   const { geotechnicalDocument } = await import("../utils/platform");
-  const imported = await geotechnicalDocument.parse(xml, filename);
+  const imported = await geotechnicalDocument.parse(xml, filename, "bore");
   if (imported.kind !== "bore") {
     throw new Error(`${filename} bevat een CPT, geen boring.`);
   }

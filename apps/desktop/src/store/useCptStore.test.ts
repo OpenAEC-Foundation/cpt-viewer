@@ -53,6 +53,7 @@ describe("native geotechnical document routing", () => {
     expect(invokeMock).toHaveBeenCalledWith("open_geotechnical_document", {
       content: "<xml />",
       filename: "bore.xml",
+      expectedKind: "bore",
     });
     const documents = useCptStore.getState().documents;
     const document = documents[documents.length - 1];
@@ -84,6 +85,7 @@ describe("native geotechnical document routing", () => {
     expect(invokeMock).toHaveBeenCalledWith("open_geotechnical_document", {
       content: "<CPT_O />",
       filename: "cpt.xml",
+      expectedKind: "cpt",
     });
     const documents = useCptStore.getState().documents;
     const document = documents[documents.length - 1];

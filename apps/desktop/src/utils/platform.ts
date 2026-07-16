@@ -117,16 +117,18 @@ export const bro = {
 export type ImportedGeotechnicalDocument =
   | { kind: "cpt"; data: Cpt }
   | { kind: "bore"; data: Bore };
+export type ExpectedGeotechnicalDocumentKind = "any" | "cpt" | "bore";
 
 export const geotechnicalDocument = {
   async parse(
     content: string,
     filename: string,
+    expectedKind: ExpectedGeotechnicalDocumentKind = "any",
   ): Promise<ImportedGeotechnicalDocument> {
     if (IS_TAURI) {
       return invoke<ImportedGeotechnicalDocument>(
         "open_geotechnical_document",
-        { content, filename },
+        { content, filename, expectedKind },
       );
     }
     const { looksLikeGef, parseGef } = await import("../types/gefParser");
@@ -144,7 +146,7 @@ export const geotechnicalDocument = {
 
 export const cpt = {
   async parse(content: string, filename: string): Promise<Cpt> {
-    const document = await geotechnicalDocument.parse(content, filename);
+    const document = await geotechnicalDocument.parse(content, filename, "cpt");
     if (document.kind !== "cpt") {
       throw new Error(`${filename} bevat een boring, geen CPT.`);
     }
