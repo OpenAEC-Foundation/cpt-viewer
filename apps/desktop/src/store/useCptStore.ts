@@ -2,7 +2,6 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { Cpt, ProjectMeta } from "../types/cpt";
 import type { Bore } from "../types/bore";
-import { parseBhrgtXml, looksLikeBoringXml } from "../types/bore";
 import {
   setPendingTekeningRestore,
   tekeningStateFromIfcgis,
@@ -685,26 +684,7 @@ export function scheduleIfcGenerate(doc: AppDocument): void {
 
 // ─── External helpers ────────────────────────────────────────────
 
-/**
- * Parses a CPT (GEF / BRO-XML) via de `open_cpt` Tauri-command en
- * opent het als nieuwe CptDocument-tab. Altijd nieuwe tab — opent
- * GEEN CPT in een bestaand project (gebruik `addCptToActiveProject`
- * voor die flow).
- *
- * Browser-fallback: als `invoke()` faalt (geen Tauri-runtime, of
- * `open_cpt` command niet beschikbaar) en de content er als GEF
- * uitziet, gebruiken we de pure-TS `parseGef` parser zodat de
- * webversie van de app GEF-bestanden óók kan openen.
- */
-export async function loadCptFromContent(
-  content: string,
-  filename: string,
-  path?: string,
-): Promise<Cpt> {
-  // Eén platform-call — desktop gaat naar Rust (autoritair), web
-  // naar de TS-parsers (gefParser + broCptParser). Zie utils/platform.ts.
-  const { cpt: cptPlatform } = await import("../utils/platform");
-  const cpt = await cptPlatform.parse(content, filename);
+function addCptDocument(cpt: Cpt, filename: string, path?: string): void {
   let createdDoc: CptDocument | null = null;
   useCptStore.setState((s) => {
     const doc: CptDocument = {
@@ -724,21 +704,14 @@ export async function loadCptFromContent(
     schedulePdfPreview(createdDoc);
     scheduleIfcGenerate(createdDoc);
   }
-  return cpt;
 }
 
-/**
- * Parses a BHR-GT (borehole) XML in TypeScript and opens it as a brand-
- * new BoreDocument tab. Used by the BRO popup's "Open in viewer" action
- * when the marker is a boring. Always creates a fresh tab — borings can
- * also be added to a project via a future `addBoreToActiveProject` helper.
- */
-export async function loadBoreFromContent(
-  xml: string,
+function addBoreDocument(
+  bore: Bore,
+  rawXml: string,
   filename: string,
   path?: string,
-): Promise<Bore> {
-  const bore = parseBhrgtXml(xml, filename);
+): void {
   useCptStore.setState((s) => {
     const doc: BoreDocument = {
       kind: "bore",
@@ -746,13 +719,53 @@ export async function loadBoreFromContent(
       title: bore.id || filename,
       path,
       bore,
-      rawXml: xml,
+      rawXml,
     };
     const documents = [...s.documents, doc];
     const activeDocId = doc.id;
     const derived = deriveFromActive(documents, activeDocId);
     return { documents, activeDocId, ...derived };
   });
+}
+
+/**
+ * Parses a CPT (GEF / BRO-XML) via de native document command en
+ * opent het als nieuwe CptDocument-tab. Altijd nieuwe tab — opent
+ * GEEN CPT in een bestaand project (gebruik `addCptToActiveProject`
+ * voor die flow).
+ *
+ * Browser sessions support GEF through the presentation-side fallback;
+ * BRO XML parsing is owned by the desktop kernel.
+ */
+export async function loadCptFromContent(
+  content: string,
+  filename: string,
+  path?: string,
+): Promise<Cpt> {
+  // Eén platform-call: native kernel in desktop, GEF-only in browsers.
+  const { cpt: cptPlatform } = await import("../utils/platform");
+  const cpt = await cptPlatform.parse(content, filename);
+  addCptDocument(cpt, filename, path);
+  return cpt;
+}
+
+/**
+ * Parses a borehole document through the native kernel and opens it as a
+ * new BoreDocument tab. Always creates a fresh tab; project insertion uses
+ * `addBoreToActiveProject`.
+ */
+export async function loadBoreFromContent(
+  xml: string,
+  filename: string,
+  path?: string,
+): Promise<Bore> {
+  const { geotechnicalDocument } = await import("../utils/platform");
+  const imported = await geotechnicalDocument.parse(xml, filename);
+  if (imported.kind !== "bore") {
+    throw new Error(`${filename} bevat een CPT, geen boring.`);
+  }
+  const bore = imported.data;
+  addBoreDocument(bore, xml, filename, path);
   return bore;
 }
 
@@ -886,20 +899,19 @@ export async function addCptToActiveProject(
 
 /**
  * Voeg een boring toe aan het actieve project. Analoog aan
- * addCptToActiveProject maar dan voor BHR-GT XML. Parsing gebeurt
- * client-side (parseBhrgtXml) — geen Rust roundtrip nodig. Als er
- * geen actief project is wordt de boring als losse Bore-tab geopend.
+ * addCptToActiveProject maar dan voor een native geparseerde boring.
+ * Als er geen actief project is wordt de boring als losse Bore-tab geopend.
  */
 export async function addBoreToActiveProject(
   xml: string,
   filename: string,
 ): Promise<Bore> {
-  if (!looksLikeBoringXml(xml)) {
-    throw new Error(
-      `${filename}: lijkt geen BHR-GT XML (geen <BHR_*_O> root gevonden)`,
-    );
+  const { geotechnicalDocument } = await import("../utils/platform");
+  const imported = await geotechnicalDocument.parse(xml, filename);
+  if (imported.kind !== "bore") {
+    throw new Error(`${filename} bevat een CPT, geen boring.`);
   }
-  const bore = parseBhrgtXml(xml, filename);
+  const bore = imported.data;
   const state = useCptStore.getState();
   const active = state.documents.find((d) => d.id === state.activeDocId);
   if (!active || active.kind !== "project") {
@@ -1176,10 +1188,8 @@ export async function openContentByFilename(
   path?: string,
 ): Promise<boolean> {
   const lower = filename.toLowerCase();
-  // XML: sniff first 4 KB om onderscheid te maken tussen GMW
-  // (grondwaterput), BHR (boring) en CPT/GEF. Volgorde matters —
-  // GMW eerst want de wrapper-element-namen overlappen niet maar de
-  // sniffer is goedkoper dan boring-sniff. Daarna boring, anders CPT.
+  // GMW keeps its dedicated presentation flow. Every kernel-supported XML
+  // family is routed by the generic native parser, without frontend sniffing.
   if (lower.endsWith(".xml")) {
     const head = content.slice(0, 4096);
     const { looksLikeGwpXml } = await import("../types/gwp");
@@ -1187,10 +1197,14 @@ export async function openContentByFilename(
       await loadGwpFromContent(content, filename, path);
       return true;
     }
-    if (looksLikeBoringXml(head)) {
-      await loadBoreFromContent(content, filename, path);
-      return true;
+    const { geotechnicalDocument } = await import("../utils/platform");
+    const imported = await geotechnicalDocument.parse(content, filename);
+    if (imported.kind === "bore") {
+      addBoreDocument(imported.data, content, filename, path);
+    } else {
+      addCptDocument(imported.data, filename, path);
     }
+    return true;
   }
   // `.ifcgeo` is sinds 2026 de gecombineerde extensie voor zowel
   // project-bestanden (meerdere CPTs + tekening + title-block) als
@@ -1219,9 +1233,8 @@ export async function openContentByFilename(
     await openProjectIfcgis(path);
     return true;
   }
-  // Alles wat overblijft (GEF, generieke XML, single-CPT .ifcgeo) gaat
-  // door de Rust-CPT-parser. In Tauri werkt dat; in browser gooit
-  // invoke() — caller moet daarop voorbereid zijn.
+  // Alles wat overblijft (GEF en single-CPT .ifcgeo) gaat via de generieke
+  // platformadapter. Browsers ondersteunen daarvan alleen GEF.
   await loadCptFromContent(content, filename, path);
   return true;
 }

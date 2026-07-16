@@ -249,6 +249,7 @@ pub fn run() {
             engine_generate_pdf,
             engine_save_pdf,
             commands::cpt::open_cpt,
+            commands::document::open_geotechnical_document,
             commands::cpt::close_cpt,
             commands::cpt::list_cpts,
             commands::cpt::detect_layers,

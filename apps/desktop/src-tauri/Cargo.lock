@@ -3426,6 +3426,7 @@ dependencies = [
  "acadrust",
  "axum",
  "base64 0.22.1",
+ "bro-xml",
  "chrono",
  "cpt-core",
  "lopdf 0.34.0",
