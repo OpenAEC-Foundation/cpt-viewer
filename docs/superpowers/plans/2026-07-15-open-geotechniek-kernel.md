@@ -709,7 +709,7 @@ pub struct ProjectMetadata {
     pub date: Option<chrono::NaiveDate>,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", content = "data", rename_all = "snake_case")]
 pub enum GeotechnicalObject {
     Cpt(cpt_core::Cpt),
