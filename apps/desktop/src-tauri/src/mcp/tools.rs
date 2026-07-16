@@ -2,8 +2,9 @@ use serde_json::{json, Value};
 
 /// Return MCP tool definitions for the tools/list endpoint.
 ///
-/// Tools zijn gegroepeerd per domein (totaal 31):
+/// Tools zijn gegroepeerd per domein (totaal 32):
 ///   - tenant (5): list_tenants, list_templates, get_brand, generate_report, get_app_state
+///   - object (1): open_geotechnical_document
 ///   - cpt (5): cpt_open, cpt_close, cpt_list, cpt_detect_layers, cpt_save_as
 ///   - project (5): project_save_ifcgis, project_open_ifcgis,
 ///     project_save_ifcgis_full, project_open_ifcgis_full, project_preview_ifcx

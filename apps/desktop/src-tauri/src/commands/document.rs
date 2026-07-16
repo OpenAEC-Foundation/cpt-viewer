@@ -207,6 +207,11 @@ fn bore_metadata(
     description_procedure: Option<String>,
     bore_method: Option<String>,
 ) -> BoreMetadataDto {
+    let source_file = if source_file.is_empty() {
+        extension_value(common, &["sourceFile"]).unwrap_or_default()
+    } else {
+        source_file.to_owned()
+    };
     BoreMetadataDto {
         project_name: extension_value(common, &["projectName", "researchProject"]),
         project_number: extension_value(common, &["projectNumber", "objectReference"]),
@@ -232,7 +237,7 @@ fn bore_metadata(
             )
         }),
         delivered_via: extension_value(common, &["deliveryContext"]),
-        source_file: source_file.to_owned(),
+        source_file,
         extra: common.extensions.clone(),
     }
 }
@@ -373,4 +378,46 @@ pub fn open_geotechnical_document(
         expected_kind.unwrap_or_default(),
         state.inner(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn source_file(dto: ImportedDocumentDto) -> String {
+        match dto {
+            ImportedDocumentDto::Bore(bore) => bore.metadata.source_file,
+            ImportedDocumentDto::Cpt(_) => panic!("expected bore"),
+        }
+    }
+
+    #[test]
+    fn bore_source_filename_survives_state_and_project_round_trip() {
+        let state = AppState::default();
+        let imported = open_geotechnical_document_core(
+            include_str!("../../tests/fixtures/bhr-gt-minimal.xml"),
+            "field-bore.xml",
+            ExpectedDocumentKind::Any,
+            &state,
+        )
+        .unwrap();
+        assert_eq!(source_file(imported), "field-bore.xml");
+
+        let (stored, project_text) = state
+            .with_project(|project| {
+                (
+                    project.objects().next().cloned().unwrap(),
+                    project.to_project_text().unwrap(),
+                )
+            })
+            .unwrap();
+        assert_eq!(source_file(object_to_dto(stored, "")), "field-bore.xml");
+
+        let reopened = GeotechnicalProject::load_project_text(&project_text).unwrap();
+        let reopened_object = reopened.objects().next().cloned().unwrap();
+        assert_eq!(
+            source_file(object_to_dto(reopened_object, "")),
+            "field-bore.xml"
+        );
+    }
 }

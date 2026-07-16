@@ -16,7 +16,9 @@
 //!
 //! Endpoints (GET /api geeft dezelfde lijst machine-leesbaar terug):
 //!   GET    /api                        → deze index (zelfbeschrijvend)
-//!   GET    /api/health                 → status + aantal geladen CPT's
+//!   GET    /api/health                 → status + aantallen objecten en CPT's
+//!   GET    /api/objects                → alle geotechnische objecten
+//!   POST   /api/objects {content,filename} → generiek document importeren
 //!   GET    /api/cpts                   → lijst geparste CPT's (incl. meetdata)
 //!   POST   /api/cpts        {content,filename} → parse + opslaan, geeft CPT
 //!   GET    /api/cpts/:id               → één CPT (incl. meetdata)
@@ -467,6 +469,7 @@ mod tests {
         let body = response_json(response).await;
         assert_eq!(body["kind"], "bore");
         assert_eq!(body["data"]["id"], "BHR000000000001");
+        assert_eq!(body["data"]["metadata"]["source_file"], "bore.xml");
     }
 
     #[tokio::test]
@@ -488,6 +491,7 @@ mod tests {
         .await;
         assert_eq!(objects[0]["kind"], "bore");
         assert_eq!(objects[0]["data"]["id"], "BHR000000000001");
+        assert_eq!(objects[0]["data"]["metadata"]["source_file"], "bore.xml");
 
         let health = response_json(
             router(state)
