@@ -3,7 +3,7 @@
   <broId>BHR000000000002</broId>
   <projectName>Geologisch project</projectName>
   <projectNumber>GG-7</projectNumber>
-  <researchReportDate>2026-02-02</researchReportDate>
+  <researchReportDate><yearMonth>2026-02</yearMonth></researchReportDate>
   <researchStartDate>2026-02-01</researchStartDate>
   <accountableParty>ORG-77</accountableParty>
   <deliveryContext>register</deliveryContext>

@@ -210,7 +210,10 @@ fn bore_metadata(
     BoreMetadataDto {
         project_name: extension_value(common, &["projectName", "researchProject"]),
         project_number: extension_value(common, &["projectNumber", "objectReference"]),
-        description_date: extension_value(common, &["descriptionReportDate", "researchReportDate"]),
+        description_date: partial_date_value(
+            common,
+            &["descriptionReportDate", "researchReportDate"],
+        ),
         start_date: common
             .research_start_date
             .map(|date| date.to_string())
@@ -235,12 +238,31 @@ fn bore_metadata(
 }
 
 fn extension_value(common: &bro_xml::CommonMetadata, local_names: &[&str]) -> Option<String> {
-    common.extensions.iter().find_map(|(path, value)| {
-        let local = path.rsplit('/').next().unwrap_or(path);
-        local_names
-            .iter()
-            .any(|candidate| local.eq_ignore_ascii_case(candidate))
-            .then(|| value.clone())
+    local_names.iter().find_map(|candidate| {
+        common.extensions.iter().find_map(|(path, value)| {
+            let local = path.rsplit('/').next().unwrap_or(path);
+            local.eq_ignore_ascii_case(candidate).then(|| value.clone())
+        })
+    })
+}
+
+fn partial_date_value(common: &bro_xml::CommonMetadata, candidates: &[&str]) -> Option<String> {
+    const LEAVES: &[&str] = &["date", "yearMonth", "year", "voidReason"];
+
+    candidates.iter().find_map(|candidate| {
+        extension_value(common, &[*candidate]).or_else(|| {
+            LEAVES.iter().find_map(|leaf_name| {
+                common.extensions.iter().find_map(|(path, value)| {
+                    let segments = path.split('/').collect::<Vec<_>>();
+                    let (leaf, ancestors) = segments.split_last()?;
+                    (leaf.eq_ignore_ascii_case(leaf_name)
+                        && ancestors
+                            .iter()
+                            .any(|segment| segment.eq_ignore_ascii_case(candidate)))
+                    .then(|| value.clone())
+                })
+            })
+        })
     })
 }
 

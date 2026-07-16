@@ -49,6 +49,7 @@ fn bhr_g_dto_uses_lithology_and_readable_extension_labels() {
         "Geologisch project"
     );
     assert_eq!(value["data"]["metadata"]["project_number"], "GG-7");
+    assert_eq!(value["data"]["metadata"]["description_date"], "2026-02");
     assert_eq!(value["data"]["layers"][0]["soil_name"], "zand");
     assert_eq!(
         value["data"]["layers"][0]["secondary"][0],

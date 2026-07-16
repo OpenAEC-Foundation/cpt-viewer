@@ -3,7 +3,9 @@
   <broId>BHR000000000001</broId>
   <researchProject>Project Noord</researchProject>
   <objectReference>PN-42</objectReference>
-  <descriptionReportDate>2026-01-02</descriptionReportDate>
+  <descriptionReportDate><date>2026-01-02</date></descriptionReportDate>
+  <researchReportDate><year>1999</year></researchReportDate>
+  <unrelatedDate><date>1900-01-01</date></unrelatedDate>
   <boringStartDate>2026-01-01</boringStartDate>
   <researchEndDate>2026-01-03</researchEndDate>
   <objectIdAccountableParty>ACME-001</objectIdAccountableParty>
