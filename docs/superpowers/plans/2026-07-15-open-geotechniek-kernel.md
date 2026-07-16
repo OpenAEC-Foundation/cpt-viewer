@@ -762,7 +762,7 @@ fn imports_bro_cpt_into_existing_cpt_domain() {
     assert_eq!(cpt.id, "CPT000000000001");
     assert_eq!(cpt.metadata.source_file, "cpt.xml");
     assert_eq!(cpt.points.len(), 2);
-    assert_eq!(cpt.points[0].qc, Some(4.2));
+    assert_eq!(cpt.points[0].qc, Some(13.3));
 }
 ```
 
