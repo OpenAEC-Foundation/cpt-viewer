@@ -1,0 +1,74 @@
+name: open-geotechniek-studio
+base: core22
+# Versie wordt in CI overschreven met het release-versienummer (zie .github/workflows/snap.yml).
+version: '0.0.0'
+title: Open Geotechniek Studio
+summary: CPT soundings and borehole viewer for Dutch geotechnical work
+description: |
+  Open Geotechniek Studio is a desktop application for Dutch geotechnical
+  work: CPT soundings, boreholes, projects, and site drawings on a single
+  CAD sheet.
+
+  Soundings & boreholes:
+  - GEF 1.x and BRO XML (CPT_O / CPT_O_DP) parsers
+  - Live charts of cone resistance (qc), local friction (fs), friction ratio
+    (Rf), and pore pressure (u2)
+  - Robertson SBT soil-behavior-type classification per layer
+  - BHR borehole data from BRO XML, with soil-layer visualization
+    (conforming to the Dutch NEN5104 standard)
+
+  Map & live data:
+  - Interactive map with direct BRO integration — load an area and every
+    sounding and borehole around the visible viewport is fetched
+    automatically
+  - Kadaster aerial imagery, BAG buildings, cadastral boundaries, AHN
+    elevation, BGT topography, and historical aerial photos (2016-2025) as
+    toggleable overlays
+
+  Reporting & drawings:
+  - Professional PDF sounding reports: cover page, coordinate table,
+    overview map, per-sounding pages, Robertson SBT legend, metadata
+  - Site drawings on A2/A3 CAD paper with a professional title block and
+    automatic scale-fit
+  - Request quotes: automatically picks the 3 nearest sounding companies
+    from a catalog of 43 Dutch companies and opens a pre-filled quote
+    request in your mail client
+
+  Open Geotechniek Studio is free and open source (MIT), part of the
+  OpenAEC Foundation family of applications, and built with Tauri for a
+  small, native footprint.
+
+grade: stable
+confinement: strict
+
+apps:
+  open-geotechniek-studio:
+    command: usr/bin/open-geo-studio
+    # De gnome-extensie wired GTK3 + WebKitGTK uit het GNOME-platform-snap en voegt
+    # zelf de desktop/wayland/x11/opengl/gsettings-plugs toe (auto-connected).
+    extensions: [gnome]
+    desktop: usr/share/applications/open-geotechniek-studio.desktop
+    plugs:
+      # Alleen de plugs die de gnome-extensie niet al levert:
+      - home            # GEF/BRO-XML openen, rapporten/tekeningen exporteren
+      - removable-media # idem op externe schijven/USB
+      - network         # live BRO/PDOK-kaartdata
+      - browser-support # WebKit-rendering/sandbox
+
+parts:
+  open-geotechniek-studio:
+    plugin: nil
+    # De CI-stap kopieert de gepubliceerde release-deb naar de project-root als
+    # `open-geotechniek-studio.deb`; we herverpakken die i.p.v. opnieuw te bouwen.
+    override-build: |
+      set -eu
+      dpkg-deb -x "${CRAFT_PROJECT_DIR}/open-geotechniek-studio.deb" "${CRAFT_PART_INSTALL}"
+      # De binary heet al `open-geo-studio` (geen spaties, geen rename nodig);
+      # alleen het .desktop-bestand heeft een spatienaam. snapd herschrijft de
+      # Exec=-regel van een geïnstalleerd desktop-bestand zelf, dus die hoeft
+      # niet aangepast te worden.
+      mv "${CRAFT_PART_INSTALL}/usr/share/applications/Open Geotechniek Studio.desktop" \
+         "${CRAFT_PART_INSTALL}/usr/share/applications/open-geotechniek-studio.desktop"
+    # stage-packages bewust leeg: GTK3 + WebKitGTK komen uit de gnome-runtime.
+    # Ontbreekt er bij de verificatie-run toch een lib, dan voegen we 'm hier toe
+    # (itereren via de workflow_dispatch-route, niet gokken).
