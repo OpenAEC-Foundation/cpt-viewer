@@ -2,6 +2,14 @@ name: Auto-assign issues to product owner
 on:
   issues:
     types: [opened]
+
+# Zonder dit blok krijgt de workflow de default-permissies van de repo
+# (alleen-lezen) en antwoordt de assignees-endpoint met 403 "Resource not
+# accessible by integration" — elke nieuwe issue bleef daardoor zonder
+# eigenaar liggen.
+permissions:
+  issues: write
+
 jobs:
   assign:
     runs-on: ubuntu-latest
