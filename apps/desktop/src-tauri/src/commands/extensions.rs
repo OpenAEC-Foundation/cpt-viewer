@@ -14,13 +14,14 @@ use crate::state::AppState;
 
 /// Canonieke lijst van bekende extension-IDs (mirror van het frontend-
 /// type `ExtensionId` in useExtensions.ts). `extensions_list` gebruikt
-/// dit om ALTIJD alle 8 bekende IDs terug te geven, ook als ze nog niet
+/// dit om ALTIJD alle bekende IDs terug te geven, ook als ze nog niet
 /// expliciet zijn gezet — anders zou een fresh MCP-sessie een lege lijst
 /// teruggeven en zou de gebruiker niet weten welke IDs er beschikbaar zijn.
 pub const KNOWN_EXTENSION_IDS: &[&str] = &[
     "tekening",
     "offertes",
     "calc.pile-bearing-capacity",
+    "calc.kalendering",
     "calc.spread-foundation-drained",
     "calc.spread-foundation-undrained",
     "calc.laterally-loaded-pile",

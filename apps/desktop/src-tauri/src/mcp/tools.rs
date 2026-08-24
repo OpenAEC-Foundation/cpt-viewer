@@ -374,7 +374,7 @@ fn extension_tools() -> Vec<Value> {
         }),
         json!({
             "name": "extension_set",
-            "description": "Zet de enabled-state van één extension. Bekende IDs: 'tekening', 'offertes', 'calc.pile-bearing-capacity', 'calc.spread-foundation-drained', 'calc.spread-foundation-undrained', 'calc.laterally-loaded-pile', 'calc.sheet-pile-wall', 'calc.ground-anchor'. Custom IDs zijn toegestaan.",
+            "description": "Zet de enabled-state van één extension. Bekende IDs: 'tekening', 'offertes', 'calc.pile-bearing-capacity', 'calc.kalendering', 'calc.spread-foundation-drained', 'calc.spread-foundation-undrained', 'calc.laterally-loaded-pile', 'calc.sheet-pile-wall', 'calc.ground-anchor'. Custom IDs zijn toegestaan.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
