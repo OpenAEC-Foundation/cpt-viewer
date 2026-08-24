@@ -113,6 +113,15 @@ interface DocStore {
    */
   lastMapView: { lat: number; lon: number; zoom: number } | null;
 
+  /**
+   * Laatst gezochte adres/plaats/coordinaat in het zoekscherm. Het
+   * zoekveld staat zowel op de Kaart als op de Situatietekening en die
+   * views worden bij een tab-wissel ge-unmount; zonder deze state is de
+   * ingetypte tekst daarna weg en moet de gebruiker opnieuw zoeken.
+   * Lege string = nog niets gezocht.
+   */
+  lastAddressQuery: string;
+
   /** Per-CPT visibility flag — present means hidden from the chart and map.
    *  Cleaned up automatically by `closeCpt` so stale ids don't accumulate. */
   hiddenCptIds: Set<string>;
@@ -177,6 +186,7 @@ interface DocStore {
   setProjectMeta: (m: Partial<ProjectMeta>) => void;
   setHover: (p: HoveredPoint | null) => void;
   setLastMapView: (v: { lat: number; lon: number; zoom: number }) => void;
+  setLastAddressQuery: (q: string) => void;
 }
 
 // ── Helpers ───────────────────────────────────────────
@@ -241,6 +251,7 @@ export const useCptStore = create<DocStore>((set, get) => ({
   projectMeta: { ...DEFAULT_PROJECT_META },
   hoveredPoint: null,
   lastMapView: null,
+  lastAddressQuery: "",
   hiddenCptIds: new Set(),
   selectedCptIds: new Set(),
   pdfCache: new Map(),
@@ -501,6 +512,7 @@ export const useCptStore = create<DocStore>((set, get) => ({
 
   setHover(p) { set({ hoveredPoint: p }); },
   setLastMapView(v) { set({ lastMapView: v }); },
+  setLastAddressQuery(q) { set({ lastAddressQuery: q }); },
 }));
 
 // ─── Pre-rendered PDF cache ──────────────────────────────────────

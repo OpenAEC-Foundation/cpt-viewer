@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import proj4 from "proj4";
+import { useCptStore } from "../../store/useCptStore";
 
 /**
  * PDOK Locatieserver address-search box for the Kaart view.
@@ -106,13 +107,27 @@ const SUGGEST_URL = "https://api.pdok.nl/bzk/locatieserver/search/v3_1/suggest";
 const LOOKUP_URL = "https://api.pdok.nl/bzk/locatieserver/search/v3_1/lookup";
 
 export default function MapAddressSearch() {
-  const [query, setQuery] = useState("");
+  // Begin met wat er de vorige keer gezocht is. Kaart en Situatietekening
+  // worden bij een tab-wissel ge-unmount, dus zonder deze seed staat het
+  // veld daarna weer leeg terwijl de kaart nog op dat adres staat.
+  const [query, setQuery] = useState(() => useCptStore.getState().lastAddressQuery);
   const [items, setItems] = useState<SuggestItem[]>([]);
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  /** False tot de gebruiker zelf typt — houdt de suggest-call weg bij een
+   *  herstelde query, die immers al een gekozen locatie is. */
+  const typedRef = useRef(false);
+
+  /** Onthoud de zoekterm en de gekozen locatie store-breed, zodat een
+   *  tab-wissel beide bewaart en de andere kaart-view dezelfde plek
+   *  aanhoudt in plaats van terug te vallen op de projectlocatie. */
+  const remember = (text: string, at?: { lat: number; lon: number; zoom: number }) => {
+    useCptStore.getState().setLastAddressQuery(text);
+    if (at) useCptStore.getState().setLastMapView(at);
+  };
 
   // Live coordinaten-detectie op de huidige query — re-berekend bij elke
   // keystroke. Verschijnt als top-item in de dropdown wanneer != null,
@@ -123,6 +138,7 @@ export default function MapAddressSearch() {
   // valide coordinaten-paar is (PDOK kent geen "155123, 463789" als adres).
   useEffect(() => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    if (!typedRef.current) return;
     if (parsedCoords) {
       // Coords herkend → geen PDOK-suggest call.
       setItems([]);
@@ -163,6 +179,7 @@ export default function MapAddressSearch() {
 
   const flyToCoords = (c: ParsedCoords) => {
     setOpen(false);
+    remember(query, { lat: c.lat, lon: c.lon, zoom: 18 });
     window.dispatchEvent(
       new CustomEvent("ogs:map-fly-to", {
         detail: { lat: c.lat, lon: c.lon, zoom: 18 },
@@ -182,6 +199,7 @@ export default function MapAddressSearch() {
       // Zoom level depends on what was picked: an exact adres deserves a
       // tighter zoom than a woonplaats.
       const zoom = /adres|nummeraanduiding/i.test(item.type) ? 19 : 14;
+      remember(item.weergavenaam, { lat: ll[0], lon: ll[1], zoom });
       window.dispatchEvent(
         new CustomEvent("ogs:map-fly-to", {
           detail: { lat: ll[0], lon: ll[1], zoom },
@@ -243,7 +261,12 @@ export default function MapAddressSearch() {
           type="text"
           value={query}
           placeholder="Zoek adres, plaats of coordinaat (RD / WGS84)…"
-          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onChange={(e) => {
+            typedRef.current = true;
+            setQuery(e.target.value);
+            remember(e.target.value);
+            setOpen(true);
+          }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
           aria-label="Adres of coordinaat zoeken"
@@ -252,7 +275,7 @@ export default function MapAddressSearch() {
           <button
             type="button"
             className="map-addrsearch-clear"
-            onClick={() => { setQuery(""); setItems([]); }}
+            onClick={() => { setQuery(""); setItems([]); remember(""); }}
             title="Wissen"
           >
             ✕
