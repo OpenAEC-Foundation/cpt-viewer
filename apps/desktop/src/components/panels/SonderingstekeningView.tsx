@@ -5588,6 +5588,7 @@ export default function SonderingstekeningView() {
                           )
                         : scale
                     }
+                    requested={scale}
                   />
                 </div>
                 <div className="tek-db-cell">
@@ -5786,10 +5787,20 @@ function pickNiceScaleMeters(maxM: number): number {
  * Enter of blur stuurt `ogs:tekening-set-scale` met de getypte waarde
  * (accepteert "1:850", "850", "1 : 850" en wat-niet) — dat reset de
  * Leaflet fitBounds zodat de tekening exact die schaal aanneemt.
+ *
+ * `requested` is de schaal die de gebruiker heeft opgegeven. Landt de
+ * gemeten schaal daar binnen ±2 op, dan tonen we het gevraagde getal:
+ * de tekening staat dan op 1:500 en moet dat ook zeggen, niet 1:502
+ * doordat een pixel-afronding in de meting doorwerkt in Math.round.
+ * Dezelfde snap zit in het Schaal-veld van TekeningProperties, zodat
+ * paneel en papier nooit een ander getal noemen. Wijkt de meting
+ * verder af — de gebruiker heeft zelf gepand of gezoomd — dan wint de
+ * werkelijk gemeten schaal, want die staat op papier.
  */
-function ScaleCellEditor({ liveScale }: { liveScale: number }) {
+function ScaleCellEditor({ liveScale, requested }: { liveScale: number; requested: number }) {
   const [draft, setDraft] = useState<string | null>(null);
-  const value = draft ?? `1:${liveScale}`;
+  const shown = Math.abs(liveScale - requested) <= 2 ? requested : liveScale;
+  const value = draft ?? `1:${shown}`;
   const commit = () => {
     if (draft === null) return;
     // Pak het laatste hele getal uit de string — pakt "850", "1:850",
