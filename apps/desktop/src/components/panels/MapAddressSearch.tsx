@@ -120,6 +120,8 @@ export default function MapAddressSearch() {
   /** False tot de gebruiker zelf typt — houdt de suggest-call weg bij een
    *  herstelde query, die immers al een gekozen locatie is. */
   const typedRef = useRef(false);
+  const queryRef = useRef(query);
+  queryRef.current = query;
 
   /** Onthoud de zoekterm en de gekozen locatie store-breed, zodat een
    *  tab-wissel beide bewaart en de andere kaart-view dezelfde plek
@@ -128,6 +130,14 @@ export default function MapAddressSearch() {
     useCptStore.getState().setLastAddressQuery(text);
     if (at) useCptStore.getState().setLastMapView(at);
   };
+
+  // Halfvoltooide invoer wordt pas bij het verlaten van de view bewaard.
+  // Bij elke toetsaanslag naar de store schrijven laat elke component die
+  // op de store zit opnieuw renderen — merkbaar in een project met veel
+  // sonderingen, en nergens voor nodig: alleen de laatste stand telt.
+  useEffect(() => {
+    return () => useCptStore.getState().setLastAddressQuery(queryRef.current);
+  }, []);
 
   // Live coordinaten-detectie op de huidige query — re-berekend bij elke
   // keystroke. Verschijnt als top-item in de dropdown wanneer != null,
@@ -264,7 +274,6 @@ export default function MapAddressSearch() {
           onChange={(e) => {
             typedRef.current = true;
             setQuery(e.target.value);
-            remember(e.target.value);
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}

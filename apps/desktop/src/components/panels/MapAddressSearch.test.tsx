@@ -28,11 +28,16 @@ describe("MapAddressSearch", () => {
     vi.useRealTimers();
   });
 
-  it("legt vast wat de gebruiker typt", () => {
+  it("bewaart half ingetypte invoer bij het verlaten van de view", () => {
     render(<MapAddressSearch />);
     fireEvent.change(screen.getByLabelText(LABEL), {
       target: { value: "Dordrecht" },
     });
+    // Tijdens het typen blijft de store met rust — anders rendert elke
+    // component die erop zit mee per toetsaanslag.
+    expect(useCptStore.getState().lastAddressQuery).toBe("");
+
+    cleanup();
     expect(useCptStore.getState().lastAddressQuery).toBe("Dordrecht");
   });
 
@@ -58,9 +63,13 @@ describe("MapAddressSearch", () => {
   });
 
   it("wist de onthouden zoekterm via de wis-knop", () => {
+    useCptStore.setState({ lastAddressQuery: "Tiel" });
     render(<MapAddressSearch />);
-    fireEvent.change(screen.getByLabelText(LABEL), { target: { value: "Tiel" } });
+    expect(screen.getByLabelText(LABEL)).toHaveValue("Tiel");
+
     fireEvent.click(screen.getByTitle("Wissen"));
+
     expect(useCptStore.getState().lastAddressQuery).toBe("");
+    expect(screen.getByLabelText(LABEL)).toHaveValue("");
   });
 });
