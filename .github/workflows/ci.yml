@@ -1,0 +1,61 @@
+name: CI
+
+# Snelle poort op elke push/PR naar main: typecheck + unit-tests van de
+# frontend. Bewust GEEN cargo build — die heeft de crates-warehouse-
+# checkout en een volledige Tauri-toolchain nodig (zie release.yml) en
+# duurt tienvoudig; die dekking komt bij de release-build.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm test
+
+      # De publieke webbuild mag geen rekenmodules bevatten: `PUBLIC_MODULES`
+      # in src/calc/framework/registry.ts is leeg en Rollup hoort de dev-only
+      # tak eruit te schudden. Faalt deze stap, dan is er per ongeluk een
+      # berekening vrijgegeven op de live site.
+      - name: Build public web bundle
+        run: VITE_PUBLIC_WEB=1 npm run build
+
+      - name: Assert no calculation code in public bundle
+        run: |
+          for term in "Rs;cal" "Koppejan" "paalpunt" "Kalendering" "Funderingspaal"; do
+            if grep -rqi -- "$term" dist/assets/*.js; then
+              echo "::error::'$term' staat in de publieke bundle — rekenmodule lekt naar de live site"
+              exit 1
+            fi
+          done
+          echo "Publieke bundle bevat geen rekencode."
