@@ -2,6 +2,7 @@
 
 pub mod bro_api;
 pub mod cpt;
+pub mod document;
 pub mod dwg_export;
 pub mod export;
 pub mod extensions;

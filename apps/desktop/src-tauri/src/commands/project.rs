@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use cpt_core::{Cpt, ifcgis};
+use open_geotechniek_kernel::{
+    DuplicatePolicy, GeotechnicalProject, ProjectMetadata,
+};
 
 use crate::state::AppState;
 
@@ -41,54 +44,56 @@ pub fn save_project_ifcgis_core(
     path: &str,
     state: &AppState,
 ) -> Result<(), String> {
-    let cpts: Vec<Cpt> = state.cpts.lock().unwrap().values().cloned().collect();
-    let info = ifcgis::ProjectInfo {
-        kind: "OpenGeoProject".into(),
+    let metadata = ProjectMetadata {
         title: project.title,
         client: project.client,
         location: project.location,
         project_number: project.project_number,
         author: project.author,
-        date: parse_date(&project.date),
+        date: Some(parse_date(&project.date)),
     };
-    let text = ifcgis::save(info, cpts).map_err(|e| e.to_string())?;
+    let text = state.with_project(|current| {
+        let mut snapshot = current.clone();
+        snapshot.set_metadata(metadata);
+        snapshot.to_project_text()
+    })?
+    .map_err(|error| error.to_string())?;
     std::fs::write(PathBuf::from(path), text).map_err(|e| e.to_string())
 }
 
 pub fn open_project_ifcgis_core(path: &str, state: &AppState) -> Result<ProjectOpenResult, String> {
     let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let file = ifcgis::load(&text).map_err(|e| e.to_string())?;
-
-    let mut cpts_map = state.cpts.lock().unwrap();
-    for cpt in &file.cpts {
-        cpts_map.insert(cpt.id.clone(), cpt.clone());
-    }
+    let incoming = GeotechnicalProject::load_project_text(&text).map_err(|e| e.to_string())?;
+    let metadata = incoming.metadata().clone();
+    let cpts = incoming.cpts().cloned().collect();
+    state.with_project_mut(|project| project.merge_from(incoming, DuplicatePolicy::Replace))?;
 
     Ok(ProjectOpenResult {
         project: ProjectMetaInput {
-            title: file.project.title,
-            client: file.project.client,
-            location: file.project.location,
-            project_number: file.project.project_number,
-            author: file.project.author,
-            date: file.project.date.to_string(),
+            title: metadata.title,
+            client: metadata.client,
+            location: metadata.location,
+            project_number: metadata.project_number,
+            author: metadata.author,
+            date: metadata.date.map(|date| date.to_string()).unwrap_or_default(),
         },
-        cpts: file.cpts,
+        cpts,
     })
 }
 
 pub fn save_project_ifcgis_full_core(payload: serde_json::Value, path: &str) -> Result<(), String> {
     let file: ifcgis::ProjectFile = serde_json::from_value(payload)
         .map_err(|e| format!("invalid ifcgis payload: {e}"))?;
-    let text = ifcgis::to_ifcx_json(&file)
-        .map_err(|e| format!("ifcgis serialize: {e}"))?;
+    let project = GeotechnicalProject::load_project_file(file).map_err(|e| e.to_string())?;
+    let text = project.to_project_text().map_err(|e| e.to_string())?;
     std::fs::write(PathBuf::from(path), text).map_err(|e| e.to_string())
 }
 
 pub fn preview_project_ifcx_core(payload: serde_json::Value) -> Result<String, String> {
     let file: ifcgis::ProjectFile = serde_json::from_value(payload)
         .map_err(|e| format!("invalid ifcgis payload: {e}"))?;
-    ifcgis::to_ifcx_json(&file).map_err(|e| format!("ifcgis serialize: {e}"))
+    let project = GeotechnicalProject::load_project_file(file).map_err(|e| e.to_string())?;
+    project.to_project_text().map_err(|e| e.to_string())
 }
 
 pub fn open_project_ifcgis_full_core(
@@ -96,12 +101,9 @@ pub fn open_project_ifcgis_full_core(
     state: &AppState,
 ) -> Result<serde_json::Value, String> {
     let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let file = ifcgis::load(&text).map_err(|e| e.to_string())?;
-    let mut cpts_map = state.cpts.lock().unwrap();
-    for cpt in &file.cpts {
-        cpts_map.insert(cpt.id.clone(), cpt.clone());
-    }
-    drop(cpts_map);
+    let incoming = GeotechnicalProject::load_project_text(&text).map_err(|e| e.to_string())?;
+    let file = incoming.to_project_file().map_err(|e| e.to_string())?;
+    state.with_project_mut(|project| project.merge_from(incoming, DuplicatePolicy::Replace))?;
     serde_json::to_value(&file).map_err(|e| format!("serialize for return: {e}"))
 }
 

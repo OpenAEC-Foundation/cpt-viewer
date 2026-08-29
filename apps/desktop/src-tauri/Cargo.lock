@@ -519,6 +519,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bro-xml"
+version = "0.1.1"
+dependencies = [
+ "chrono",
+ "quick-xml 0.36.2",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "brotli"
 version = "8.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3416,9 +3426,12 @@ dependencies = [
  "acadrust",
  "axum",
  "base64 0.22.1",
+ "bro-xml",
  "chrono",
  "cpt-core",
+ "http-body-util",
  "lopdf 0.34.0",
+ "open-geotechniek-kernel",
  "openaec-core",
  "openaec-engine",
  "pdf-writer",
@@ -3436,7 +3449,20 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
  "tokio",
+ "tower",
  "ttf-parser 0.25.1",
+]
+
+[[package]]
+name = "open-geotechniek-kernel"
+version = "0.1.1"
+dependencies = [
+ "bro-xml",
+ "chrono",
+ "cpt-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

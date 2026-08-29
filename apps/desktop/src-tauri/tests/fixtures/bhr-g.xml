@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BHR_G_O xmlns="http://www.broservices.nl/xsd/dsbhrg/3.1">
+  <broId>BHR000000000002</broId>
+  <projectName>Geologisch project</projectName>
+  <projectNumber>GG-7</projectNumber>
+  <researchReportDate><yearMonth>2026-02</yearMonth></researchReportDate>
+  <unrelatedDate><date>1900-01-01</date></unrelatedDate>
+  <accountableParty>ORG-77</accountableParty>
+  <deliveryContext>register</deliveryContext>
+  <finalDepthBoring>6.0</finalDepthBoring>
+  <boring>
+    <boringStartDate><PartialDate><date>2026-02-01</date></PartialDate></boringStartDate>
+    <boringEndDate><PartialDate><date>2026-02-03</date></PartialDate></boringEndDate>
+  </boring>
+  <descriptiveBoreholeLog>
+    <layer><layer>
+      <upperBoundary>0.0</upperBoundary>
+      <lowerBoundary>2.0</lowerBoundary>
+      <soilNameNEN5104>matigFijnZand</soilNameNEN5104>
+      <colour>geel</colour>
+      <grainSize>matigFijn</grainSize>
+    </layer></layer>
+    <layer><layer>
+      <upperBoundary>2.0</upperBoundary>
+      <lowerBoundary>6.0</lowerBoundary>
+      <lithology>klei</lithology>
+      <description>stijf</description>
+      <shellContent>weinig</shellContent>
+    </layer></layer>
+  </descriptiveBoreholeLog>
+</BHR_G_O>

@@ -6,19 +6,14 @@ use tokio::runtime::Runtime;
 
 use super::tools;
 use crate::commands::{
-    bro_api as bro_cmd,
-    cpt as cpt_cmd,
-    export as export_cmd,
-    extensions as ext_cmd,
-    ifc as ifc_cmd,
-    project as project_cmd,
-    report as report_cmd,
+    bro_api as bro_cmd, cpt as cpt_cmd, document as document_cmd, export as export_cmd,
+    extensions as ext_cmd, ifc as ifc_cmd, project as project_cmd, report as report_cmd,
 };
-use std::collections::HashMap as StdHashMap;
 use crate::pdf::model::{ReportData, TenantInfo};
 use crate::pdf::tenant::TenantManager;
 use crate::state::AppState;
 use cpt_core::Cpt;
+use std::collections::HashMap as StdHashMap;
 
 /// Lazy, process-global tokio multi-thread runtime — gebruikt door MCP-mode
 /// om async commands (BRO API, IFC-generatie, PDF-rapport) sync te kunnen
@@ -32,6 +27,32 @@ fn tokio_rt() -> &'static Runtime {
             .build()
             .expect("create tokio runtime for MCP server")
     })
+}
+
+#[cfg(test)]
+mod generic_document_tests {
+    use super::*;
+
+    #[test]
+    fn generic_document_tool_uses_shared_adapter() {
+        let tenant_dir = std::env::temp_dir().join("open-geo-studio-mcp-test-tenants");
+        let server = McpServer::new(
+            Arc::new(Mutex::new(TenantManager::new(tenant_dir))),
+            Arc::new(AppState::default()),
+        );
+        let result = server
+            .call_tool(
+                "open_geotechnical_document",
+                &json!({
+                    "content": include_str!("../../tests/fixtures/bhr-gt-minimal.xml"),
+                    "filename": "bore.xml"
+                }),
+            )
+            .unwrap();
+        let result: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(result["kind"], "bore");
+        assert_eq!(result["data"]["id"], "BHR000000000001");
+    }
 }
 
 /// JSON-RPC request (MCP protocol)
@@ -76,7 +97,10 @@ pub struct McpServer {
 
 impl McpServer {
     pub fn new(tenant_manager: Arc<Mutex<TenantManager>>, app_state: Arc<AppState>) -> Self {
-        Self { tenant_manager, app_state }
+        Self {
+            tenant_manager,
+            app_state,
+        }
     }
 
     /// Run the MCP server on stdio (blocking).
@@ -111,7 +135,11 @@ impl McpServer {
 
             let response = self.handle_request(&request);
             let mut out = stdout.lock();
-            let _ = writeln!(out, "{}", serde_json::to_string(&response).unwrap_or_default());
+            let _ = writeln!(
+                out,
+                "{}",
+                serde_json::to_string(&response).unwrap_or_default()
+            );
             let _ = out.flush();
         }
     }
@@ -151,12 +179,12 @@ impl McpServer {
             },
 
             "tools/call" => {
-                let tool_name = req.params.get("name")
+                let tool_name = req
+                    .params
+                    .get("name")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                let arguments = req.params.get("arguments")
-                    .cloned()
-                    .unwrap_or(json!({}));
+                let arguments = req.params.get("arguments").cloned().unwrap_or(json!({}));
 
                 match self.call_tool(tool_name, &arguments) {
                     Ok(result) => JsonRpcResponse {
@@ -231,27 +259,46 @@ impl McpServer {
                 let report: ReportData = serde_json::from_value(report_data)
                     .map_err(|e| format!("Invalid report data: {}", e))?;
                 let tm = self.tenant_manager.lock().map_err(|e| e.to_string())?;
-                let engine = crate::pdf::engine::ReportEngine::new(
-                    TenantManager::new(tm.tenant_dir(&tenant).parent().unwrap().to_path_buf())
-                );
+                let engine = crate::pdf::engine::ReportEngine::new(TenantManager::new(
+                    tm.tenant_dir(&tenant).parent().unwrap().to_path_buf(),
+                ));
                 let bytes = engine.generate(&report, &tenant)?;
                 std::fs::write(&output_path, &bytes)
                     .map_err(|e| format!("Failed to write PDF: {}", e))?;
-                Ok(format!("PDF generated: {} ({} bytes)", output_path, bytes.len()))
+                Ok(format!(
+                    "PDF generated: {} ({} bytes)",
+                    output_path,
+                    bytes.len()
+                ))
             }
             "get_app_state" => {
                 let tm = self.tenant_manager.lock().map_err(|e| e.to_string())?;
                 let tenants_count = tm.list_tenants().unwrap_or_default().len();
-                let cpts_count = self.app_state.cpts.lock().map_err(|e| e.to_string())?.len();
+                let (objects_count, cpts_count) = self
+                    .app_state
+                    .with_project(|project| (project.objects().count(), project.cpts().count()))?;
                 Ok(json!({
                     "status": "running",
                     "version": env!("CARGO_PKG_VERSION"),
                     "tenants_available": tenants_count,
+                    "objects_loaded": objects_count,
                     "cpts_loaded": cpts_count,
-                }).to_string())
+                })
+                .to_string())
             }
 
             // ─── CPT ───────────────────────────────────────────────────
+            "open_geotechnical_document" => {
+                let content = arg_str("content")?;
+                let filename = arg_str("filename")?;
+                let document = document_cmd::open_geotechnical_document_core(
+                    &content,
+                    &filename,
+                    document_cmd::ExpectedDocumentKind::Any,
+                    &self.app_state,
+                )?;
+                serde_json::to_string_pretty(&document).map_err(|error| error.to_string())
+            }
             "cpt_open" => {
                 let content = arg_str("content")?;
                 let filename = arg_str("filename")?;
@@ -329,15 +376,15 @@ impl McpServer {
             // ─── BRO (async, block_on via tokio runtime) ───────────────
             "bro_fetch_area" => {
                 let bbox_val = arg_value("bbox")?;
-                let bbox: bro_cmd::BBox = serde_json::from_value(bbox_val)
-                    .map_err(|e| format!("Invalid bbox: {}", e))?;
+                let bbox: bro_cmd::BBox =
+                    serde_json::from_value(bbox_val).map_err(|e| format!("Invalid bbox: {}", e))?;
                 let features = tokio_rt().block_on(bro_cmd::fetch_bro_area_core(bbox))?;
                 serde_json::to_string_pretty(&features).map_err(|e| e.to_string())
             }
             "bro_fetch_bores" => {
                 let bbox_val = arg_value("bbox")?;
-                let bbox: bro_cmd::BBox = serde_json::from_value(bbox_val)
-                    .map_err(|e| format!("Invalid bbox: {}", e))?;
+                let bbox: bro_cmd::BBox =
+                    serde_json::from_value(bbox_val).map_err(|e| format!("Invalid bbox: {}", e))?;
                 let features = tokio_rt().block_on(bro_cmd::fetch_bro_bores_core(bbox))?;
                 serde_json::to_string_pretty(&features).map_err(|e| e.to_string())
             }
@@ -354,8 +401,8 @@ impl McpServer {
             "bro_fetch_object_metadata" => {
                 let id = arg_str("id")?;
                 let kind = arg_str("kind")?;
-                let meta = tokio_rt()
-                    .block_on(bro_cmd::fetch_bro_object_metadata_core(&id, &kind))?;
+                let meta =
+                    tokio_rt().block_on(bro_cmd::fetch_bro_object_metadata_core(&id, &kind))?;
                 serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())
             }
 
@@ -369,15 +416,14 @@ impl McpServer {
                     .map_err(|e| format!("Invalid cpt_ids: {}", e))?;
                 let format = arg_str("format")?;
                 // Snapshot CPTs zodat de async-werker zonder lock kan draaien.
-                let cpts: Vec<Cpt> = {
-                    let cache = self.app_state.cpts.lock().map_err(|e| e.to_string())?;
+                let cpts: Vec<Cpt> = self.app_state.with_project(|kernel_project| {
                     cpt_ids
                         .iter()
-                        .filter_map(|id| cache.get(id).cloned())
+                        .filter_map(|id| kernel_project.cpts().find(|cpt| cpt.id == *id).cloned())
                         .collect()
-                };
-                let result = tokio_rt()
-                    .block_on(ifc_cmd::generate_ifc_core(project, cpts, format))?;
+                })?;
+                let result =
+                    tokio_rt().block_on(ifc_cmd::generate_ifc_core(project, cpts, format))?;
                 serde_json::to_string_pretty(&result).map_err(|e| e.to_string())
             }
             "ifc_list_generated" => {
@@ -385,14 +431,12 @@ impl McpServer {
                     .get("project_id")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
-                let entries = tokio_rt()
-                    .block_on(ifc_cmd::list_generated_ifc_core(project_id))?;
+                let entries = tokio_rt().block_on(ifc_cmd::list_generated_ifc_core(project_id))?;
                 serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())
             }
             "ifc_read_generated" => {
                 let full_path = arg_str("full_path")?;
-                let content = tokio_rt()
-                    .block_on(ifc_cmd::read_generated_ifc_core(&full_path))?;
+                let content = tokio_rt().block_on(ifc_cmd::read_generated_ifc_core(&full_path))?;
                 Ok(content)
             }
 
@@ -404,13 +448,12 @@ impl McpServer {
                 let project_val = arg_value("project")?;
                 let project: report_cmd::ProjectMetaInput = serde_json::from_value(project_val)
                     .map_err(|e| format!("Invalid project meta: {}", e))?;
-                let cpts: Vec<Cpt> = {
-                    let cache = self.app_state.cpts.lock().map_err(|e| e.to_string())?;
+                let cpts: Vec<Cpt> = self.app_state.with_project(|kernel_project| {
                     cpt_ids
                         .iter()
-                        .filter_map(|id| cache.get(id).cloned())
+                        .filter_map(|id| kernel_project.cpts().find(|cpt| cpt.id == *id).cloned())
                         .collect()
-                };
+                })?;
                 // Optionele sectie-selectie — zelfde vorm als de GUI/REST
                 // (cover, coordTable, map, perCpt, sbtLegend, metadata).
                 let sections: Option<cpt_core::ReportSections> = args
@@ -427,7 +470,8 @@ impl McpServer {
                     "format": "pdf-base64",
                     "byte_count": bytes.len(),
                     "data": b64,
-                }).to_string())
+                })
+                .to_string())
             }
             "report_generate" => {
                 let cpt_ids_val = arg_value("cpt_ids")?;
@@ -437,16 +481,18 @@ impl McpServer {
                 let project: report_cmd::ProjectMetaInput = serde_json::from_value(project_val)
                     .map_err(|e| format!("Invalid project meta: {}", e))?;
                 let output_path = arg_str("output_path")?;
-                let cpts: Vec<Cpt> = {
-                    let cache = self.app_state.cpts.lock().map_err(|e| e.to_string())?;
+                let cpts: Vec<Cpt> = self.app_state.with_project(|kernel_project| {
                     cpt_ids
                         .iter()
-                        .filter_map(|id| cache.get(id).cloned())
+                        .filter_map(|id| kernel_project.cpts().find(|cpt| cpt.id == *id).cloned())
                         .collect()
-                };
-                tokio_rt().block_on(
-                    report_cmd::generate_report_core(cpts, project, output_path.clone(), None),
-                )?;
+                })?;
+                tokio_rt().block_on(report_cmd::generate_report_core(
+                    cpts,
+                    project,
+                    output_path.clone(),
+                    None,
+                ))?;
                 Ok(format!("PDF report saved to {}", output_path))
             }
 

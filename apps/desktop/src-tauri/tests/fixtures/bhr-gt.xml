@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BHR_GT_O xmlns="http://www.broservices.nl/xsd/dsbhr-gt/2.1">
+  <broId>BHR000000000001</broId>
+  <researchProject>Project Noord</researchProject>
+  <objectReference>PN-42</objectReference>
+  <descriptionReportDate><date>2026-01-02</date></descriptionReportDate>
+  <researchReportDate><year>1999</year></researchReportDate>
+  <unrelatedDate><date>1900-01-01</date></unrelatedDate>
+  <boringStartDate>2026-01-01</boringStartDate>
+  <researchEndDate>2026-01-03</researchEndDate>
+  <objectIdAccountableParty>ACME-001</objectIdAccountableParty>
+  <deliveryContext>digitaleLevering</deliveryContext>
+  <qualityRegime>IMBRO</qualityRegime>
+  <finalDepthBoring>4.0</finalDepthBoring>
+  <boring><boringProcedure>handboring</boringProcedure></boring>
+  <descriptiveBoreholeLog>
+    <descriptionProcedure>NEN5104</descriptionProcedure>
+    <layer>
+      <upperBoundary>0.0</upperBoundary>
+      <lowerBoundary>1.5</lowerBoundary>
+      <geotechnicalSoilName>sterkSiltigeKlei</geotechnicalSoilName>
+      <colour>bruin</colour>
+      <description>matig vast</description>
+      <anomalousLayer>
+        <standardSoilName>zand</standardSoilName>
+        <layerProportionClass>weinig</layerProportionClass>
+      </anomalousLayer>
+      <chunks>
+        <soilType>veen</soilType>
+        <archiveClass>enkele</archiveClass>
+      </chunks>
+      <organicMatterContentClass>zwakHumeus</organicMatterContentClass>
+    </layer>
+    <layer>
+      <upperBoundary>1.5</upperBoundary>
+      <lowerBoundary>4.0</lowerBoundary>
+      <geotechnicalSoilName>matigFijnZand</geotechnicalSoilName>
+      <peatFraction>geen</peatFraction>
+    </layer>
+  </descriptiveBoreholeLog>
+</BHR_GT_O>

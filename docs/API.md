@@ -19,7 +19,9 @@ beide roepen dezelfde interne `*_core`-functies aan als de desktop-GUI.
 | Methode | Pad                          | Omschrijving |
 |---------|------------------------------|--------------|
 | GET     | `/api`                       | Zelfbeschrijvende endpoint-index |
-| GET     | `/api/health`                | Status + aantal geladen CPT's |
+| GET     | `/api/health`                | Status + aantallen geladen objecten en CPT's |
+| GET     | `/api/objects`               | Alle geladen geotechnische objecten als uniforme resultaat-union |
+| POST    | `/api/objects`               | CPT-, BHR-GT- of BHR-G-document parsen en cachen |
 | GET     | `/api/cpts`                  | Alle geparste CPT's (incl. meetdata) |
 | POST    | `/api/cpts`                  | GEF- of BRO-XML parsen en cachen |
 | GET     | `/api/cpts/:id`              | Eén CPT (incl. meetdata) |
@@ -39,6 +41,39 @@ beide roepen dezelfde interne `*_core`-functies aan als de desktop-GUI.
 
 Fouten komen terug als HTTP 400 met een leesbare platte-tekst-melding.
 De request-body-limiet is 64 MB.
+
+## Generieke objectimport
+
+`POST /api/objects` accepteert steeds dezelfde JSON-body:
+
+```json
+{ "content": "<volledige bestandsinhoud>", "filename": "document.xml" }
+```
+
+De response is een discriminated union. Een CPT geeft
+`{"kind":"cpt","data":{...}}`; BHR-GT en BHR-G geven beide de bestaande
+boringvorm `{"kind":"bore","data":{...}}`. `GET /api/objects` geeft een
+array met dezelfde union terug.
+
+```bash
+# CPT (XML of GEF)
+curl -s -X POST http://127.0.0.1:8787/api/objects \
+  -H "Content-Type: application/json" \
+  -d '{"content":"<CPT_O>...</CPT_O>","filename":"sondering.xml"}'
+
+# BHR-GT
+curl -s -X POST http://127.0.0.1:8787/api/objects \
+  -H "Content-Type: application/json" \
+  -d '{"content":"<BHR_GT_O>...</BHR_GT_O>","filename":"geotechnische-boring.xml"}'
+
+# BHR-G
+curl -s -X POST http://127.0.0.1:8787/api/objects \
+  -H "Content-Type: application/json" \
+  -d '{"content":"<BHR_G_O>...</BHR_G_O>","filename":"geologische-boring.xml"}'
+```
+
+`/api/cpts` blijft volledig compatibel: request, response en vervolgroutes
+voor bestaande CPT-clients zijn ongewijzigd.
 
 ## Werkstroom: CPT importeren → analyseren → rapporteren
 
@@ -148,3 +183,20 @@ Dezelfde functionaliteit is beschikbaar via `open-geo-studio --mcp`
 (Model Context Protocol over stdio) met tools voor CPT-import, lagen,
 exports, BRO, IFC en rapporten. De `report_preview`-tool accepteert
 dezelfde optionele `sections`-selectie als `POST /api/report`.
+
+De tool `open_geotechnical_document` biedt dezelfde generieke import als
+`POST /api/objects`. De vereiste argumenten zijn `content` en `filename`.
+Het JSON-resultaat gebruikt exact dezelfde union:
+
+```json
+{
+  "name": "open_geotechnical_document",
+  "arguments": {
+    "content": "<BHR_GT_O>...</BHR_GT_O>",
+    "filename": "boring.xml"
+  }
+}
+```
+
+Resultaat: `{"kind":"cpt","data":{...}}` voor CPT of
+`{"kind":"bore","data":{...}}` voor BHR-GT en BHR-G.

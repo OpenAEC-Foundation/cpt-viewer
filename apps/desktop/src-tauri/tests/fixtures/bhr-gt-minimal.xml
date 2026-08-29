@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BHR_GT_O xmlns="http://www.broservices.nl/xsd/dsbhr-gt/2.1">
+  <broId>BHR000000000001</broId>
+  <finalDepthBoring>4.0</finalDepthBoring>
+  <boring>
+    <boringProcedure>handboring</boringProcedure>
+  </boring>
+  <descriptiveBoreholeLog>
+    <descriptionProcedure>NEN5104</descriptionProcedure>
+    <layer>
+      <upperBoundary>0.0</upperBoundary>
+      <lowerBoundary>1.5</lowerBoundary>
+      <geotechnicalSoilName>sterkSiltigeKlei</geotechnicalSoilName>
+      <colour>bruin</colour>
+      <description>matig vast</description>
+      <organicMatterContentClass>zwakHumeus</organicMatterContentClass>
+    </layer>
+    <layer>
+      <upperBoundary>1.5</upperBoundary>
+      <lowerBoundary>4.0</lowerBoundary>
+      <geotechnicalSoilName>matigFijnZand</geotechnicalSoilName>
+      <peatFraction>geen</peatFraction>
+    </layer>
+  </descriptiveBoreholeLog>
+</BHR_GT_O>

@@ -223,13 +223,12 @@ pub async fn preview_report(
     // Snapshot the CPTs while we still hold the lock — release before
     // we kick off the long-running render so other commands can read
     // the state in the meantime.
-    let cpts: Vec<_> = {
-        let cpts_map = state.cpts.lock().unwrap();
+    let cpts: Vec<_> = state.with_project(|project| {
         cpt_ids
             .iter()
-            .filter_map(|id| cpts_map.get(id).cloned())
+            .filter_map(|id| project.cpts().find(|cpt| cpt.id == *id).cloned())
             .collect()
-    };
+    })?;
     preview_report_core(cpts, project, sections).await
 }
 
@@ -241,13 +240,12 @@ pub async fn generate_report(
     sections: Option<ReportSections>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let cpts: Vec<_> = {
-        let cpts_map = state.cpts.lock().unwrap();
+    let cpts: Vec<_> = state.with_project(|project| {
         cpt_ids
             .iter()
-            .filter_map(|id| cpts_map.get(id).cloned())
+            .filter_map(|id| project.cpts().find(|cpt| cpt.id == *id).cloned())
             .collect()
-    };
+    })?;
     generate_report_core(cpts, project, output_path, sections).await
 }
 

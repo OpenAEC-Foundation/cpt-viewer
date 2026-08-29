@@ -10,37 +10,41 @@
 //! implementatie, twee aanroep-vormen.
 
 use tauri::State;
-use cpt_core::{detect_layers as core_detect_layers, parse_auto, write, Cpt, Layer};
+use cpt_core::{write, Cpt, Layer};
+use open_geotechniek_kernel::{DuplicatePolicy, GeotechnicalProject, ProjectMetadata};
 use crate::state::AppState;
 
 // ─── Core implementations (state als &AppState) ────────────────────
 
 pub fn open_cpt_core(content: &str, filename: &str, state: &AppState) -> Result<Cpt, String> {
-    let lower = filename.to_lowercase();
-    let mut cpt = if lower.ends_with(".ifcgeo") {
-        // Per-CPT JSON snapshot — internal format, not a parser-discovery candidate.
-        write::read_ifcgeo(content).map_err(|e| e.to_string())?
-    } else {
-        parse_auto(content).map_err(|e| e.to_string())?
-    };
-    cpt.metadata.source_file = filename.to_string();
-    state.cpts.lock().unwrap().insert(cpt.id.clone(), cpt.clone());
+    let mut incoming = GeotechnicalProject::new(ProjectMetadata::default());
+    let cpt = incoming
+        .import_cpt(content, filename)
+        .map_err(|error| error.to_string())?;
+    state.with_project_mut(|project| {
+        project.merge_from(incoming, DuplicatePolicy::Replace)?;
+        Ok(())
+    })?;
     Ok(cpt)
 }
 
 pub fn close_cpt_core(id: &str, state: &AppState) -> Result<(), String> {
-    state.cpts.lock().unwrap().remove(id);
-    Ok(())
+    state.with_project_mut(|project| match project.remove(id) {
+        Ok(_) | Err(open_geotechniek_kernel::KernelError::ObjectNotFound { .. }) => Ok(()),
+        Err(error) => Err(error),
+    })
 }
 
 pub fn list_cpts_core(state: &AppState) -> Vec<Cpt> {
-    state.cpts.lock().unwrap().values().cloned().collect()
+    state
+        .with_project(|project| project.cpts().cloned().collect())
+        .unwrap_or_default()
 }
 
 pub fn detect_layers_core(id: &str, state: &AppState) -> Result<Vec<Layer>, String> {
-    let cpts = state.cpts.lock().unwrap();
-    let cpt = cpts.get(id).ok_or_else(|| format!("unknown CPT id: {id}"))?;
-    Ok(core_detect_layers(cpt))
+    state
+        .with_project(|project| project.detect_cpt_layers(id))?
+        .map_err(|error| error.to_string())
 }
 
 /// Export the CPT identified by `cpt_id` to disk in `format` ("gef" |
@@ -51,14 +55,13 @@ pub fn save_cpt_as_core(
     path: &str,
     state: &AppState,
 ) -> Result<(), String> {
-    let cpts = state.cpts.lock().unwrap();
-    let cpt = cpts
-        .get(cpt_id)
+    let cpt = state
+        .with_project(|project| project.cpts().find(|cpt| cpt.id == cpt_id).cloned())?
         .ok_or_else(|| format!("unknown CPT id: {cpt_id}"))?;
     let text = match format {
-        "gef" => write::write_gef(cpt),
-        "bro" | "xml" => write::write_bro_xml(cpt),
-        "ifcgeo" => write::write_ifcgeo(cpt).map_err(|e| e.to_string())?,
+        "gef" => write::write_gef(&cpt),
+        "bro" | "xml" => write::write_bro_xml(&cpt),
+        "ifcgeo" => write::write_ifcgeo(&cpt).map_err(|e| e.to_string())?,
         other => return Err(format!("unsupported format: {other}")),
     };
     std::fs::write(path, text).map_err(|e| format!("write {path}: {e}"))

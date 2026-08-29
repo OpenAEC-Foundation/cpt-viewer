@@ -11,8 +11,9 @@ use crate::state::AppState;
 /// CSV-inhoud voor één CPT als string — gedeeld door de bestand-export
 /// (Tauri) en de REST-API (inline response).
 pub fn csv_string_core(cpt_id: &str, state: &AppState) -> Result<String, String> {
-    let cpts = state.cpts.lock().unwrap();
-    let cpt = cpts.get(cpt_id).ok_or_else(|| format!("unknown CPT id: {cpt_id}"))?;
+    let cpt = state
+        .with_project(|project| project.cpts().find(|cpt| cpt.id == cpt_id).cloned())?
+        .ok_or_else(|| format!("unknown CPT id: {cpt_id}"))?;
     let mut s = String::new();
     s.push_str("depth,depth_nap,qc,fs,rf,u2,inclination\n");
     for p in &cpt.points {
@@ -42,10 +43,10 @@ pub fn geojson_value_core(
     state: &AppState,
 ) -> Result<serde_json::Value, String> {
     use serde_json::{json, Value};
-    let cpts = state.cpts.lock().unwrap();
+    let cpts = state.with_project(|project| project.cpts().cloned().collect::<Vec<_>>())?;
     let mut features: Vec<Value> = Vec::new();
     for id in cpt_ids {
-        let Some(cpt) = cpts.get(id) else { continue };
+        let Some(cpt) = cpts.iter().find(|cpt| cpt.id == *id) else { continue };
         if let Some(pos) = cpt.position {
             let (lat, lon) = cpt_core::coords::rd_to_wgs84(pos.x_rd, pos.y_rd);
             let max_depth = cpt.points.iter().map(|p| p.depth).fold(0.0_f64, f64::max);

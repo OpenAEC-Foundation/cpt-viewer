@@ -170,13 +170,12 @@ pub async fn generate_ifc(
     // lock before doing any IFC work (the writers iterate over potentially
     // thousands of measurement points and we don't want to block other
     // commands while that happens).
-    let cpts: Vec<Cpt> = {
-        let cache = state.cpts.lock().map_err(|e| e.to_string())?;
+    let cpts: Vec<Cpt> = state.with_project(|project| {
         cpt_ids
             .iter()
-            .filter_map(|id| cache.get(id).cloned())
+            .filter_map(|id| project.cpts().find(|cpt| cpt.id == *id).cloned())
             .collect()
-    };
+    })?;
     generate_ifc_core(project, cpts, format).await
 }
 

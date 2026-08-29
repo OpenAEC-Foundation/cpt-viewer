@@ -2,8 +2,9 @@ use serde_json::{json, Value};
 
 /// Return MCP tool definitions for the tools/list endpoint.
 ///
-/// Tools zijn gegroepeerd per domein (totaal 31):
+/// Tools zijn gegroepeerd per domein (totaal 32):
 ///   - tenant (5): list_tenants, list_templates, get_brand, generate_report, get_app_state
+///   - object (1): open_geotechnical_document
 ///   - cpt (5): cpt_open, cpt_close, cpt_list, cpt_detect_layers, cpt_save_as
 ///   - project (5): project_save_ifcgis, project_open_ifcgis,
 ///     project_save_ifcgis_full, project_open_ifcgis_full, project_preview_ifcx
@@ -17,6 +18,7 @@ use serde_json::{json, Value};
 pub fn tool_definitions() -> Vec<Value> {
     let mut tools = Vec::new();
     tools.extend(tenant_tools());
+    tools.extend(object_tools());
     tools.extend(cpt_tools());
     tools.extend(project_tools());
     tools.extend(export_tools());
@@ -25,6 +27,21 @@ pub fn tool_definitions() -> Vec<Value> {
     tools.extend(report_tools());
     tools.extend(extension_tools());
     tools
+}
+
+fn object_tools() -> Vec<Value> {
+    vec![json!({
+        "name": "open_geotechnical_document",
+        "description": "Importeer een geotechnisch document en geef het uniforme CPT- of boringresultaat terug.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "content": { "type": "string", "description": "Volledige bestandsinhoud" },
+                "filename": { "type": "string", "description": "Bestandsnaam met extensie" }
+            },
+            "required": ["content", "filename"]
+        }
+    })]
 }
 
 fn tenant_tools() -> Vec<Value> {
@@ -459,4 +476,21 @@ fn report_tools() -> Vec<Value> {
             }
         }),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generic_document_tool_requires_content_and_filename() {
+        let tool = tool_definitions()
+            .into_iter()
+            .find(|tool| tool["name"] == "open_geotechnical_document")
+            .expect("generic document tool must be registered");
+        assert_eq!(
+            tool["inputSchema"]["required"],
+            json!(["content", "filename"])
+        );
+    }
 }
